@@ -20,8 +20,16 @@ dependencyResolutionManagement {
     }
 }
 
+def localProperties = new Properties()
+new File(settingsDir, 'local.properties').withInputStream { localProperties.load(it) }
+
 include ':app'
 include ':catvod'
 include ':chaquo'
 include ':quickjs'
 rootProject.name = "TV"
+
+// 老盒子兼容版：把 :chaquo 指向不带 Python 的同名空壳模块
+if ('true'.equals(localProperties.getProperty('legacy'))) {
+    project(':chaquo').projectDir = new File(rootDir, 'chaquo-stub')
+}

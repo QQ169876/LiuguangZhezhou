@@ -1,0 +1,1 @@
+{"name":"流光褶皱 v5.6.8-legacy","desc":"老设备兼容版：去掉 Python 运行环境，最低支持 Android 5.0（小米盒子 4/4c 等 Android 6 设备可安装）。功能与 5.6.7 一致，仅极少数 py 类采集源不可用。","code":568,"tag":"v5.6.8-legacy"}

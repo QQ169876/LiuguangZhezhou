@@ -9,7 +9,7 @@ android {
     compileSdk libs.versions.compileSdk.get().toInteger()
 
     defaultConfig {
-        minSdk libs.versions.minSdk.get().toInteger()
+        minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
         python {
             version = "3.10"

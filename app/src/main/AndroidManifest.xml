@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ScopedStorage">
 
+    <!-- 老盒子兼容版（legacy）minSdk 降到 21；hook 库声明了 24，
+         但它只在 TVBus 自定义内核那条路上才会被加载，兼容版里不会走到 -->
+    <uses-sdk tools:overrideLibrary="com.fongmi.hook,com.ghost.thunder,com.tvbus.engine" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

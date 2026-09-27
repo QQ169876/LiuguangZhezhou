@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.utils;
 
+import com.fongmi.android.tv.BuildConfig;
+
 public class Github {
 
     /**
@@ -19,10 +21,13 @@ public class Github {
     }
 
     public static String getJson(String name) {
+        // 老盒子兼容版走独立的版本文件，避免被主线版本覆盖
+        if (BuildConfig.LEGACY) name = name + "-legacy";
         return raw("apk/" + name + ".json");
     }
 
     public static String getApk(String tag, String name) {
+        if (BuildConfig.LEGACY) name = name.replaceFirst("-", "-legacy-");
         return PROXY + RELEASE + tag + "/" + name + ".apk";
     }
 }
