@@ -4,10 +4,13 @@ import static fi.iki.elonen.NanoHTTPD.MIME_PLAINTEXT;
 import static fi.iki.elonen.NanoHTTPD.getMimeTypeForFile;
 import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 
+import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Formatters;
+import com.fongmi.android.tv.utils.Notify;
 import com.github.catvod.utils.Path;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -58,10 +61,21 @@ public class Local implements Process {
         for (String k : files.keySet()) {
             String fn = params.get(k);
             File temp = new File(files.get(k));
+            if (fn == null) continue;
             if (fn.toLowerCase().endsWith(".zip")) FileUtil.zipDecompress(temp, Path.root(path));
             else Path.copy(temp, Path.root(path, fn));
+            if (fn.toLowerCase().endsWith(".apk")) install(Path.root(path, fn));
+            else hint(R.string.push_received);
         }
         return Nano.ok();
+    }
+
+    private void install(File file) {
+        App.post(() -> FileUtil.openFile(file));
+    }
+
+    private void hint(int resId) {
+        App.post(() -> Notify.show(resId));
     }
 
     private Response newFolder(Map<String, String> params) {

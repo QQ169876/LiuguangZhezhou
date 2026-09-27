@@ -79,6 +79,24 @@
                 </div>
                 <div id="file_list"></div>
             </div>
+            <!-- 雲端同步 -->
+            <div id="panel6" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="webdav_url" class="md-input" type="text" placeholder="請輸入 WebDAV 地址..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="webdav_user" class="md-input" type="text" placeholder="請輸入帳號..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="webdav_pass" class="md-input" type="password" placeholder="請輸入密鑰 / 密碼..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="webdav_folder" class="md-input" type="text" placeholder="文件夾（默認 okmove）" />
+                    </div>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="webdav()">確定</button>
+                </div>
+            </div>
         </div>
         <!-- M3 Navigation Bar -->
         <nav class="md-nav-bar">
@@ -111,6 +129,12 @@
                     <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M9.17 6l2 2H20v10H4V6h5.17M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                 </div>
                 <span class="md-nav-label">本地</span>
+            </div>
+            <div id="tab6" class="md-nav-item" onclick="showPanel(6)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
+                </div>
+                <span class="md-nav-label">雲端</span>
             </div>
         </nav>
     </div>

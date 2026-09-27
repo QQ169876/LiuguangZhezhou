@@ -34,6 +34,7 @@ import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
 import com.fongmi.android.tv.ui.dialog.ThemeDialog;
 import com.fongmi.android.tv.utils.FileUtil;
@@ -129,6 +130,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.wall.setOnClickListener(this::onWall);
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.webdav.setOnClickListener(this::onWebDav);
+        mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.backup.setOnClickListener(this::onBackup);
         mBinding.player.setOnClickListener(this::onPlayer);
@@ -314,6 +316,10 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private void onWebDav(View view) {
         WebDavDialog.create().show(requireActivity());
+    }
+
+    private void onPush(View view) {
+        PushDialog.create().show(requireActivity());
     }
 
     private void onCache(View view) {

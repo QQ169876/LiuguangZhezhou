@@ -4,6 +4,7 @@ import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Device;
@@ -20,6 +21,8 @@ import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.webdav.SyncManager;
+import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Path;
 
@@ -52,6 +55,7 @@ public class Action implements Process {
             case "push" -> onPush(params);
             case "cast" -> onCast(params);
             case "sync" -> onSync(params);
+            case "webdav" -> onWebDav(params);
             case "search" -> onSearch(params);
             case "setting" -> onSetting(params);
             case "refresh" -> onRefresh(params);
@@ -78,6 +82,18 @@ public class Action implements Process {
         String word = params.get("word");
         if (TextUtils.isEmpty(word)) return;
         ServerEvent.search(word);
+    }
+
+    private void onWebDav(Map<String, String> params) {
+        String url = params.get("url");
+        if (TextUtils.isEmpty(url)) return;
+        WebDavSetting.putUrl(url);
+        WebDavSetting.putUser(params.get("user"));
+        WebDavSetting.putPass(params.get("pass"));
+        WebDavSetting.putFolder(params.get("folder"));
+        WebDavSetting.putEnabled(true);
+        App.post(() -> Notify.show(R.string.webdav_saved));
+        SyncManager.sync((success, message) -> Notify.show(message));
     }
 
     private void onSetting(Map<String, String> params) {

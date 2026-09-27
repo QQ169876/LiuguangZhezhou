@@ -302,6 +302,19 @@
     <string name="webdav_scan_fail">二维码内容无效</string>
     <string name="webdav_test_ok">连接成功</string>
     <string name="webdav_test_fail">连接失败</string>
+    <string name="webdav_lan">扫码录入</string>
+    <string name="webdav_lan_tip">用手机扫这个二维码，在网页里填写 WebDAV 配置后提交</string>
+    <string name="setting_push">局域网推送</string>
+    <string name="push_host">设备地址（http://IP:端口）</string>
+    <string name="push_scan">扫码连接</string>
+    <string name="push_info_row">地址为空表示还没选目标设备，可扫码或手动填写，再选择要推送的内容。</string>
+    <string name="push_webdav">推送同步配置</string>
+    <string name="push_config">推送点播配置</string>
+    <string name="push_file">推送文件 / APK</string>
+    <string name="push_done">推送成功</string>
+    <string name="push_fail">推送失败</string>
+    <string name="push_empty">设备地址为空</string>
+    <string name="push_received">已收到文件</string>
 
     <!-- Player -->
     <string name="player">播放核心</string>

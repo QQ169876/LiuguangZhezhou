@@ -302,6 +302,19 @@
     <string name="webdav_scan_fail">QR Code 內容無效</string>
     <string name="webdav_test_ok">連線成功</string>
     <string name="webdav_test_fail">連線失敗</string>
+    <string name="webdav_lan">掃碼輸入</string>
+    <string name="webdav_lan_tip">用手機掃這個 QR Code，在網頁裡填寫 WebDAV 設定後送出</string>
+    <string name="setting_push">區域網路推送</string>
+    <string name="push_host">設備位址（http://IP:埠號）</string>
+    <string name="push_scan">掃碼連線</string>
+    <string name="push_info_row">位址空白表示尚未選擇設備，可掃碼或手動填寫，再選擇要推送的內容。</string>
+    <string name="push_webdav">推送同步設定</string>
+    <string name="push_config">推送點播設定</string>
+    <string name="push_file">推送檔案 / APK</string>
+    <string name="push_done">推送成功</string>
+    <string name="push_fail">推送失敗</string>
+    <string name="push_empty">設備位址為空</string>
+    <string name="push_received">已收到檔案</string>
 
     <!-- Player -->
     <string name="player">播放核心</string>

@@ -303,6 +303,19 @@
     <string name="webdav_scan_fail">Invalid QR code</string>
     <string name="webdav_test_ok">Connection successful</string>
     <string name="webdav_test_fail">Connection failed</string>
+    <string name="webdav_lan">Fill by phone</string>
+    <string name="webdav_lan_tip">Scan this code with your phone to fill the WebDAV settings</string>
+    <string name="setting_push">LAN push</string>
+    <string name="push_host">Device address (http://ip:port)</string>
+    <string name="push_scan">Scan QR</string>
+    <string name="push_info_row">Empty = no target device yet. Fill by scanning or typing, then choose what to push.</string>
+    <string name="push_webdav">Push sync config</string>
+    <string name="push_config">Push vod config</string>
+    <string name="push_file">Push file / APK</string>
+    <string name="push_done">Pushed</string>
+    <string name="push_fail">Push failed</string>
+    <string name="push_empty">Device address is empty</string>
+    <string name="push_received">File received</string>
 
     <!-- Player -->
     <string name="player">Player</string>

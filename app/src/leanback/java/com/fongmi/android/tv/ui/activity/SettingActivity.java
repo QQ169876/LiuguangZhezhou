@@ -33,6 +33,7 @@ import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Notify;
@@ -118,6 +119,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.player.setOnClickListener(this::onPlayer);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.webdav.setOnClickListener(this::onWebDav);
+        mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.restore.setOnClickListener(this::onRestore);
         mBinding.version.setOnClickListener(this::onVersion);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
@@ -284,6 +286,10 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onWebDav(View view) {
         WebDavDialog.create().show(getActivity());
+    }
+
+    private void onPush(View view) {
+        PushDialog.create().show(getActivity());
     }
 
     private void onCache(View view) {

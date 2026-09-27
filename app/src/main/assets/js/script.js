@@ -23,6 +23,11 @@ function setting() {
     doAction('setting', { text: $('#setting_text').val(), name: $('#setting_name').val() });
 }
 
+function webdav() {
+    doAction('webdav', { url: $('#webdav_url').val(), user: $('#webdav_user').val(), pass: $('#webdav_pass').val(), folder: $('#webdav_folder').val() });
+    warnToast('已提交，請查看設備提示');
+}
+
 function sendDanmaku() {
     const text = $('#danmaku_text').val().trim();
     if (!text) return;
@@ -261,11 +266,27 @@ function warnToast(msg) {
 }
 
 function showPanel(id) {
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 6; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
     if (id === 5 && document.getElementById('file_list').innerHTML === '') listFile('');
+    if (id === 6) loadWebDav();
+}
+
+function loadWebDav() {
+    $.get('/webdav', function (res) {
+        let info;
+        try {
+            info = JSON.parse(res);
+        } catch (e) {
+            return;
+        }
+        $('#webdav_url').val(info.url || '');
+        $('#webdav_user').val(info.user || '');
+        $('#webdav_pass').val(info.pass || '');
+        $('#webdav_folder').val(info.folder || '');
+    });
 }
 
 const tab = parseInt(new URLSearchParams(window.location.search).get('tab')) || 1;
@@ -284,5 +305,6 @@ $(function () {
     $('#push_url').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); push(); } });
     $('#danmaku_text').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); sendDanmaku(); } });
     $('#setting_name, #setting_text').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); setting(); } });
+    $('#webdav_url, #webdav_user, #webdav_pass, #webdav_folder').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); webdav(); } });
     $('#newFolderContent').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); confirmNewFolder(1); } });
 });

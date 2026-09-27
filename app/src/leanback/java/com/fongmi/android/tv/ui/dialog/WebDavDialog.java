@@ -10,6 +10,7 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogWebdavBinding;
+import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
 import com.fongmi.android.tv.utils.Task;
@@ -63,6 +64,16 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.push.setOnClickListener(this::onPush);
         binding.pull.setOnClickListener(this::onPull);
         binding.qrcode.setOnClickListener(this::onQrCode);
+        binding.lan.setOnClickListener(this::onLan);
+    }
+
+    private void onLan(View view) {
+        Server.get().start();
+        Bitmap bitmap = QrHelper.encode(Server.get().getAddress(6), 640);
+        if (bitmap == null) return;
+        binding.image.setVisibility(View.VISIBLE);
+        binding.image.setImageBitmap(bitmap);
+        Notify.show(R.string.webdav_lan_tip);
     }
 
     private void setLastText() {

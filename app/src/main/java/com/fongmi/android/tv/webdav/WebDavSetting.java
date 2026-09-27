@@ -2,6 +2,8 @@ package com.fongmi.android.tv.webdav;
 
 import com.github.catvod.utils.Prefers;
 
+import org.json.JSONObject;
+
 import java.util.UUID;
 
 public class WebDavSetting {
@@ -73,6 +75,18 @@ public class WebDavSetting {
 
     public static void putDevice(String device) {
         Prefers.put("webdav_device", device);
+    }
+
+    public static String toJson() {
+        JSONObject object = new JSONObject();
+        try {
+            object.put("url", getUrl());
+            object.put("user", getUser());
+            object.put("pass", getPass());
+            object.put("folder", getFolder());
+        } catch (Exception ignored) {
+        }
+        return object.toString();
     }
 
     public static boolean isValid() {

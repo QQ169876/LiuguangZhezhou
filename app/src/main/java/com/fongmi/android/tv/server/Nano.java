@@ -9,6 +9,7 @@ import com.fongmi.android.tv.server.process.Local;
 import com.fongmi.android.tv.server.process.Media;
 import com.fongmi.android.tv.server.process.Parse;
 import com.fongmi.android.tv.server.process.Proxy;
+import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Asset;
 
 import java.io.InputStream;
@@ -63,6 +64,7 @@ public class Nano extends NanoHTTPD {
         if (session.getMethod() == Method.POST) parse(session, files);
         if (url.startsWith("/tvbus")) return ok(LiveConfig.getResp());
         if (url.startsWith("/device")) return ok(Device.get().toString());
+        if (url.startsWith("/webdav")) return ok(WebDavSetting.toJson());
         for (Process process : process) if (process.isRequest(session, url)) return process.doResponse(session, url, files);
         return getAssets(url.substring(1));
     }
