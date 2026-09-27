@@ -268,6 +268,7 @@ public class SyncManager {
         Map<String, Object> result = new LinkedHashMap<>();
         for (String name : keys) {
             if (name.startsWith("webdav_")) continue;
+            if (name.startsWith("moontv_")) continue;
             Object b = base.get(name);
             Object l = local.get(name);
             Object r = remote.get(name);
@@ -451,6 +452,7 @@ public class SyncManager {
         for (Map.Entry<String, ?> entry : target.entrySet()) {
             String name = entry.getKey();
             if (name == null || name.startsWith("webdav_")) continue;
+            if (name.startsWith("moontv_")) continue;
             if (Objects.equals(current.get(name), entry.getValue())) continue;
             values.put(name, entry.getValue());
         }

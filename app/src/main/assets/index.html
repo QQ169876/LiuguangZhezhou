@@ -97,6 +97,21 @@
                     <button class="md-btn md-btn-filled md-btn-full" onclick="webdav()">確定</button>
                 </div>
             </div>
+            <!-- 影視站同步 -->
+            <div id="panel7" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="moontv_url" class="md-input" type="text" placeholder="請輸入站點網址..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="moontv_user" class="md-input" type="text" placeholder="請輸入站點帳號..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="moontv_pass" class="md-input" type="password" placeholder="請輸入站點密碼..." />
+                    </div>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="moontv()">確定</button>
+                </div>
+            </div>
         </div>
         <!-- M3 Navigation Bar -->
         <nav class="md-nav-bar">
@@ -135,6 +150,12 @@
                     <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
                 </div>
                 <span class="md-nav-label">雲端</span>
+            </div>
+            <div id="tab7" class="md-nav-item" onclick="showPanel(7)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M4 6.47L5.76 10H20v8H4V6.47M22 4h-4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4z"/></svg>
+                </div>
+                <span class="md-nav-label">影視站</span>
             </div>
         </nav>
     </div>

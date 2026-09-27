@@ -26,6 +26,7 @@ import com.fongmi.android.tv.impl.LiveListener;
 import com.fongmi.android.tv.impl.SiteListener;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.ConfigDialog;
 import com.fongmi.android.tv.ui.dialog.DohDialog;
@@ -35,6 +36,7 @@ import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
+import com.fongmi.android.tv.ui.dialog.MoonDialog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PermissionUtil;
@@ -91,11 +93,18 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.incognitoText.setText(Setting.getSwitch(Setting.isIncognito()));
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
+        mBinding.moontvText.setText(getMoonTVText());
     }
 
     private String getWebDavText() {
         long time = WebDavSetting.getLast();
         return time == 0 ? getString(R.string.webdav_off) : getString(R.string.webdav_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time)));
+    }
+
+    private String getMoonTVText() {
+        if (!MoonSetting.isValid()) return getString(R.string.moontv_off);
+        long time = MoonSetting.getLast();
+        return time == 0 ? MoonSetting.getUrl() : getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time)));
     }
 
     private void setCacheText() {
@@ -119,6 +128,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.player.setOnClickListener(this::onPlayer);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.webdav.setOnClickListener(this::onWebDav);
+        mBinding.moontv.setOnClickListener(this::onMoonTV);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.restore.setOnClickListener(this::onRestore);
         mBinding.version.setOnClickListener(this::onVersion);
@@ -286,6 +296,10 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onWebDav(View view) {
         WebDavDialog.create().show(getActivity());
+    }
+
+    private void onMoonTV(View view) {
+        MoonDialog.create().show(getActivity());
     }
 
     private void onPush(View view) {

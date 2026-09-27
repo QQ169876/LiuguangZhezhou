@@ -317,6 +317,36 @@
     <string name="push_empty">設備位址為空</string>
     <string name="push_received">已收到檔案</string>
 
+    <!-- MoonTV -->
+    <string name="setting_moontv">影視站同步</string>
+    <string name="moontv_title">影視站同步（MoonTV / LunaTV）</string>
+    <string name="moontv_url">站點網址</string>
+    <string name="moontv_url_tip">例如 https://你的站點網域，不要帶路徑</string>
+    <string name="moontv_user">站點帳號</string>
+    <string name="moontv_pass">站點密碼</string>
+    <string name="moontv_enable">啟用同步</string>
+    <string name="moontv_auto">開啟應用時自動拉取</string>
+    <string name="moontv_test">測試連線</string>
+    <string name="moontv_scan">掃碼匯入</string>
+    <string name="moontv_qrcode">產生 QR Code</string>
+    <string name="moontv_lan">掃碼輸入</string>
+    <string name="moontv_lan_tip">用手機掃這個 QR Code，在網頁裡填好站點網址與帳號密碼後送出</string>
+    <string name="moontv_sync">雙向同步</string>
+    <string name="moontv_pull">拉取站點資料</string>
+    <string name="moontv_push">上傳本機資料</string>
+    <string name="moontv_off">尚未同步</string>
+    <string name="moontv_last">上次同步：%s</string>
+    <string name="moontv_success">同步成功</string>
+    <string name="moontv_fail">同步失敗</string>
+    <string name="moontv_busy">正在同步中</string>
+    <string name="moontv_empty">站點網址或帳號沒填完整</string>
+    <string name="moontv_saved">設定已儲存</string>
+    <string name="moontv_scan_fail">QR Code 內容不是影視站設定</string>
+    <string name="moontv_test_ok">連線成功</string>
+    <string name="moontv_test_fail">連線失敗</string>
+    <string name="moontv_summary">拉取成功：進度 %1$d 條、收藏 %2$d 條（新增 %3$d / 更新 %4$d）</string>
+    <string name="moontv_summary_sync">雙向同步完成：拉回 %1$d 條、上傳 %2$d 條</string>
+
     <!-- Player -->
     <string name="player">播放核心</string>
     <string name="player_engine">播放引擎</string>

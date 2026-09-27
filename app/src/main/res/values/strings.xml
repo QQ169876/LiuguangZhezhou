@@ -318,6 +318,36 @@
     <string name="push_empty">Device address is empty</string>
     <string name="push_received">File received</string>
 
+    <!-- MoonTV -->
+    <string name="setting_moontv">Site sync</string>
+    <string name="moontv_title">Site sync (MoonTV / LunaTV)</string>
+    <string name="moontv_url">Site address</string>
+    <string name="moontv_url_tip">For example https://your.domain, without any path</string>
+    <string name="moontv_user">Username</string>
+    <string name="moontv_pass">Password</string>
+    <string name="moontv_enable">Enable sync</string>
+    <string name="moontv_auto">Pull on app start</string>
+    <string name="moontv_test">Test</string>
+    <string name="moontv_scan">Scan QR</string>
+    <string name="moontv_qrcode">QR code</string>
+    <string name="moontv_lan">Fill by phone</string>
+    <string name="moontv_lan_tip">Scan this code with your phone to fill the site settings</string>
+    <string name="moontv_sync">Two-way sync</string>
+    <string name="moontv_pull">Pull from site</string>
+    <string name="moontv_push">Upload local data</string>
+    <string name="moontv_off">Off</string>
+    <string name="moontv_last">Last: %s</string>
+    <string name="moontv_success">Sync successful</string>
+    <string name="moontv_fail">Sync failed</string>
+    <string name="moontv_busy">Sync is busy</string>
+    <string name="moontv_empty">Site address or account is incomplete</string>
+    <string name="moontv_saved">Settings saved</string>
+    <string name="moontv_scan_fail">Not a site sync QR code</string>
+    <string name="moontv_test_ok">Connection successful</string>
+    <string name="moontv_test_fail">Connection failed</string>
+    <string name="moontv_summary">Pulled: %1$d records, %2$d favorites (added %3$d / updated %4$d)</string>
+    <string name="moontv_summary_sync">Two-way sync done: %1$d pulled, %2$d uploaded</string>
+
     <!-- Player -->
     <string name="player">Player</string>
     <string name="player_engine">Engine</string>

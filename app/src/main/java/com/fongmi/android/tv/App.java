@@ -14,6 +14,7 @@ import androidx.core.os.HandlerCompat;
 
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.hook.Hook;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.github.catvod.Init;
 import com.google.gson.Gson;
@@ -85,6 +86,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
         SyncManager.boot();
+        MoonSync.boot();
     }
 
     @Override

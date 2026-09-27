@@ -19,6 +19,7 @@ import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.FragmentSettingBinding;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
@@ -32,6 +33,7 @@ import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.dialog.ConfigDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
+import com.fongmi.android.tv.ui.dialog.MoonDialog;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
@@ -106,11 +108,18 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.incognitoText.setText(Setting.getSwitch(Setting.isIncognito()));
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
+        mBinding.moontvText.setText(getMoonTVText());
     }
 
     private String getWebDavText() {
         long time = WebDavSetting.getLast();
         return time == 0 ? getString(R.string.webdav_off) : getString(R.string.webdav_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time)));
+    }
+
+    private String getMoonTVText() {
+        if (!MoonSetting.isValid()) return getString(R.string.moontv_off);
+        long time = MoonSetting.getLast();
+        return time == 0 ? MoonSetting.getUrl() : getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time)));
     }
 
     private void setCacheText() {
@@ -130,6 +139,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.wall.setOnClickListener(this::onWall);
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.webdav.setOnClickListener(this::onWebDav);
+        mBinding.moontv.setOnClickListener(this::onMoonTV);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.backup.setOnClickListener(this::onBackup);
@@ -318,6 +328,10 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         WebDavDialog.create().show(requireActivity());
     }
 
+    private void onMoonTV(View view) {
+        MoonDialog.create().show(requireActivity());
+    }
+
     private void onPush(View view) {
         PushDialog.create().show(requireActivity());
     }
@@ -380,6 +394,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         if (hidden) return;
         setCacheText();
         mBinding.webdavText.setText(getWebDavText());
+        mBinding.moontvText.setText(getMoonTVText());
     }
 
     @Override

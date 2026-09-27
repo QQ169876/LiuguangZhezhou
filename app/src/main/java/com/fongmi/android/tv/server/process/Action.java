@@ -15,6 +15,9 @@ import com.fongmi.android.tv.event.CastEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.event.ServerEvent;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.moontv.MoonApi;
+import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
@@ -56,6 +59,7 @@ public class Action implements Process {
             case "cast" -> onCast(params);
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
+            case "moontv" -> onMoonTV(params);
             case "search" -> onSearch(params);
             case "setting" -> onSetting(params);
             case "refresh" -> onRefresh(params);
@@ -94,6 +98,18 @@ public class Action implements Process {
         WebDavSetting.putEnabled(true);
         App.post(() -> Notify.show(R.string.webdav_saved));
         SyncManager.sync((success, message) -> Notify.show(message));
+    }
+
+    private void onMoonTV(Map<String, String> params) {
+        String url = params.get("url");
+        if (TextUtils.isEmpty(url)) return;
+        MoonSetting.putUrl(url);
+        MoonSetting.putUser(params.get("user"));
+        MoonSetting.putPass(params.get("pass"));
+        MoonSetting.putEnabled(true);
+        MoonApi.reset();
+        App.post(() -> Notify.show(R.string.moontv_saved));
+        MoonSync.pull((success, message) -> Notify.show(message));
     }
 
     private void onSetting(Map<String, String> params) {

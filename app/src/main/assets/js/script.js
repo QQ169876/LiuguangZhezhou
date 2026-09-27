@@ -28,6 +28,11 @@ function webdav() {
     warnToast('已提交，請查看設備提示');
 }
 
+function moontv() {
+    doAction('moontv', { url: $('#moontv_url').val(), user: $('#moontv_user').val(), pass: $('#moontv_pass').val() });
+    warnToast('已提交，請查看設備提示');
+}
+
 function sendDanmaku() {
     const text = $('#danmaku_text').val().trim();
     if (!text) return;
@@ -266,12 +271,13 @@ function warnToast(msg) {
 }
 
 function showPanel(id) {
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 7; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
     if (id === 5 && document.getElementById('file_list').innerHTML === '') listFile('');
     if (id === 6) loadWebDav();
+    if (id === 7) loadMoonTV();
 }
 
 function loadWebDav() {
@@ -286,6 +292,20 @@ function loadWebDav() {
         $('#webdav_user').val(info.user || '');
         $('#webdav_pass').val(info.pass || '');
         $('#webdav_folder').val(info.folder || '');
+    });
+}
+
+function loadMoonTV() {
+    $.get('/moontv', function (res) {
+        let info;
+        try {
+            info = JSON.parse(res);
+        } catch (e) {
+            return;
+        }
+        $('#moontv_url').val(info.url || '');
+        $('#moontv_user').val(info.user || '');
+        $('#moontv_pass').val(info.pass || '');
     });
 }
 
@@ -306,5 +326,6 @@ $(function () {
     $('#danmaku_text').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); sendDanmaku(); } });
     $('#setting_name, #setting_text').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); setting(); } });
     $('#webdav_url, #webdav_user, #webdav_pass, #webdav_folder').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); webdav(); } });
+    $('#moontv_url, #moontv_user, #moontv_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); moontv(); } });
     $('#newFolderContent').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); confirmNewFolder(1); } });
 });
