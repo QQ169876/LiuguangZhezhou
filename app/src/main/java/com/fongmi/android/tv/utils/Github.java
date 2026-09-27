@@ -2,17 +2,27 @@ package com.fongmi.android.tv.utils;
 
 public class Github {
 
-    public static final String URL = "https://raw.githubusercontent.com/FongMi/Release/fongmi";
+    /**
+     * GitHub 加速代理。所有访问 GitHub 的地址都拼在它后面，
+     * 国内网络直连 raw.githubusercontent.com / github.com 经常超时。
+     */
+    public static final String PROXY = "https://p.169876.us.kg/proxy/";
 
-    private static String getUrl(String name) {
-        return URL + "/apk/" + name;
+    public static final String REPO = "QQ169876/LiuguangZhezhou";
+    public static final String BRANCH = "webdav-sync";
+
+    private static final String RAW = "https://raw.githubusercontent.com/";
+    private static final String RELEASE = "https://github.com/" + REPO + "/releases/download/";
+
+    private static String raw(String path) {
+        return PROXY + RAW + REPO + "/" + BRANCH + "/" + path;
     }
 
     public static String getJson(String name) {
-        return getUrl(name + ".json");
+        return raw("apk/" + name + ".json");
     }
 
-    public static String getApk(String name) {
-        return getUrl(name + ".apk");
+    public static String getApk(String tag, String name) {
+        return PROXY + RELEASE + tag + "/" + name + ".apk";
     }
 }

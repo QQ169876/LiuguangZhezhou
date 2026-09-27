@@ -22,11 +22,10 @@ import java.io.File;
 
 public class Updater implements Download.Callback, UpdateListener {
 
-    private final Download download;
+    private Download download;
     private UpdateDialog dialog;
 
     private Updater() {
-        this.download = Download.create(getApk(), getFile());
     }
 
     public static Updater create() {
@@ -41,8 +40,9 @@ public class Updater implements Download.Callback, UpdateListener {
         return Github.getJson(BuildConfig.FLAVOR_mode);
     }
 
-    private String getApk() {
-        return Github.getApk(BuildConfig.FLAVOR_mode + "-" + BuildConfig.FLAVOR_abi);
+    private String getApk(String tag) {
+        if (tag == null || tag.isEmpty()) return "";
+        return Github.getApk(tag, BuildConfig.FLAVOR_mode + "-" + BuildConfig.FLAVOR_abi);
     }
 
     public Updater force() {
@@ -61,8 +61,12 @@ public class Updater implements Download.Callback, UpdateListener {
             JSONObject object = new JSONObject(OkHttp.string(getJson()));
             String name = object.optString("name");
             String desc = object.optString("desc");
+            String tag = object.optString("tag");
             int code = object.optInt("code");
             if (code <= BuildConfig.VERSION_CODE) return;
+            String url = getApk(tag);
+            if (url.isEmpty()) return;
+            download = Download.create(url, getFile());
             App.post(() -> show(activity, name, desc));
         } catch (Exception e) {
             e.printStackTrace();
@@ -77,13 +81,13 @@ public class Updater implements Download.Callback, UpdateListener {
     @Override
     public void onConfirm(View view) {
         view.setEnabled(false);
-        download.start(this);
+        if (download != null) download.start(this);
     }
 
     @Override
     public void onCancel(View view) {
         Setting.putUpdate(false);
-        download.cancel();
+        if (download != null) download.cancel();
         dismiss();
     }
 

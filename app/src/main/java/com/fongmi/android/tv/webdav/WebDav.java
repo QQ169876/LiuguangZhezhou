@@ -32,6 +32,20 @@ public class WebDav {
         return new Request.Builder().url(url).addHeader("Authorization", auth()).addHeader("Accept", "*/*");
     }
 
+    /**
+     * 目录/文件是否存在（PROPFIND Depth:0）。
+     * 207/200 = 存在；404 = 不存在；其他按异常抛出，方便把真实原因报给用户。
+     */
+    public static boolean exists(String url) throws IOException {
+        try (Response response = client.newCall(prepare(url).method("PROPFIND", null).addHeader("Depth", "0").build()).execute()) {
+            int code = response.code();
+            if (code == 207 || code == 200) return true;
+            if (code == 404) return false;
+            if (code == 401 || code == 403) throw new IOException("Auth failed (" + code + ")");
+            throw new IOException("PROPFIND failed (" + code + ")");
+        }
+    }
+
     public static void createFolder(String url) throws IOException {
         try (Response response = client.newCall(prepare(url).method("MKCOL", null).build()).execute()) {
             int code = response.code();
@@ -42,6 +56,10 @@ public class WebDav {
         }
     }
 
+    /**
+     * 同步前调用：逐级确认目录存在，缺了才 MKCOL。
+     * 之前的问题是只在部分路径检查过，远端目录不存在时 PUT 会直接 409/404 报错。
+     */
     public static void createFolders() throws IOException {
         String base = WebDavSetting.getFolderUrl();
         if (base.isEmpty()) throw new IOException("Address is empty");
@@ -52,7 +70,10 @@ public class WebDav {
         for (String part : base.substring(prefix.length()).split("/")) {
             if (part.isEmpty()) continue;
             builder.append(part).append("/");
-            createFolder(builder.toString());
+            String current = builder.toString();
+            if (exists(current)) continue;
+            createFolder(current);
+            if (!exists(current)) throw new IOException("MKCOL failed, folder missing: " + current);
         }
     }
 
@@ -69,11 +90,20 @@ public class WebDav {
     }
 
     public static void put(String url, String body) throws IOException {
+        int code = putOnce(url, body);
+        // 目录被第三方删掉/未建好时，坚果云等会返回 404/409，重建目录后重试一次
+        if (code == 404 || code == 409) {
+            createFolders();
+            code = putOnce(url, body);
+        }
+        if (code == 201 || code == 200 || code == 204) return;
+        if (code == 401 || code == 403) throw new IOException("Auth failed (" + code + ")");
+        throw new IOException("PUT failed (" + code + ")");
+    }
+
+    private static int putOnce(String url, String body) throws IOException {
         try (Response response = client.newCall(prepare(url).put(RequestBody.create(body, JSON)).build()).execute()) {
-            int code = response.code();
-            if (code == 201 || code == 200 || code == 204) return;
-            if (code == 401 || code == 403) throw new IOException("Auth failed (" + code + ")");
-            throw new IOException("PUT failed (" + code + ")");
+            return response.code();
         }
     }
 
