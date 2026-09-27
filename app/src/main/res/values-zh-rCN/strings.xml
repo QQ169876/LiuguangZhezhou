@@ -316,6 +316,14 @@
     <string name="push_fail">推送失败</string>
     <string name="push_empty">设备地址为空</string>
     <string name="push_received">已收到文件</string>
+    <string name="push_all">推送全部配置</string>
+    <string name="push_moon">推送影视站配置</string>
+    <string name="push_apk">推送本机安装包</string>
+    <string name="lan_hint">同一网络下的设备会自动出现在下面，选中一台再选要推送的内容</string>
+    <string name="lan_rescan">重新扫描</string>
+    <string name="lan_scanning">正在扫描 %1$d / %2$d</string>
+    <string name="lan_found">已发现 %1$d 台设备</string>
+    <string name="lan_empty">没找到其它设备：请确认对方已打开本应用，并且和本机连的是同一个网络</string>
 
     <!-- MoonTV -->
     <string name="setting_moontv">影视站同步</string>

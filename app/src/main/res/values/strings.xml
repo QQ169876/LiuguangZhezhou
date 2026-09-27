@@ -317,6 +317,14 @@
     <string name="push_fail">Push failed</string>
     <string name="push_empty">Device address is empty</string>
     <string name="push_received">File received</string>
+    <string name="push_all">Push all configs</string>
+    <string name="push_moon">Push site config</string>
+    <string name="push_apk">Push this APK</string>
+    <string name="lan_hint">Devices on the same network show up below. Pick one, then choose what to push.</string>
+    <string name="lan_rescan">Rescan</string>
+    <string name="lan_scanning">Scanning %1$d / %2$d</string>
+    <string name="lan_found">%1$d device(s) found</string>
+    <string name="lan_empty">No other device found. Open this app on the other device and keep both on the same network.</string>
 
     <!-- MoonTV -->
     <string name="setting_moontv">Site sync</string>

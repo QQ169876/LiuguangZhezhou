@@ -1,6 +1,9 @@
 package com.fongmi.android.tv.utils;
 
+import android.text.TextUtils;
+
 import com.fongmi.android.tv.Constant;
+import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Prefers;
@@ -40,6 +43,7 @@ public class Push {
     }
 
     public static void webdav(String host) throws Exception {
+        if (TextUtils.isEmpty(WebDavSetting.getUrl())) return;
         FormBody.Builder body = new FormBody.Builder();
         body.add("url", WebDavSetting.getUrl());
         body.add("user", WebDavSetting.getUser());
@@ -48,11 +52,52 @@ public class Push {
         post(host, "webdav", body.build());
     }
 
+    public static void moontv(String host) throws Exception {
+        if (TextUtils.isEmpty(MoonSetting.getUrl())) return;
+        FormBody.Builder body = new FormBody.Builder();
+        body.add("url", MoonSetting.getUrl());
+        body.add("user", MoonSetting.getUser());
+        body.add("pass", MoonSetting.getPass());
+        post(host, "moontv", body.build());
+    }
+
     public static void config(String host, String name, String text) throws Exception {
+        if (TextUtils.isEmpty(text)) return;
         FormBody.Builder body = new FormBody.Builder();
         body.add("name", name);
         body.add("text", text);
         post(host, "setting", body.build());
+    }
+
+    public static void all(String host, String name, String vod) throws Exception {
+        Throwable error = null;
+        int count = 0;
+        if (!TextUtils.isEmpty(WebDavSetting.getUrl())) {
+            try {
+                webdav(host);
+                count++;
+            } catch (Throwable e) {
+                error = e;
+            }
+        }
+        if (!TextUtils.isEmpty(MoonSetting.getUrl())) {
+            try {
+                moontv(host);
+                count++;
+            } catch (Throwable e) {
+                error = e;
+            }
+        }
+        if (!TextUtils.isEmpty(vod)) {
+            try {
+                config(host, name, vod);
+                count++;
+            } catch (Throwable e) {
+                error = e;
+            }
+        }
+        if (count == 0) throw new Exception("empty");
+        if (error != null) throw new Exception(error.getMessage());
     }
 
     public static void file(String host, File file) throws Exception {
