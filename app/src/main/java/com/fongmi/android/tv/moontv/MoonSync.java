@@ -6,6 +6,7 @@ import androidx.media3.common.C;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
@@ -16,8 +17,10 @@ import com.fongmi.android.tv.utils.Task;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -57,6 +60,7 @@ public class MoonSync {
     }
 
     private static void silent() {
+        if (System.currentTimeMillis() - MoonSetting.getLast() < TimeUnit.MINUTES.toMillis(2)) return;
         if (!busy.compareAndSet(false, true)) return;
         try {
             doPull();
@@ -103,6 +107,23 @@ public class MoonSync {
         String run() throws Exception;
     }
 
+    private static class Entry {
+
+        private final String source;
+        private final String id;
+        private final JSONObject item;
+
+        private Entry(String source, String id, JSONObject item) {
+            this.source = source;
+            this.id = id;
+            this.item = item;
+        }
+
+        private long time() {
+            return item.optLong("save_time", System.currentTimeMillis());
+        }
+    }
+
     private static String describe(Throwable e) {
         Throwable cause = e;
         while (cause.getCause() != null && cause.getMessage() == null) cause = cause.getCause();
@@ -126,23 +147,46 @@ public class MoonSync {
         return summary(records, favorites);
     }
 
-    private static int[] pullRecords(JSONObject remote, int cid) {
-        int add = 0, update = 0;
+    /**
+     * 站点里的记录可能很旧，而本机「最近观看」只显示 60 天内的，
+     * 这里把过老的时间压进窗口里（并保持原来的先后顺序），免得拉完看不见。
+     */
+    private static long visible(long time, int order) {
+        long floor = System.currentTimeMillis() - Constant.HISTORY_TIME + TimeUnit.DAYS.toMillis(1);
+        return time < floor ? floor + order * 1000L : time;
+    }
+
+    private static List<Entry> sort(JSONObject remote) {
+        List<Entry> items = new ArrayList<>();
         for (Iterator<String> it = keys(remote); it.hasNext(); ) {
             String name = it.next();
             String[] pair = split(name);
             if (pair == null) continue;
             JSONObject item = remote.optJSONObject(name);
             if (item == null) continue;
-            long saveTime = item.optLong("save_time", System.currentTimeMillis());
+            items.add(new Entry(pair[0], pair[1], item));
+        }
+        Collections.sort(items, (a, b) -> Long.compare(a.time(), b.time()));
+        return items;
+    }
+
+    private static int[] pullRecords(JSONObject remote, int cid) {
+        int add = 0, update = 0;
+        List<Entry> items = sort(remote);
+        for (int i = 0; i < items.size(); i++) {
+            Entry entry = items.get(i);
+            JSONObject item = entry.item;
+            long saveTime = visible(entry.time(), i);
             long duration = Math.round(item.optDouble("total_time", 0) * 1000);
             long position = Math.round(item.optDouble("play_time", 0) * 1000);
             if (duration <= 0) {
-                position = C.TIME_UNSET;
-                duration = C.TIME_UNSET;
+                position = 0;
+                duration = 0;
+            } else {
+                position = Math.min(position, duration);
             }
             History target = new History();
-            target.setKey(pair[0].concat(AppDatabase.SYMBOL).concat(pair[1]));
+            target.setKey(entry.source.concat(AppDatabase.SYMBOL).concat(entry.id));
             target.cid(cid);
             target.setVodName(item.optString("title"));
             target.setVodPic(item.optString("cover"));
@@ -172,16 +216,12 @@ public class MoonSync {
 
     private static int[] pullFavorites(JSONObject remote, int cid) {
         int add = 0, update = 0;
-        for (Iterator<String> it = keys(remote); it.hasNext(); ) {
-            String name = it.next();
-            String[] pair = split(name);
-            if (pair == null) continue;
-            JSONObject item = remote.optJSONObject(name);
-            if (item == null) continue;
-            long saveTime = item.optLong("save_time", System.currentTimeMillis());
+        for (Entry entry : sort(remote)) {
+            JSONObject item = entry.item;
+            long saveTime = entry.time();
             Keep target = new Keep();
-            target.setKey(pair[0].concat(AppDatabase.SYMBOL).concat(pair[1]));
-            target.setSiteName(siteName(pair[0], item.optString("source_name")));
+            target.setKey(entry.source.concat(AppDatabase.SYMBOL).concat(entry.id));
+            target.setSiteName(siteName(entry.source, item.optString("source_name")));
             target.setVodName(item.optString("title"));
             target.setVodPic(item.optString("cover"));
             target.setCreateTime(saveTime);
