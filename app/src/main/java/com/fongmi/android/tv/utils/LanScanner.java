@@ -125,13 +125,17 @@ public class LanScanner {
     private Device probe(String host, int[] ports) {
         for (int port : ports) {
             if (stop) return null;
-            Device device = request(host, port);
-            if (device != null) return device;
+            try {
+                Device device = request(host, port);
+                if (device != null) return device;
+            } catch (HostDownException e) {
+                return null;
+            }
         }
         return null;
     }
 
-    private Device request(String host, int port) {
+    private Device request(String host, int port) throws HostDownException {
         try (Response response = OkHttp.newCall(OkHttp.client(TIMEOUT), "http://" + host + ":" + port + "/device").execute()) {
             if (!response.isSuccessful() || response.body() == null) return null;
             Device device = Device.objectFrom(response.body().string());
@@ -140,9 +144,15 @@ public class LanScanner {
             if (device.getUuid().equals(self)) return null;
             device.setIp("http://" + host + ":" + port);
             return device;
+        } catch (java.net.SocketTimeoutException e) {
+            // 这个地址根本没人应答（大部分 IP 都是空的），后面的端口不用再试
+            throw new HostDownException();
         } catch (Throwable e) {
             return null;
         }
+    }
+
+    private static class HostDownException extends Exception {
     }
 
     private List<String> hosts() {
