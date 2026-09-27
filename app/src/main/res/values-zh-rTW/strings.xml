@@ -283,7 +283,8 @@
     <string name="webdav_url">服務位址</string>
     <string name="webdav_user">帳號</string>
     <string name="webdav_pass">密碼 / 金鑰</string>
-    <string name="webdav_folder">資料夾</string>
+    <string name="webdav_folder">同步標識</string>
+    <string name="webdav_folder_tip">相同標識的設備之間互相同步，預設 okmove</string>
     <string name="webdav_enable">啟用同步</string>
     <string name="webdav_auto">資料變更時自動同步</string>
     <string name="webdav_test">測試連線</string>

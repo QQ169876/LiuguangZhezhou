@@ -283,7 +283,8 @@
     <string name="webdav_url">服务地址</string>
     <string name="webdav_user">账号</string>
     <string name="webdav_pass">密码 / 密钥</string>
-    <string name="webdav_folder">文件夹</string>
+    <string name="webdav_folder">同步标识</string>
+    <string name="webdav_folder_tip">相同标识的设备之间互相同步，默认 okmove</string>
     <string name="webdav_enable">启用同步</string>
     <string name="webdav_auto">数据变化时自动同步</string>
     <string name="webdav_test">测试连接</string>

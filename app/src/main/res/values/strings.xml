@@ -284,7 +284,8 @@
     <string name="webdav_url">Address</string>
     <string name="webdav_user">Username</string>
     <string name="webdav_pass">Password / Key</string>
-    <string name="webdav_folder">Folder</string>
+    <string name="webdav_folder">Sync ID</string>
+    <string name="webdav_folder_tip">Devices with the same ID sync together (default: okmove)</string>
     <string name="webdav_enable">Enable sync</string>
     <string name="webdav_auto">Sync on change</string>
     <string name="webdav_test">Test</string>
