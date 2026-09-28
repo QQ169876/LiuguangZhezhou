@@ -5,8 +5,10 @@ import android.app.SearchManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -89,6 +91,9 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     private SiteViewModel mViewModel;
     private Result mResult;
     private Clock mClock;
+    private long mExitTime;
+
+    private static final long EXIT_INTERVAL = 3000;
 
     private Site getHome() {
         return VodConfig.get().getHome();
@@ -466,15 +471,30 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     @Override
     protected void onBackInvoked() {
         if (mBinding.progressLayout.isProgress()) {
+            mExitTime = 0;
             showContent();
         } else if (mPresenter.isDelete()) {
+            mExitTime = 0;
             setHistoryDelete(false);
         } else if (mBinding.recycler.getSelectedPosition() != 0) {
+            mExitTime = 0;
             mBinding.recycler.scrollToPosition(0);
+        } else if (PlaybackService.isRunning()) {
+            mExitTime = 0;
+            Util.moveToBackground(this);
+        } else if (System.currentTimeMillis() - mExitTime < EXIT_INTERVAL) {
+            mExitTime = 0;
+            super.onBackInvoked();
         } else {
-            if (PlaybackService.isRunning()) Util.moveToBackground(this);
-            else super.onBackInvoked();
+            mExitTime = System.currentTimeMillis();
+            showExitHint();
         }
+    }
+
+    private void showExitHint() {
+        Toast toast = Toast.makeText(this, R.string.home_exit, Toast.LENGTH_SHORT);
+        toast.setGravity(Gravity.CENTER, 0, 0);
+        toast.show();
     }
 
     @Override
