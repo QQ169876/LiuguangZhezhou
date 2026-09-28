@@ -1,0 +1,36 @@
+plugins {
+    alias libs.plugins.android.library
+}
+
+android {
+    namespace = 'com.fongmi.chaquo'
+
+    compileSdk libs.versions.compileSdk.get().toInteger()
+
+    defaultConfig {
+        minSdk rootProject.minSdkLevel
+        targetSdk libs.versions.targetSdk.get().toInteger()
+    }
+
+    flavorDimensions = ["abi"]
+
+    productFlavors {
+        arm64_v8a {
+            dimension "abi"
+        }
+        armeabi_v7a {
+            dimension "abi"
+        }
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+dependencies {
+    implementation project(':catvod')
+    coreLibraryDesugaring libs.desugar
+}

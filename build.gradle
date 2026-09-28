@@ -1,0 +1,31 @@
+plugins {
+    alias libs.plugins.android.application apply false
+    alias libs.plugins.android.library apply false
+    alias libs.plugins.chaquo.python apply false
+}
+
+// legacy=true（写在 local.properties 里）切到「老盒子兼容版」：
+// 去掉 Python 运行环境（chaquo 模块换成同名空壳），minSdk 降到 23，
+// 这样 Android 6.0 的小米盒子之类也能装（media3 播放器最低要求 23，降不动了）。
+def localProperties = new Properties()
+rootProject.file('local.properties').withInputStream { localProperties.load(it) }
+ext.legacy = 'true'.equals(localProperties.getProperty('legacy'))
+
+allprojects {
+    ext.minSdkLevel = rootProject.legacy ? 23 : libs.versions.minSdk.get().toInteger()
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}
+
+project(':app').tasks.matching { it.name ==~ /assemble.+Release/ }.configureEach {
+    doLast {
+        copy {
+            from fileTree("$rootDir/app/build/outputs/apk") { include '**/release/*.apk' }
+            into "$rootDir/Release/apk"
+            eachFile { it.path = it.name }
+            includeEmptyDirs = false
+        }
+    }
+}
