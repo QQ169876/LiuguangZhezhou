@@ -346,7 +346,7 @@
     <string name="moontv_user">站點帳號</string>
     <string name="moontv_pass">站點密碼</string>
     <string name="moontv_enable">啟用同步</string>
-    <string name="moontv_auto">開啟應用時自動拉取</string>
+    <string name="moontv_auto">自動雙向同步（看片/收藏後自動同步）</string>
     <string name="moontv_test">測試連線</string>
     <string name="moontv_scan">掃碼匯入</string>
     <string name="moontv_qrcode">產生 QR Code</string>
@@ -367,6 +367,12 @@
     <string name="moontv_test_fail">連線失敗</string>
     <string name="moontv_summary">拉取成功：進度 %1$d 條、收藏 %2$d 條（新增 %3$d / 更新 %4$d）</string>
     <string name="moontv_summary_sync">雙向同步完成：拉回 %1$d 條、上傳 %2$d 條</string>
+    <string name="moontv_dedupe">整理重複 %1$d 條</string>
+    <string name="moontv_summary_pull">已用站點資料覆蓋本機：觀看 %1$d 條、收藏 %2$d 條</string>
+    <string name="moontv_summary_push">已用本機資料覆蓋站點：觀看 %1$d 條、收藏 %2$d 條，站點端移除 %3$d 條</string>
+    <string name="moontv_removed">同步刪除 %1$d 條</string>
+    <string name="moontv_confirm_pull">「從站點拉取」會用站點資料完全覆蓋本機，本機上站點沒有的記錄會被清掉。確定繼續？</string>
+    <string name="moontv_confirm_push">「上傳到站點」會用本機資料完全覆蓋站點，站點上本機沒有的記錄會被刪除。確定繼續？</string>
 
     <!-- Player -->
     <string name="player">播放核心</string>
@@ -506,4 +512,29 @@
         <item>選擇字幕</item>
     </string-array>
 
+    <!-- proxy -->
+    <string name="proxy_title">代理</string>
+    <string name="proxy_sub">訂閱地址</string>
+    <string name="proxy_update">更新訂閱</string>
+    <string name="proxy_qrcode">掃碼填寫</string>
+    <string name="proxy_test">測延遲</string>
+    <string name="proxy_enable">啟用全域代理</string>
+    <string name="proxy_idle">空閒 1 分鐘自動斷開</string>
+    <string name="proxy_state">狀態：%1$s</string>
+    <string name="proxy_nodes">選擇節點</string>
+    <string name="proxy_link">節點連結</string>
+    <string name="proxy_add">新增節點</string>
+    <string name="proxy_running">已連線：%1$s</string>
+    <string name="proxy_stop">斷開</string>
+    <string name="proxy_notify_start">正在啟動…</string>
+    <string name="proxy_empty">沒有可用節點</string>
+    <string name="proxy_updated">已更新 %1$d 個節點</string>
+    <string name="proxy_update_fail">更新失敗：%1$s</string>
+    <string name="proxy_added">已新增 %1$d 個節點</string>
+    <string name="proxy_none">無節點</string>
+    <string name="proxy_off">未連線</string>
+    <string name="proxy_on">已連線</string>
+    <string name="proxy_permission">請允許 VPN 連線</string>
+    <string name="proxy_unsupported">不支援的連結</string>
+    <string name="proxy_auto">自動（最低延遲）</string>
 </resources>

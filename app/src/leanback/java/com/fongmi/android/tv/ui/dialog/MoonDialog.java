@@ -79,6 +79,7 @@ public class MoonDialog extends BaseAlertDialog {
         MoonSetting.putEnabled(binding.enable.isChecked());
         MoonSetting.putAuto(binding.auto.isChecked());
         MoonApi.reset();
+        MoonSync.touch();
     }
 
     private void onLan(View view) {
@@ -112,14 +113,27 @@ public class MoonDialog extends BaseAlertDialog {
 
     private void onPull(View view) {
         save();
-        Notify.progress(requireActivity());
-        MoonSync.pull(getListener());
+        confirm(R.string.moontv_pull, R.string.moontv_confirm_pull, () -> {
+            Notify.progress(requireActivity());
+            MoonSync.pull(getListener());
+        });
     }
 
     private void onPush(View view) {
         save();
-        Notify.progress(requireActivity());
-        MoonSync.push(getListener());
+        confirm(R.string.moontv_push, R.string.moontv_confirm_push, () -> {
+            Notify.progress(requireActivity());
+            MoonSync.push(getListener());
+        });
+    }
+
+    private void confirm(int title, int message, Runnable ok) {
+        new MaterialAlertDialogBuilder(requireActivity())
+                .setTitle(title)
+                .setMessage(message)
+                .setNegativeButton(R.string.dialog_negative, null)
+                .setPositiveButton(R.string.dialog_positive, (dialog, which) -> ok.run())
+                .show();
     }
 
     private void onSync(View view) {

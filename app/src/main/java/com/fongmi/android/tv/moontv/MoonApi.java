@@ -100,6 +100,28 @@ public class MoonApi {
         throw new IOException("Unauthorized");
     }
 
+    private static void del(String path) throws Exception {
+        for (int i = 0; i < 2; i++) {
+            if (cookie.isEmpty()) login();
+            JSONObject result = call(auth(path).delete());
+            if (result != null) return;
+            cookie = "";
+        }
+        throw new IOException("Unauthorized");
+    }
+
+    public static void deleteFavorite(String key) throws Exception {
+        del("/api/favorites?key=" + encode(key));
+    }
+
+    public static void deleteRecord(String key) throws Exception {
+        del("/api/playrecords?key=" + encode(key));
+    }
+
+    private static String encode(String key) {
+        return java.net.URLEncoder.encode(key, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     public static JSONObject favorites() throws Exception {
         return get("/api/favorites");
     }

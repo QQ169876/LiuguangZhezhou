@@ -27,6 +27,7 @@ import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.activity.ScanActivity;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.fongmi.android.tv.utils.Task;
 
 import java.util.Date;
@@ -86,6 +87,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
         MoonSetting.putEnabled(binding.enable.isChecked());
         MoonSetting.putAuto(binding.auto.isChecked());
         MoonApi.reset();
+        MoonSync.touch();
         if (hint) Notify.show(R.string.moontv_saved);
     }
 
@@ -125,14 +127,27 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     private void onPull(View view) {
         save(false);
-        Notify.progress(requireActivity());
-        MoonSync.pull(getListener());
+        confirm(R.string.moontv_pull, R.string.moontv_confirm_pull, () -> {
+            Notify.progress(requireActivity());
+            MoonSync.pull(getListener());
+        });
     }
 
     private void onPush(View view) {
         save(false);
-        Notify.progress(requireActivity());
-        MoonSync.push(getListener());
+        confirm(R.string.moontv_push, R.string.moontv_confirm_push, () -> {
+            Notify.progress(requireActivity());
+            MoonSync.push(getListener());
+        });
+    }
+
+    private void confirm(int title, int message, Runnable ok) {
+        new MaterialAlertDialogBuilder(requireActivity())
+                .setTitle(title)
+                .setMessage(message)
+                .setNegativeButton(R.string.dialog_negative, null)
+                .setPositiveButton(R.string.dialog_positive, (dialog, which) -> ok.run())
+                .show();
     }
 
     private void onSync(View view) {
@@ -157,7 +172,10 @@ public class MoonDialog extends BaseBottomSheetDialog {
         if (MoonCode.decode(text)) {
             Notify.show(R.string.moontv_saved);
             initView();
-            MoonSync.pull(getListener());
+            confirm(R.string.moontv_pull, R.string.moontv_confirm_pull, () -> {
+                Notify.progress(requireActivity());
+                MoonSync.pull(getListener());
+            });
         } else {
             Notify.show(R.string.moontv_scan_fail);
         }

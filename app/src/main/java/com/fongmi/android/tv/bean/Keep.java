@@ -9,6 +9,7 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Diffable;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
@@ -165,12 +166,20 @@ public class Keep implements Diffable<Keep> {
     public void save() {
         AppDatabase.get().getKeepDao().insertOrUpdate(this);
         SyncManager.touch();
+        MoonSync.touch();
     }
 
     public Keep delete() {
         AppDatabase.get().getKeepDao().delete(getCid(), getKey());
         SyncManager.touch();
+        MoonSync.touch();
         return this;
+    }
+
+    /** 用户主动删一条：记下来，下次同步时站点上这条也删掉 */
+    public Keep deleteUser() {
+        MoonSync.markDeleted(getKey(), true);
+        return delete();
     }
 
     @Override

@@ -64,6 +64,7 @@ import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.ui.adapter.ArrayAdapter;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
 import com.fongmi.android.tv.ui.adapter.FlagAdapter;
@@ -875,7 +876,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private void onKeep() {
         Keep keep = Keep.find(getHistoryKey());
         Notify.show(keep != null ? R.string.keep_del : R.string.keep_add);
-        if (keep != null) keep.delete();
+        if (keep != null) keep.deleteUser();
         else createKeep();
         checkKeepImg();
     }
@@ -1458,6 +1459,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     protected void onDestroy() {
         mClock.release();
         saveHistory(true);
+        MoonSync.touch();
         DanmakuApi.cancel();
         RefreshEvent.keep();
         App.removeCallbacks(mR1, mR2, mR3, mR4);

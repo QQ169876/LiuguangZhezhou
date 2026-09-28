@@ -15,6 +15,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Diffable;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.google.gson.annotations.SerializedName;
@@ -364,6 +365,7 @@ public class History implements Diffable<History> {
         saveTime = System.currentTimeMillis();
         AppDatabase.get().getHistoryDao().insertOrUpdate(this);
         SyncManager.touch();
+        MoonSync.touch();
         return this;
     }
 
@@ -371,7 +373,14 @@ public class History implements Diffable<History> {
         AppDatabase.get().getHistoryDao().delete(getCid(), getKey());
         AppDatabase.get().getTrackDao().delete(getKey());
         SyncManager.touch();
+        MoonSync.touch();
         return this;
+    }
+
+    /** 用户主动删一条：记下来，下次同步时站点上这条也删掉 */
+    public History deleteUser() {
+        MoonSync.markDeleted(getKey(), false);
+        return delete();
     }
 
     public void findEpisode(List<Flag> flags) {

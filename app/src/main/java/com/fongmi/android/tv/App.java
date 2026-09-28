@@ -15,6 +15,7 @@ import androidx.core.os.HandlerCompat;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.hook.Hook;
 import com.fongmi.android.tv.moontv.MoonSync;
+import com.fongmi.android.tv.proxy.ProxyBoot;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.github.catvod.Init;
 import com.google.gson.Gson;
@@ -29,6 +30,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
 
     private Activity activity;
     private Hook hook;
+    private int foreground;
 
     public App() {
         instance = this;
@@ -87,6 +89,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         registerActivityLifecycleCallbacks(this);
         SyncManager.boot();
         MoonSync.boot();
+        ProxyBoot.boot();
     }
 
     @Override
@@ -123,9 +126,12 @@ public class App extends Application implements Application.ActivityLifecycleCal
 
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
+        ++foreground;
     }
 
     @Override
     public void onActivityStopped(@NonNull Activity activity) {
+        if (--foreground > 0) return;
+        MoonSync.exit(); // 退到后台时补一次同步
     }
 }

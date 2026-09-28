@@ -16,6 +16,7 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
@@ -61,7 +62,12 @@ public class SyncManager {
     }
 
     public static void touch() {
+        if (MoonSync.isWriting()) return; // 站点同步写库时不反向触发
         post(20);
+    }
+
+    public static boolean isBusy() {
+        return busy.get();
     }
 
     private static synchronized void post(long delaySeconds) {

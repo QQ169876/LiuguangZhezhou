@@ -112,6 +112,18 @@
                     <button class="md-btn md-btn-filled md-btn-full" onclick="moontv()">確定</button>
                 </div>
             </div>
+            <!-- 代理 -->
+            <div id="panel8" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="proxy_url" class="md-input" type="text" placeholder="請輸入訂閱地址..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="proxy_link" class="md-input" type="text" placeholder="請輸入節點鏈接（可選）..." />
+                    </div>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="proxy()">確定</button>
+                </div>
+            </div>
         </div>
         <!-- M3 Navigation Bar -->
         <nav class="md-nav-bar">
@@ -156,6 +168,12 @@
                     <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M4 6.47L5.76 10H20v8H4V6.47M22 4h-4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4z"/></svg>
                 </div>
                 <span class="md-nav-label">影視站</span>
+            </div>
+            <div id="tab8" class="md-nav-item" onclick="showPanel(8)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+                </div>
+                <span class="md-nav-label">代理</span>
             </div>
         </nav>
     </div>

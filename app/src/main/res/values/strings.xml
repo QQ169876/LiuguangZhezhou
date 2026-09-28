@@ -347,7 +347,7 @@
     <string name="moontv_user">Username</string>
     <string name="moontv_pass">Password</string>
     <string name="moontv_enable">Enable sync</string>
-    <string name="moontv_auto">Pull on app start</string>
+    <string name="moontv_auto">Auto two-way sync</string>
     <string name="moontv_test">Test</string>
     <string name="moontv_scan">Scan QR</string>
     <string name="moontv_qrcode">QR code</string>
@@ -368,6 +368,12 @@
     <string name="moontv_test_fail">Connection failed</string>
     <string name="moontv_summary">Pulled: %1$d records, %2$d favorites (added %3$d / updated %4$d)</string>
     <string name="moontv_summary_sync">Two-way sync done: %1$d pulled, %2$d uploaded</string>
+    <string name="moontv_dedupe">merged %1$d duplicates</string>
+    <string name="moontv_summary_pull">Local data replaced by site: %1$d records, %2$d favorites</string>
+    <string name="moontv_summary_push">Site replaced by local data: %1$d records, %2$d favorites, %3$d removed on site</string>
+    <string name="moontv_removed">removed %1$d</string>
+    <string name="moontv_confirm_pull">Pull replaces all local data with the site data (local-only items are cleared). Continue?</string>
+    <string name="moontv_confirm_push">Upload replaces all site data with your local data (site-only items are deleted). Continue?</string>
 
     <!-- Player -->
     <string name="player">Player</string>
@@ -516,4 +522,29 @@
         <item>Select subtitle track</item>
     </string-array>
 
+    <!-- proxy -->
+    <string name="proxy_title">Proxy</string>
+    <string name="proxy_sub">Subscription URL</string>
+    <string name="proxy_update">Update</string>
+    <string name="proxy_qrcode">Scan to fill</string>
+    <string name="proxy_test">Test delay</string>
+    <string name="proxy_enable">Enable global proxy</string>
+    <string name="proxy_idle">Disconnect when idle for 1 minute</string>
+    <string name="proxy_state">State: %1$s</string>
+    <string name="proxy_nodes">Select node</string>
+    <string name="proxy_link">Node link</string>
+    <string name="proxy_add">Add node</string>
+    <string name="proxy_running">Connected: %1$s</string>
+    <string name="proxy_stop">Stop</string>
+    <string name="proxy_notify_start">Starting…</string>
+    <string name="proxy_empty">No node available</string>
+    <string name="proxy_updated">Updated %1$d nodes</string>
+    <string name="proxy_update_fail">Update failed: %1$s</string>
+    <string name="proxy_added">Added %1$d node(s)</string>
+    <string name="proxy_none">No node</string>
+    <string name="proxy_off">Disconnected</string>
+    <string name="proxy_on">Connected</string>
+    <string name="proxy_permission">Please allow the VPN connection</string>
+    <string name="proxy_unsupported">Unsupported link</string>
+    <string name="proxy_auto">Auto (lowest delay)</string>
 </resources>
