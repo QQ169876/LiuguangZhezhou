@@ -255,6 +255,7 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private void show(FragmentActivity activity, String version, String desc) {
         dismiss();
+        if (activity.isDestroyed() || activity.isFinishing()) return;
         dialog = UpdateDialog.create().title(ResUtil.getString(R.string.update_version, version)).desc(desc).listener(this).show(activity);
     }
 

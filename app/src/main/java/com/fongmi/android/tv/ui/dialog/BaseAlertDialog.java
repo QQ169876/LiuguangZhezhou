@@ -7,6 +7,8 @@ import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.DialogFragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.utils.ResUtil;
@@ -29,6 +31,19 @@ public abstract class BaseAlertDialog extends DialogFragment {
 
     protected MaterialAlertDialogBuilder builder() {
         return new MaterialAlertDialogBuilder(requireActivity());
+    }
+
+    /**
+     * 用 commitAllowingStateLoss 代替默认的 commit：
+     * 异步回调（比如更新探测完成）可能落在页面已经切走、状态已保存之后，
+     * 默认实现会抛 Can not perform this action after onSaveInstanceState 直接崩溃。
+     */
+    @Override
+    public void show(@NonNull FragmentManager manager, @Nullable String tag) {
+        if (manager.isDestroyed()) return;
+        FragmentTransaction transaction = manager.beginTransaction();
+        transaction.add(this, tag);
+        transaction.commitAllowingStateLoss();
     }
 
     protected void initView() {
