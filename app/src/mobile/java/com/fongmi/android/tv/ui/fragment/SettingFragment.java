@@ -120,6 +120,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private String getMoonTVText() {
         if (!MoonSetting.isValid()) return getString(R.string.moontv_off);
+        if (!MoonSetting.isEnabled()) return getString(R.string.moontv_ready, MoonSetting.getUrl());
         long time = MoonSetting.getLast();
         return time == 0 ? MoonSetting.getUrl() : getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time)));
     }

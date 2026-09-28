@@ -361,6 +361,8 @@
     <string name="moontv_busy">正在同步中</string>
     <string name="moontv_empty">站点网址或账号没填完整</string>
     <string name="moontv_saved">设置已保存</string>
+    <string name="moontv_lan_saved">已收到影视站配置，同步保持关闭，请确认站点账号后再手动开启</string>
+    <string name="moontv_ready">%1$s · 未启用同步</string>
     <string name="moontv_scan_fail">二维码内容不是影视站配置</string>
     <string name="moontv_test_ok">连接成功</string>
     <string name="moontv_test_fail">连接失败</string>

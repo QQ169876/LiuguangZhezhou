@@ -18,7 +18,6 @@ import com.fongmi.android.tv.event.ServerEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonApi;
 import com.fongmi.android.tv.moontv.MoonSetting;
-import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
@@ -103,16 +102,19 @@ public class Action implements Process {
         SyncManager.sync((success, message) -> Notify.show(message));
     }
 
+    /**
+     * 局域网 / 网页提交过来的影视站配置只落盘，不启用也不同步。
+     * 留给本机修改同步标识和账号的余地，确认无误后由「启用同步」开关手动开跑。
+     */
     private void onMoonTV(Map<String, String> params) {
         String url = params.get("url");
         if (TextUtils.isEmpty(url)) return;
         MoonSetting.putUrl(url);
         MoonSetting.putUser(params.get("user"));
         MoonSetting.putPass(params.get("pass"));
-        MoonSetting.putEnabled(true);
+        MoonSetting.putEnabled(false);
         MoonApi.reset();
-        App.post(() -> Notify.show(R.string.moontv_saved));
-        MoonSync.pull((success, message) -> Notify.show(message));
+        App.post(() -> Notify.show(R.string.moontv_lan_saved));
     }
 
     private void onMerge(Map<String, String> params) {

@@ -362,6 +362,8 @@
     <string name="moontv_busy">Sync is busy</string>
     <string name="moontv_empty">Site address or account is incomplete</string>
     <string name="moontv_saved">Settings saved</string>
+    <string name="moontv_lan_saved">Site config received, sync stays off. Turn it on manually after you check the account.</string>
+    <string name="moontv_ready">%1$s - sync off</string>
     <string name="moontv_scan_fail">Not a site sync QR code</string>
     <string name="moontv_test_ok">Connection successful</string>
     <string name="moontv_test_fail">Connection failed</string>

@@ -361,6 +361,8 @@
     <string name="moontv_busy">正在同步中</string>
     <string name="moontv_empty">站點網址或帳號沒填完整</string>
     <string name="moontv_saved">設定已儲存</string>
+    <string name="moontv_lan_saved">已收到影視站設定，同步維持關閉，請確認站點帳號後再手動開啟</string>
+    <string name="moontv_ready">%1$s · 未啟用同步</string>
     <string name="moontv_scan_fail">QR Code 內容不是影視站設定</string>
     <string name="moontv_test_ok">連線成功</string>
     <string name="moontv_test_fail">連線失敗</string>
