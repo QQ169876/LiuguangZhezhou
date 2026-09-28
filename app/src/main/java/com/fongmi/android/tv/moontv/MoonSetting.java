@@ -79,4 +79,23 @@ public class MoonSetting {
     public static boolean isSyncable() {
         return isEnabled() && isValid();
     }
+
+    /** 同步目标 = 站点网址 + 账号；换站点或换账号都等于换了一份数据源 */
+    public static String getScope() {
+        return getBase().concat("|").concat(getUser());
+    }
+
+    /** 上次由用户确认过「以哪边为准」的同步目标 */
+    private static String getConfirm() {
+        return Prefers.getString("moontv_confirm");
+    }
+
+    /** 目标换过之后还没选方向：true 表示需要先问一次，不能直接双向同步 */
+    public static boolean isSwitch() {
+        return !getConfirm().equals(getScope());
+    }
+
+    public static void putConfirm() {
+        Prefers.put("moontv_confirm", getScope());
+    }
 }

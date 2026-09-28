@@ -72,6 +72,7 @@ public class SyncManager {
 
     private static synchronized void post(long delaySeconds) {
         if (!WebDavSetting.isSyncable() || !WebDavSetting.isAuto()) return;
+        if (WebDavSetting.isSwitch()) return; // 目标换过还没选方向，先不动数据
         cancel();
         future = Task.scheduler().schedule(SyncManager::silent, delaySeconds, TimeUnit.SECONDS);
     }
@@ -90,6 +91,15 @@ public class SyncManager {
         } finally {
             busy.set(false);
         }
+    }
+
+    /**
+     * 换了同步地址、目录或账号：作废旧基线，
+     * 下次同步按本机与云端两边最新的数据重新合并。
+     */
+    public static void resetBase() {
+        File file = getBaseline();
+        if (file.exists()) file.delete();
     }
 
     public static void sync(Listener listener) {

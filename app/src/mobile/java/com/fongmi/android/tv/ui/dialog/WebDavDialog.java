@@ -83,6 +83,10 @@ public class WebDavDialog extends BaseBottomSheetDialog {
     }
 
     private void setLastText() {
+        if (WebDavSetting.isSyncable() && WebDavSetting.isSwitch()) {
+            binding.last.setText(R.string.sync_direction_wait);
+            return;
+        }
         long time = WebDavSetting.getLast();
         if (time == 0) binding.last.setText(R.string.webdav_off);
         else binding.last.setText(getString(R.string.webdav_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
@@ -124,18 +128,39 @@ public class WebDavDialog extends BaseBottomSheetDialog {
 
     private void onSync(View view) {
         save(false);
+        if (WebDavSetting.isSwitch()) {
+            SyncDirectionDialog.show(requireActivity(), this::onDirection);
+        } else {
+            Notify.progress(requireActivity());
+            SyncManager.sync(getListener());
+        }
+    }
+
+    /** 换过地址、目录或账号：作废旧基线，并把当前目标标记为已确认 */
+    private void checkSwitch() {
+        if (!WebDavSetting.isSwitch()) return;
+        SyncManager.resetBase();
+        WebDavSetting.putConfirm();
+    }
+
+    private void onDirection(int direction) {
+        checkSwitch();
         Notify.progress(requireActivity());
-        SyncManager.sync(getListener());
+        if (direction == SyncDirectionDialog.CLOUD) SyncManager.pull(getListener());
+        else if (direction == SyncDirectionDialog.LOCAL) SyncManager.push(getListener());
+        else SyncManager.sync(getListener());
     }
 
     private void onPush(View view) {
         save(false);
+        checkSwitch();
         Notify.progress(requireActivity());
         SyncManager.push(getListener());
     }
 
     private void onPull(View view) {
         save(false);
+        checkSwitch();
         Notify.progress(requireActivity());
         SyncManager.pull(getListener());
     }

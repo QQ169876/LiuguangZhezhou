@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/sync_direction_msg"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/cloud"
+        style="@style/DialogAction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:nextFocusDown="@id/local"
+        android:text="@string/sync_direction_cloud" />
+
+    <Button
+        android:id="@+id/local"
+        style="@style/DialogAction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:nextFocusDown="@id/merge"
+        android:nextFocusUp="@id/cloud"
+        android:text="@string/sync_direction_local" />
+
+    <Button
+        android:id="@+id/merge"
+        style="@style/DialogAction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:nextFocusUp="@id/local"
+        android:text="@string/sync_direction_merge" />
+
+</LinearLayout>

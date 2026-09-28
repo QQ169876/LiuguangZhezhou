@@ -360,6 +360,13 @@
     <string name="moontv_success">Sync successful</string>
     <string name="moontv_fail">Sync failed</string>
     <string name="moontv_busy">Sync is busy</string>
+
+    <string name="sync_direction_title">Choose which side wins</string>
+    <string name="sync_direction_msg">The sync address or account was just changed. To keep watch history and favorites from being mixed up, pick which data this sync should follow.</string>
+    <string name="sync_direction_cloud">Use cloud data (overwrite this device)</string>
+    <string name="sync_direction_local">Use this device (overwrite the cloud)</string>
+    <string name="sync_direction_merge">Merge (keep the newer side)</string>
+    <string name="sync_direction_wait">Waiting: pick a side (tap two-way sync)</string>
     <string name="moontv_empty">Site address or account is incomplete</string>
     <string name="moontv_saved">Settings saved</string>
     <string name="moontv_lan_saved">Site config received, sync stays off. Turn it on manually after you check the account.</string>

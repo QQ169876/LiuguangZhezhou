@@ -75,6 +75,10 @@ public class MoonDialog extends BaseBottomSheetDialog {
     }
 
     private void setLastText() {
+        if (MoonSetting.isSyncable() && MoonSetting.isSwitch()) {
+            binding.last.setText(R.string.sync_direction_wait);
+            return;
+        }
         long time = MoonSetting.getLast();
         if (time == 0) binding.last.setText(R.string.moontv_off);
         else binding.last.setText(getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
@@ -128,6 +132,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
     private void onPull(View view) {
         save(false);
         confirm(R.string.moontv_pull, R.string.moontv_confirm_pull, () -> {
+            checkSwitch();
             Notify.progress(requireActivity());
             MoonSync.pull(getListener());
         });
@@ -136,6 +141,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
     private void onPush(View view) {
         save(false);
         confirm(R.string.moontv_push, R.string.moontv_confirm_push, () -> {
+            checkSwitch();
             Notify.progress(requireActivity());
             MoonSync.push(getListener());
         });
@@ -152,8 +158,27 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     private void onSync(View view) {
         save(false);
+        if (MoonSetting.isSwitch()) {
+            SyncDirectionDialog.show(requireActivity(), this::onDirection);
+        } else {
+            Notify.progress(requireActivity());
+            MoonSync.sync(getListener());
+        }
+    }
+
+    /** 换过站点或账号：作废旧基线，并把当前目标标记为已确认 */
+    private void checkSwitch() {
+        if (!MoonSetting.isSwitch()) return;
+        MoonSync.resetBase();
+        MoonSetting.putConfirm();
+    }
+
+    private void onDirection(int direction) {
+        checkSwitch();
         Notify.progress(requireActivity());
-        MoonSync.sync(getListener());
+        if (direction == SyncDirectionDialog.CLOUD) MoonSync.pull(getListener());
+        else if (direction == SyncDirectionDialog.LOCAL) MoonSync.push(getListener());
+        else MoonSync.sync(getListener());
     }
 
     private MoonSync.Listener getListener() {

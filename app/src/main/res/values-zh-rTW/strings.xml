@@ -359,6 +359,13 @@
     <string name="moontv_success">同步成功</string>
     <string name="moontv_fail">同步失敗</string>
     <string name="moontv_busy">正在同步中</string>
+
+    <string name="sync_direction_title">選擇以哪邊為準</string>
+    <string name="sync_direction_msg">同步位址或帳號剛改動過。為避免不同人的觀看記錄、收藏互相混淆，請先選擇這次雙向同步以哪份資料為準。</string>
+    <string name="sync_direction_cloud">使用雲端資料（覆蓋本機）</string>
+    <string name="sync_direction_local">使用本機資料（覆蓋雲端）</string>
+    <string name="sync_direction_merge">合併資料（兩邊取最新）</string>
+    <string name="sync_direction_wait">待選擇同步方向（點「雙向同步」）</string>
     <string name="moontv_empty">站點網址或帳號沒填完整</string>
     <string name="moontv_saved">設定已儲存</string>
     <string name="moontv_lan_saved">已收到影視站設定，同步維持關閉，請確認站點帳號後再手動開啟</string>

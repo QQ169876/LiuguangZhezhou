@@ -78,6 +78,7 @@ public class MoonSync {
     private static synchronized void post(long delaySeconds) {
         cancel();
         if (!MoonSetting.isSyncable() || !MoonSetting.isAuto()) return;
+        if (MoonSetting.isSwitch()) return; // 目标换过还没选方向，先不动数据
         future = Task.scheduler().schedule(MoonSync::silent, delaySeconds, TimeUnit.SECONDS);
     }
 
@@ -114,6 +115,17 @@ public class MoonSync {
         }
     }
 
+    /**
+     * 换了站点或账号：把上次同步留下的基线和墓碑作废，
+     * 免得拿旧站点的记录去判断新站点上谁删了谁、谁新谁旧。
+     */
+    public static void resetBase() {
+        Prefers.put(BASE_RECORD, "");
+        Prefers.put(BASE_FAVORITE, "");
+        saveTomb(TOMB_RECORD, new JSONObject());
+        saveTomb(TOMB_FAVORITE, new JSONObject());
+    }
+
     public static void pull(Listener listener) {
         Task.execute(() -> notify(listener, MoonSync::doPullOverwrite));
     }
@@ -125,6 +137,7 @@ public class MoonSync {
     /** 退出应用时调一次，把这次的改动带上去 */
     public static void exit() {
         if (!MoonSetting.isSyncable() || !MoonSetting.isAuto()) return;
+        if (MoonSetting.isSwitch()) return; // 目标换过还没选方向，退出时也别动数据
         Task.execute(() -> {
             if (!busy.compareAndSet(false, true)) return;
             try {

@@ -115,4 +115,22 @@ public class WebDavSetting {
     public static String getFileUrl() {
         return getFolderUrl().concat(FILE);
     }
+
+    /** 同步目标 = 同步文件地址 + 账号；换地址、换目录或换账号都算换了一份数据源 */
+    public static String getScope() {
+        return getFileUrl().concat("|").concat(getUser());
+    }
+
+    private static String getConfirm() {
+        return Prefers.getString("webdav_confirm");
+    }
+
+    /** 目标换过之后还没选方向：true 表示需要先问一次，不能直接双向同步 */
+    public static boolean isSwitch() {
+        return !getConfirm().equals(getScope());
+    }
+
+    public static void putConfirm() {
+        Prefers.put("webdav_confirm", getScope());
+    }
 }
