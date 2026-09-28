@@ -3,6 +3,7 @@ package com.fongmi.android.tv.api.config;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.Decoder;
 import com.fongmi.android.tv.api.loader.BaseLoader;
 import com.fongmi.android.tv.bean.Config;
@@ -13,7 +14,10 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.utils.ConfigCache;
+import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Doh;
 import com.github.catvod.bean.Header;
@@ -68,6 +72,49 @@ public class VodConfig extends BaseConfig {
 
     public static void load(Config config, Callback callback) {
         get().clear().config(config).load(callback);
+    }
+
+    /**
+     * 强制更新点播源：不走缓存，直接联网拉最新配置。
+     * 拉到且内容正常 → 覆盖本地缓存、重建内存里的站点列表并通知界面刷新；
+     * 拉不到或内容不对 → 回退到本地缓存的那份，继续用旧源，由调用方提示失败。
+     */
+    public static void refresh(Callback callback) {
+        Config config = get().getConfig();
+        callback.start();
+        Task.submit(() -> refreshConfig(config, callback));
+    }
+
+    private static void refreshConfig(Config config, Callback callback) {
+        try {
+            if (TextUtils.isEmpty(config.getUrl())) {
+                App.post(() -> callback.error(""));
+                return;
+            }
+            Server.get().start();
+            String json = Decoder.getJson(UrlUtil.convert(config.getUrl()), TAG);
+            JsonObject object = Json.parse(json).getAsJsonObject();
+            if (object.has("msg")) throw new Exception(object.get("msg").getAsString());
+            if (!object.has("sites") && !object.has("urls")) throw new Exception("sites is empty");
+            ConfigCache.put(VOD, config.getUrl(), json);
+            get().checkJson(config, object);
+            if (get().getSites().isEmpty()) throw new Exception("sites is empty");
+            config.update();
+            App.post(() -> {
+                get().postEvent();
+                Notify.show(config.getNotice());
+                callback.success();
+            });
+        } catch (Throwable e) {
+            e.printStackTrace();
+            App.post(() -> {
+                if (get().getSites().isEmpty()) {
+                    get().loadCache(config); // 内存被清空了，用缓存那份顶回去
+                    get().postEvent();
+                }
+                callback.error(Notify.getError(R.string.error_config_get, e));
+            });
+        }
     }
 
     public VodConfig init() {

@@ -152,6 +152,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.restore.setOnClickListener(this::onRestore);
         mBinding.version.setOnClickListener(this::onVersion);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
+        mBinding.vodRefresh.setOnClickListener(this::onVodRefresh);
         mBinding.vodHome.setOnClickListener(this::onVodHome);
         mBinding.live.setOnLongClickListener(this::onLiveEdit);
         mBinding.liveHome.setOnClickListener(this::onLiveHome);
@@ -251,6 +252,27 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
     private boolean onWallEdit(View view) {
         ConfigDialog.create().wall().edit().show(this);
         return true;
+    }
+
+    private void onVodRefresh(View view) {
+        VodConfig.refresh(new Callback() {
+            @Override
+            public void start() {
+                Notify.progress(getActivity());
+            }
+
+            @Override
+            public void success() {
+                Notify.dismiss();
+                Notify.show(R.string.vod_refresh_success);
+            }
+
+            @Override
+            public void error(String msg) {
+                Notify.dismiss();
+                Notify.show(R.string.vod_refresh_fail);
+            }
+        });
     }
 
     private void onVodHome(View view) {

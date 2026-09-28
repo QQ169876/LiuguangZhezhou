@@ -54,6 +54,18 @@
             </androidx.appcompat.widget.LinearLayoutCompat>
 
             <androidx.appcompat.widget.AppCompatImageView
+                android:id="@+id/vodRefresh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/selector_item"
+                android:contentDescription="@string/setting_vod_refresh"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:padding="8dp"
+                android:src="@drawable/ic_setting_refresh" />
+
+            <androidx.appcompat.widget.AppCompatImageView
                 android:id="@+id/vodHome"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
