@@ -8,7 +8,6 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.BuildConfig;
 import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.adapter.LanAdapter;
@@ -23,9 +22,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 局域网同步（TV 端）：遥控器操作 —— 打开即扫描，列表中选一台设备，再选要推送的内容。
+ * 局域网推送配置（TV 端）：遥控器操作 —— 打开即扫描，列表中选一台设备，再勾选要推送的内容。
  */
 public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, LanAdapter.OnClickListener {
 
@@ -108,17 +109,21 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
     public void onItemClick(Device item) {
         target = item;
         Push.putHost(item.getIp());
-        String[] items = new String[]{getString(R.string.push_all), getString(R.string.push_config), getString(R.string.push_moon), getString(R.string.push_webdav), getString(R.string.push_apk)};
-        new MaterialAlertDialogBuilder(requireActivity()).setTitle(item.getName()).setItems(items, (dialog, which) -> {
-            Device device = target;
-            switch (which) {
-                case 0 -> run(() -> Push.all(device.getIp(), getString(R.string.push_config), VodConfig.getUrl()));
-                case 1 -> run(() -> Push.config(device.getIp(), getString(R.string.push_config), VodConfig.getUrl()));
-                case 2 -> run(() -> Push.moontv(device.getIp()));
-                case 3 -> run(() -> Push.webdav(device.getIp()));
-                case 4 -> run(() -> pushApk(device));
-            }
-        }).show();
+        PushChoice.show(requireActivity(), item.getName(), true, keys -> push(item, keys));
+    }
+
+    private void push(Device device, List<String> keys) {
+        List<String> data = new ArrayList<>(keys);
+        boolean apk = data.remove(Push.APK);
+        data.remove(Push.FILE);
+        if (data.isEmpty() && !apk) return;
+        if (data.isEmpty()) {
+            run(() -> pushApk(device), null);
+        } else {
+            run(() -> Push.run(device.getIp(), data), () -> {
+                if (apk) run(() -> pushApk(device), null);
+            });
+        }
     }
 
     private void pushApk(Device device) throws Exception {
@@ -130,7 +135,7 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
         Push.file(device.getIp(), file);
     }
 
-    private void run(Action action) {
+    private void run(Action action, Runnable next) {
         Notify.progress(getActivity());
         Task.execute(() -> {
             try {
@@ -138,6 +143,7 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
                 App.post(() -> {
                     Notify.dismiss();
                     Notify.show(R.string.push_done);
+                    if (next != null) next.run();
                 });
             } catch (Throwable e) {
                 String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();

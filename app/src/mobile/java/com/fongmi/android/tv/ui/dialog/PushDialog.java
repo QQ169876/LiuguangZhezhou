@@ -14,7 +14,6 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.adapter.LanAdapter;
@@ -28,9 +27,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 局域网同步：自动扫描网段列出设备，选一台后一键推送配置或文件。
+ * 局域网推送配置：自动扫描网段列出设备，选一台后勾选要推送的内容（可多选）。
  */
 public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Callback, LanAdapter.OnClickListener {
 
@@ -107,20 +108,24 @@ public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Call
     public void onItemClick(Device item) {
         target = item;
         Push.putHost(item.getIp());
-        String[] items = new String[]{getString(R.string.push_all), getString(R.string.push_config), getString(R.string.push_moon), getString(R.string.push_webdav), getString(R.string.push_file)};
-        new MaterialAlertDialogBuilder(requireActivity()).setTitle(item.getName()).setItems(items, (dialog, which) -> {
-            Device device = target;
-            switch (which) {
-                case 0 -> run(() -> Push.all(device.getIp(), getString(R.string.push_config), VodConfig.getUrl()));
-                case 1 -> run(() -> Push.config(device.getIp(), getString(R.string.push_config), VodConfig.getUrl()));
-                case 2 -> run(() -> Push.moontv(device.getIp()));
-                case 3 -> run(() -> Push.webdav(device.getIp()));
-                case 4 -> picker.launch("*/*");
-            }
-        }).show();
+        PushChoice.show(requireActivity(), item.getName(), false, keys -> push(item, keys));
     }
 
-    private void run(Action action) {
+    private void push(Device device, List<String> keys) {
+        List<String> data = new ArrayList<>(keys);
+        boolean file = data.remove(Push.FILE);
+        data.remove(Push.APK);
+        if (data.isEmpty() && !file) return;
+        if (data.isEmpty()) {
+            picker.launch("*/*");
+        } else {
+            run(() -> Push.run(device.getIp(), data), () -> {
+                if (file) picker.launch("*/*");
+            });
+        }
+    }
+
+    private void run(Action action, Runnable next) {
         Notify.progress(requireActivity());
         Task.execute(() -> {
             try {
@@ -128,6 +133,7 @@ public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Call
                 App.post(() -> {
                     Notify.dismiss();
                     Notify.show(R.string.push_done);
+                    if (next != null) next.run();
                 });
             } catch (Throwable e) {
                 String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -159,7 +165,7 @@ public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Call
             Notify.show(R.string.push_fail);
             return;
         }
-        run(() -> Push.file(device.getIp(), file));
+        run(() -> Push.file(device.getIp(), file), null);
     });
 
     @Override

@@ -306,7 +306,7 @@
     <string name="webdav_test_fail">Connection failed</string>
     <string name="webdav_lan">Fill by phone</string>
     <string name="webdav_lan_tip">Scan this code with your phone to fill the WebDAV settings</string>
-    <string name="setting_push">LAN push</string>
+    <string name="setting_push">LAN push config</string>
     <string name="push_host">Device address (http://ip:port)</string>
     <string name="push_scan">Scan QR</string>
     <string name="push_info_row">Empty = no target device yet. Fill by scanning or typing, then choose what to push.</string>
@@ -320,11 +320,24 @@
     <string name="push_all">Push all configs</string>
     <string name="push_moon">Push site config</string>
     <string name="push_apk">Push this APK</string>
-    <string name="lan_hint">Devices on the same network show up below. Pick one, then choose what to push.</string>
+    <string name="lan_hint">Devices on the same network show up below. Pick one, then tick what to push (multi select).</string>
     <string name="lan_rescan">Rescan</string>
     <string name="lan_scanning">Scanning %1$d / %2$d</string>
     <string name="lan_found">%1$d device(s) found</string>
     <string name="lan_empty">No other device found. Open this app on the other device and keep both on the same network.</string>
+    <string name="push_item_vod">VOD config</string>
+    <string name="push_item_live">Live config</string>
+    <string name="push_item_setting">System settings</string>
+    <string name="push_item_webdav">WebDAV sync settings</string>
+    <string name="push_item_history">History</string>
+    <string name="push_item_keep">Favorites</string>
+    <string name="push_item_moon">Site settings</string>
+    <string name="push_item_apk">This APK</string>
+    <string name="push_item_file">File</string>
+    <string name="push_select_all">Select all / none</string>
+    <string name="push_send">Push</string>
+    <string name="push_nothing">Nothing selected</string>
+    <string name="push_merged">Data received</string>
 
     <!-- MoonTV -->
     <string name="setting_moontv">Site sync</string>

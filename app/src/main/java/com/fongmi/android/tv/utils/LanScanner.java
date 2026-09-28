@@ -30,7 +30,7 @@ import okhttp3.Response;
  */
 public class LanScanner {
 
-    private static final long TIMEOUT = 600;
+    private static final long TIMEOUT = 1200;
     private static final int[] PORTS_FIRST = {9978, 9979, 9980, 9981, 9982};
     private static final int[] PORTS_LAST = {9983, 9984, 9985, 9986, 9987, 9988, 9989, 9990, 9991, 9992, 9993, 9994, 9995, 9996, 9997, 9998};
 

@@ -26,5 +26,7 @@
     <color name="white_70">#B3FFFFFF</color>
     <color name="white_80">#CCFFFFFF</color>
     <color name="white_90">#E6FFFFFF</color>
+    <color name="lan_icon">#B3FFFFFF</color>
+    <color name="lan_highlight">#33FFFFFF</color>
 
 </resources>

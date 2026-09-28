@@ -7,6 +7,7 @@ import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Config;
+import com.fongmi.android.tv.bean.Backup;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
@@ -24,6 +25,7 @@ import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.net.OkHttp;
@@ -60,6 +62,7 @@ public class Action implements Process {
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
             case "moontv" -> onMoonTV(params);
+            case "merge" -> onMerge(params);
             case "search" -> onSearch(params);
             case "setting" -> onSetting(params);
             case "refresh" -> onRefresh(params);
@@ -110,6 +113,15 @@ public class Action implements Process {
         MoonApi.reset();
         App.post(() -> Notify.show(R.string.moontv_saved));
         MoonSync.pull((success, message) -> Notify.show(message));
+    }
+
+    private void onMerge(Map<String, String> params) {
+        String json = params.get("data");
+        if (TextUtils.isEmpty(json)) return;
+        Task.execute(() -> {
+            SyncManager.applyPush(Backup.objectFrom(json));
+            App.post(() -> Notify.show(R.string.push_merged));
+        });
     }
 
     private void onSetting(Map<String, String> params) {

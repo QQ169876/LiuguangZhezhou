@@ -305,7 +305,7 @@
     <string name="webdav_test_fail">連線失敗</string>
     <string name="webdav_lan">掃碼輸入</string>
     <string name="webdav_lan_tip">用手機掃這個 QR Code，在網頁裡填寫 WebDAV 設定後送出</string>
-    <string name="setting_push">區域網路推送</string>
+    <string name="setting_push">區域網路推送設定</string>
     <string name="push_host">設備位址（http://IP:埠號）</string>
     <string name="push_scan">掃碼連線</string>
     <string name="push_info_row">位址空白表示尚未選擇設備，可掃碼或手動填寫，再選擇要推送的內容。</string>
@@ -319,11 +319,24 @@
     <string name="push_all">推送全部設定</string>
     <string name="push_moon">推送影視站設定</string>
     <string name="push_apk">推送本機安裝包</string>
-    <string name="lan_hint">同一網路下的設備會自動出現在下面，選中一台再選要推送的內容</string>
+    <string name="lan_hint">同一網路下的設備會自動出現在下面，選中一台再勾選要推送的內容（可多選）</string>
     <string name="lan_rescan">重新掃描</string>
     <string name="lan_scanning">正在掃描 %1$d / %2$d</string>
     <string name="lan_found">已發現 %1$d 台設備</string>
     <string name="lan_empty">沒找到其它設備：請確認對方已打開本應用，並且和本機連的是同一個網路</string>
+    <string name="push_item_vod">點播設定</string>
+    <string name="push_item_live">直播設定</string>
+    <string name="push_item_setting">系統設定</string>
+    <string name="push_item_webdav">WebDAV 同步設定</string>
+    <string name="push_item_history">歷史記錄</string>
+    <string name="push_item_keep">收藏記錄</string>
+    <string name="push_item_moon">影視站設定</string>
+    <string name="push_item_apk">本機安裝包</string>
+    <string name="push_item_file">檔案</string>
+    <string name="push_select_all">全選 / 全不選</string>
+    <string name="push_send">推送</string>
+    <string name="push_nothing">還沒有勾選要推送的內容</string>
+    <string name="push_merged">已收到推送的資料</string>
 
     <!-- MoonTV -->
     <string name="setting_moontv">影視站同步</string>

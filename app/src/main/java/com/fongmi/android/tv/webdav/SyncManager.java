@@ -14,6 +14,7 @@ import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
@@ -187,6 +188,55 @@ public class SyncManager {
     private static String getSummary(WebDavData data) {
         Backup backup = data.getData();
         return ResUtil.getString(R.string.webdav_success) + " (" + (backup.getHistory().size() + backup.getKeep().size()) + ")";
+    }
+
+    /* ---------- LAN push ---------- */
+
+    /**
+     * 只合并对方推送过来的部分（不做删除），没勾选的字段保持本机原样。
+     */
+    public static void applyPush(Backup data) {
+        Backup local = Backup.create();
+        boolean configChanged = false;
+        Map<String, History> localHistory = map(local.getHistory(), SyncManager::key);
+        Map<String, Keep> localKeep = map(local.getKeep(), SyncManager::key);
+        Map<String, Config> localConfig = map(local.getConfig(), SyncManager::key);
+        if (!data.getHistory().isEmpty()) {
+            for (History item : data.getHistory()) {
+                History old = localHistory.get(key(item));
+                if (old != null && same(old, item)) continue;
+                if (old != null) item.setCid(old.getCid());
+                AppDatabase.get().getHistoryDao().insertOrUpdate(item);
+            }
+        }
+        if (!data.getKeep().isEmpty()) {
+            for (Keep item : data.getKeep()) {
+                Keep old = localKeep.get(key(item));
+                if (old != null && same(old, item)) continue;
+                if (old != null) {
+                    item.setKey(old.getKey());
+                    item.setCid(old.getCid());
+                } else if (item.getType() == 0) {
+                    AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
+                }
+                AppDatabase.get().getKeepDao().insertOrUpdate(item);
+            }
+        }
+        if (!data.getConfig().isEmpty()) {
+            for (Config item : data.getConfig()) {
+                Config old = localConfig.get(key(item));
+                if (old != null && same(old, item)) continue;
+                if (old != null && item.getId() == 0) item.setId(old.getId());
+                AppDatabase.get().getConfigDao().insertOrUpdate(item);
+                configChanged = true;
+            }
+        }
+        if (!data.getPrefers().isEmpty()) applyPrefers(data.getPrefers(), local.getPrefers());
+        if (configChanged) reload();
+        App.post(() -> {
+            RefreshEvent.history();
+            RefreshEvent.keep();
+        });
     }
 
     /* ---------- baseline ---------- */
