@@ -33,6 +33,7 @@ import com.fongmi.android.tv.ui.dialog.DohDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
+import com.fongmi.android.tv.ui.dialog.RouteDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
@@ -94,6 +95,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
+        mBinding.routeText.setText(RouteDialog.text());
     }
 
     private String getWebDavText() {
@@ -129,6 +131,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.webdav.setOnClickListener(this::onWebDav);
         mBinding.moontv.setOnClickListener(this::onMoonTV);
+        mBinding.route.setOnClickListener(this::onRoute);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.restore.setOnClickListener(this::onRestore);
         mBinding.version.setOnClickListener(this::onVersion);
@@ -300,6 +303,10 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onMoonTV(View view) {
         MoonDialog.create().show(getActivity());
+    }
+
+    private void onRoute(View view) {
+        RouteDialog.show(this, () -> mBinding.routeText.setText(RouteDialog.text()));
     }
 
     private void onPush(View view) {

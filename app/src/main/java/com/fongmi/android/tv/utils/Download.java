@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.Future;
 
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 import okhttp3.Response;
 
 public class Download {
@@ -20,6 +22,7 @@ public class Download {
     private final String url;
     private Callback callback;
     private Future<?> future;
+    private OkHttpClient client;
     private long maxBytes;
     private String tag;
 
@@ -32,6 +35,12 @@ public class Download {
         this.tag = url;
         this.url = url;
         this.file = file;
+    }
+
+    /** 走指定客户端（比如 SOCKS5 线路）下载 */
+    public Download client(OkHttpClient client) {
+        this.client = client;
+        return this;
     }
 
     public Download tag(String tag) {
@@ -62,7 +71,7 @@ public class Download {
     }
 
     private void doInBackground() {
-        try (Response res = OkHttp.newCall(url, tag).execute()) {
+        try (Response res = call().execute()) {
             download(res.body().byteStream(), getLength(res));
             if (callback != null) App.post(() -> callback.success(file));
         } catch (Exception e) {
@@ -88,6 +97,11 @@ public class Download {
                 if (callback != null) App.post(() -> callback.progress(progress));
             }
         }
+    }
+
+    private okhttp3.Call call() {
+        if (client == null) return OkHttp.newCall(url, tag);
+        return client.newCall(new Request.Builder().url(url).get().build());
     }
 
     private double getLength(Response res) {

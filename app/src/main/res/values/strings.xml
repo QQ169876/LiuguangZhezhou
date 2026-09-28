@@ -452,6 +452,12 @@
     <string name="update_version">New version <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">Checking for updates…</string>
     <string name="update_confirm">Update</string>
+    <string name="setting_route">Update route</string>
+    <string name="route_auto">Auto (direct first)</string>
+    <string name="route_direct">Direct GitHub</string>
+    <string name="route_custom">Custom SOCKS5…</string>
+    <string name="route_hint">Proxy address, e.g. 192.168.1.100:1080</string>
+    <string name="route_bad">Wrong format, use host:port</string>
 
     <!-- Crash -->
     <string name="crash_info">An unexpected error occurred.\nSorry for the inconvenience.</string>

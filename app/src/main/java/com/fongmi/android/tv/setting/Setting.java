@@ -121,6 +121,30 @@ public class Setting {
         Prefers.put("update", update);
     }
 
+    public static boolean isRouteAuto() {
+        return Prefers.getBoolean("route_auto", true);
+    }
+
+    public static void putRouteAuto(boolean auto) {
+        Prefers.put("route_auto", auto);
+    }
+
+    public static String getRoute() {
+        return Prefers.getString("route");
+    }
+
+    public static void putRoute(String route) {
+        Prefers.put("route", route);
+    }
+
+    public static String getSocks() {
+        return Prefers.getString("route_socks");
+    }
+
+    public static void putSocks(String socks) {
+        Prefers.put("route_socks", socks);
+    }
+
     public static boolean isAdblock() {
         return Prefers.getBoolean("adblock", true);
     }

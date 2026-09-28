@@ -35,6 +35,7 @@ import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.MoonDialog;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
+import com.fongmi.android.tv.ui.dialog.RouteDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
@@ -109,6 +110,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
+        mBinding.routeText.setText(RouteDialog.text());
     }
 
     private String getWebDavText() {
@@ -140,6 +142,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.webdav.setOnClickListener(this::onWebDav);
         mBinding.moontv.setOnClickListener(this::onMoonTV);
+        mBinding.route.setOnClickListener(this::onRoute);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.backup.setOnClickListener(this::onBackup);
@@ -332,6 +335,10 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         MoonDialog.create().show(requireActivity());
     }
 
+    private void onRoute(View view) {
+        RouteDialog.show(requireActivity(), () -> mBinding.routeText.setText(RouteDialog.text()));
+    }
+
     private void onPush(View view) {
         PushDialog.create().show(requireActivity());
     }
@@ -395,6 +402,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         setCacheText();
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
+        mBinding.routeText.setText(RouteDialog.text());
     }
 
     @Override

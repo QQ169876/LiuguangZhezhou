@@ -452,6 +452,12 @@
     <string name="update_version">发现新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在检测更新…</string>
     <string name="update_confirm">更新</string>
+    <string name="setting_route">更新线路</string>
+    <string name="route_auto">自动（直连优先）</string>
+    <string name="route_direct">直连 GitHub</string>
+    <string name="route_custom">自定义 SOCKS5…</string>
+    <string name="route_hint">代理地址，如 192.168.1.100:1080</string>
+    <string name="route_bad">格式不对，请填 主机:端口</string>
 
     <!-- Crash -->
     <string name="crash_info">发生意外错误\n抱歉给您带来不便</string>
