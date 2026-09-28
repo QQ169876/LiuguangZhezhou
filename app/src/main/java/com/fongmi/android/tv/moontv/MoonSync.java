@@ -22,6 +22,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -202,9 +203,10 @@ public class MoonSync {
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        Map<String, long[]> skip = skipSnapshot();
         AppDatabase.get().getHistoryDao().delete(cid);
         AppDatabase.get().getKeepDao().delete();
-        int[] gotRecords = pullRecords(records, cid);
+        int[] gotRecords = pullRecords(records, cid, skip);
         int[] gotFavorites = pullFavorites(favorites, cid);
         saveBase(records, favorites, null, null);
         clearTomb();
@@ -258,6 +260,13 @@ public class MoonSync {
     }
 
     private static int[] pullRecords(JSONObject remote, int cid) {
+        return pullRecords(remote, cid, null);
+    }
+
+    /**
+     * @param skip 本机清空历史前抄下来的片头片尾（source+id → {片头, 片尾}），站点没存时用本机这份兜底
+     */
+    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip) {
         int add = 0, update = 0;
         List<Entry> items = sort(remote);
         for (int i = 0; i < items.size(); i++) {
@@ -266,6 +275,11 @@ public class MoonSync {
             long saveTime = visible(entry.time(), i);
             long duration = Math.round(item.optDouble("total_time", 0) * 1000);
             long position = Math.round(item.optDouble("play_time", 0) * 1000);
+            long opening = Math.round(item.optDouble("opening", 0) * 1000);
+            long ending = Math.round(item.optDouble("ending", 0) * 1000);
+            long[] local = skip == null ? null : skip.get(entry.source.concat("+").concat(entry.id));
+            if (opening <= 0 && local != null) opening = local[0];
+            if (ending <= 0 && local != null) ending = local[1];
             if (duration <= 0) {
                 position = 0;
                 duration = 0;
@@ -283,6 +297,8 @@ public class MoonSync {
             target.setPosition(position);
             target.setDuration(duration);
             target.setCreateTime(saveTime);
+            if (opening > 0) target.setOpening(opening);
+            if (ending > 0) target.setEnding(ending);
             History old = AppDatabase.get().getHistoryDao().find(cid, target.getKey());
             if (old == null) old = latest(AppDatabase.get().getHistoryDao().findByName(cid, target.getVodName()));
             if (old == null) {
@@ -295,6 +311,8 @@ public class MoonSync {
                 old.setPosition(position);
                 old.setDuration(duration);
                 old.setCreateTime(saveTime);
+                if (opening > 0) old.setOpening(opening);
+                if (ending > 0) old.setEnding(ending);
                 AppDatabase.get().getHistoryDao().insertOrUpdate(old);
                 ++update;
             }
@@ -547,6 +565,22 @@ public class MoonSync {
         return removed;
     }
 
+    /**
+     * 拉取会用站点数据整体覆盖本机，先把本机的片头片尾抄一份，
+     * 站点那边没存这个字段时不至于把设置弄丢。
+     */
+    private static Map<String, long[]> skipSnapshot() {
+        Map<String, long[]> result = new HashMap<>();
+        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+            String source = item.getSiteKey();
+            String id = item.getVodId();
+            if (source.isEmpty() || id.isEmpty()) continue;
+            if (item.getOpening() <= 0 && item.getEnding() <= 0) continue;
+            result.put(source.concat("+").concat(id), new long[]{Math.max(item.getOpening(), 0), Math.max(item.getEnding(), 0)});
+        }
+        return result;
+    }
+
     private static String norm(String text) {
         return text == null ? "" : text.replaceAll("\\s+", "").toLowerCase();
     }
@@ -569,6 +603,8 @@ public class MoonSync {
                 record.put("total_episodes", old == null ? 1 : old.optInt("total_episodes", 1));
                 record.put("play_time", Math.max(item.getPosition(), 0) / 1000);
                 record.put("total_time", Math.max(item.getDuration(), 0) / 1000);
+                record.put("opening", Math.max(item.getOpening(), 0) / 1000);
+                record.put("ending", Math.max(item.getEnding(), 0) / 1000);
                 record.put("save_time", saveTime);
                 record.put("search_title", "");
                 record.put("remarks", item.getVodRemarks());

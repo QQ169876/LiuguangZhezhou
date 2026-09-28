@@ -307,6 +307,15 @@ public class History implements Diffable<History> {
         if (getOpening() != C.TIME_UNSET) item.setOpening(getOpening());
     }
 
+    /**
+     * 片头 / 片尾是本机对某一部片子单独设的，同步过来的那条没设时保留本机原来设的，别被冲掉。
+     */
+    public static void keepSkip(History from, History to) {
+        if (from == null || to == null) return;
+        if (to.getOpening() <= 0 && from.getOpening() > 0) to.setOpening(from.getOpening());
+        if (to.getEnding() <= 0 && from.getEnding() > 0) to.setEnding(from.getEnding());
+    }
+
     public boolean canSave() {
         return getPosition() >= 0 && getDuration() > 0;
     }

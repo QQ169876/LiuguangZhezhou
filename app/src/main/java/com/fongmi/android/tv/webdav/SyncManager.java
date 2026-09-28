@@ -216,7 +216,10 @@ public class SyncManager {
             for (History item : data.getHistory()) {
                 History old = localHistory.get(key(item));
                 if (old != null && same(old, item)) continue;
-                if (old != null) item.setCid(old.getCid());
+                if (old != null) {
+                    item.setCid(old.getCid());
+                    History.keepSkip(old, item);
+                }
                 AppDatabase.get().getHistoryDao().insertOrUpdate(item);
             }
         }
@@ -386,8 +389,11 @@ public class SyncManager {
     }
 
     private static History newerHistory(History a, History b) {
-        if (b.getCreateTime() != a.getCreateTime()) return b.getCreateTime() > a.getCreateTime() ? b : a;
-        return Math.max(b.getPosition(), 0) > Math.max(a.getPosition(), 0) ? b : a;
+        History win;
+        if (b.getCreateTime() != a.getCreateTime()) win = b.getCreateTime() > a.getCreateTime() ? b : a;
+        else win = Math.max(b.getPosition(), 0) > Math.max(a.getPosition(), 0) ? b : a;
+        History.keepSkip(win == a ? b : a, win);
+        return win;
     }
 
     private static Keep newerKeep(Keep a, Keep b) {
@@ -462,7 +468,10 @@ public class SyncManager {
         for (History item : m.getHistory()) {
             History old = localHistory.get(key(item));
             if (old != null && same(old, item)) continue;
-            if (old != null) item.setCid(old.getCid());
+            if (old != null) {
+                item.setCid(old.getCid());
+                History.keepSkip(old, item);
+            }
             AppDatabase.get().getHistoryDao().insertOrUpdate(item);
         }
         for (Keep item : m.getKeep()) {
