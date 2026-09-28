@@ -8,6 +8,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.databinding.AdapterRouteBinding;
+import com.fongmi.android.tv.databinding.DialogRouteBinding;
 import com.fongmi.android.tv.databinding.DialogSocksBinding;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.setting.Setting;
@@ -20,7 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 更新线路：自动（直连优先）／直连／公益加速代理／本地 SOCKS5
+ * 更新线路：自动（直连优先）／直连／公益加速代理／自定义 SOCKS5。
+ * 自己加的代理每一行右边有个删除按钮，内置线路不给删。
  */
 public class RouteDialog {
 
@@ -45,32 +48,63 @@ public class RouteDialog {
         items.add(GhRoute.AUTO);
         items.add("");
         items.addAll(GhRoute.accel());
-        String socks = Setting.getSocks();
-        if (GhRoute.validSocks(socks)) items.add(GhRoute.SOCKS5 + socks);
         items.add(GhRoute.CUSTOM);
         return items;
-    }
-
-    private String[] labels(List<String> items) {
-        String[] labels = new String[items.size()];
-        for (int i = 0; i < items.size(); i++) labels[i] = label(items.get(i));
-        return labels;
     }
 
     private String label(String route) {
         if (GhRoute.AUTO.equals(route)) return ResUtil.getString(R.string.route_auto);
         if (GhRoute.CUSTOM.equals(route)) return ResUtil.getString(R.string.route_custom);
         if (GhRoute.isDirect(route)) return ResUtil.getString(R.string.route_direct);
+        if (GhRoute.isSocks(route)) return ResUtil.getString(R.string.route_socks_prefix, GhRoute.host(route));
         return GhRoute.host(route);
     }
 
+    private boolean checked(String route) {
+        if (GhRoute.CUSTOM.equals(route)) return false;
+        if (Setting.isRouteAuto()) return GhRoute.AUTO.equals(route);
+        String fixed = GhRoute.fixed();
+        return route.equals(fixed);
+    }
+
     private void show() {
-        List<String> items = items();
-        int checked = Math.max(0, Setting.isRouteAuto() ? items.indexOf(GhRoute.AUTO) : items.indexOf(String.valueOf(GhRoute.fixed())));
-        new AlertDialog.Builder(activity).setTitle(R.string.setting_route).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(labels(items), checked, (dialog, which) -> {
+        DialogRouteBinding binding = DialogRouteBinding.inflate(LayoutInflater.from(activity));
+        AlertDialog dialog = new AlertDialog.Builder(activity).setTitle(R.string.setting_route).setView(binding.getRoot()).setNegativeButton(R.string.dialog_negative, null).create();
+        render(binding.list, dialog);
+        dialog.show();
+    }
+
+    private void render(androidx.appcompat.widget.LinearLayoutCompat container, AlertDialog dialog) {
+        container.removeAllViews();
+        for (String route : items()) addRow(container, dialog, route);
+    }
+
+    private void addRow(androidx.appcompat.widget.LinearLayoutCompat container, AlertDialog dialog, String route) {
+        AdapterRouteBinding row = AdapterRouteBinding.inflate(LayoutInflater.from(activity), container, false);
+        row.text.setText(label(route));
+        row.check.setChecked(checked(route));
+        if (GhRoute.isSocks(route)) {
+            row.delete.setVisibility(View.VISIBLE);
+            row.delete.setOnClickListener(view -> onDelete(container, dialog, route));
+        }
+        row.getRoot().setOnClickListener(view -> {
             dialog.dismiss();
-            pick(items.get(which));
-        }).show();
+            pick(route);
+        });
+        container.addView(row.getRoot());
+    }
+
+    private void onDelete(androidx.appcompat.widget.LinearLayoutCompat container, AlertDialog dialog, String route) {
+        String socks = route.substring(GhRoute.SOCKS5.length());
+        GhRoute.removeCustom(route);
+        if (socks.equals(Setting.getSocks())) {
+            Setting.putSocks("");
+            Setting.putRoute("");
+            Setting.putRouteAuto(true);
+        }
+        Notify.show(R.string.route_removed);
+        changed();
+        render(container, dialog);
     }
 
     private void pick(String route) {
@@ -98,7 +132,7 @@ public class RouteDialog {
         DialogSocksBinding binding = DialogSocksBinding.inflate(LayoutInflater.from(activity));
         String socks = Setting.getSocks();
         if (GhRoute.validSocks(socks)) {
-            binding.host.setText(GhRoute.host(socks));
+            binding.host.setText(GhRoute.socksHost(socks));
             binding.port.setText(String.valueOf(GhRoute.port(socks)));
             binding.user.setText(GhRoute.user(socks));
             binding.pass.setText(GhRoute.pass(socks));
@@ -156,6 +190,7 @@ public class RouteDialog {
         Setting.putSocks(socks);
         Setting.putRoute("");
         Setting.putRouteAuto(false);
+        Setting.addRouteCustom(socks); // 存进自定义列表，之后可以在列表里删掉
         Notify.show(R.string.route_saved);
         changed();
     }

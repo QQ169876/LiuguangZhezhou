@@ -5,6 +5,7 @@ import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.server.process.Action;
+import com.fongmi.android.tv.server.process.Cast;
 import com.fongmi.android.tv.server.process.Cache;
 import com.fongmi.android.tv.server.process.Local;
 import com.fongmi.android.tv.server.process.Media;
@@ -35,6 +36,7 @@ public class Nano extends NanoHTTPD {
     private void addProcess() {
         process = new ArrayList<>();
         process.add(new Action());
+        process.add(new Cast());
         process.add(new Cache());
         process.add(new Local());
         process.add(new Media());

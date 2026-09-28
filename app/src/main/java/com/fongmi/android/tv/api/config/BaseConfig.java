@@ -10,6 +10,7 @@ import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Header;
@@ -124,6 +125,7 @@ abstract class BaseConfig {
             if (taskId.get() != id) return;
             if (cached) return;
             if (TextUtils.isEmpty(config.getUrl())) App.post(() -> callback.error(""));
+            else if (e instanceof OutOfMemoryError) App.post(() -> callback.error(ResUtil.getString(R.string.error_config_large)));
             else App.post(() -> callback.error(Notify.getError(R.string.error_config_get, e)));
         } finally {
             if (taskId.get() == id && (!cached || fresh)) postEvent();

@@ -39,7 +39,7 @@ public record DLNACast(CastVideo video, Runnable runnable) {
     private String buildMetaData() {
         try {
             DIDLContent content = new DIDLContent();
-            VideoItem item = new VideoItem("0", "-1", video.name(), "", new Res(new ProtocolInfo("http-get:*:video/*:*"), 0L, video.url()));
+            VideoItem item = new VideoItem("0", "-1", video.name(), "", new Res(new ProtocolInfo("http-get:*:video/*:*"), 0L, video.castUrl()));
             if (!video.headers().isEmpty()) item.addProperty(new DIDLObject.Property.DC.DESCRIPTION(App.gson().toJson(video.headers())));
             content.addItem(item);
             return new DIDLParser().generate(content);
@@ -49,7 +49,7 @@ public record DLNACast(CastVideo video, Runnable runnable) {
     }
 
     private SetAVTransportURI uriAction(ControlPoint control, RemoteService service) {
-        return new SetAVTransportURI(service, video.url(), buildMetaData()) {
+        return new SetAVTransportURI(service, video.castUrl(), buildMetaData()) {
             @Override
             public void success(ActionInvocation i) {
                 control.execute(playAction(control, service));

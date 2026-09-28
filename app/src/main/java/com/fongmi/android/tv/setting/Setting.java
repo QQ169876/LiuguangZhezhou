@@ -4,6 +4,10 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.utils.Prefers;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 public class Setting {
 
     private static final int MIN_WALL = 0;
@@ -143,6 +147,30 @@ public class Setting {
 
     public static void putSocks(String socks) {
         Prefers.put("route_socks", socks);
+    }
+
+    /** 用户自己存过的自定义代理（多条），内置线路不在这里 */
+    public static List<String> getRouteCustoms() {
+        String value = Prefers.getString("route_customs");
+        if (value.isEmpty()) return new ArrayList<>();
+        return new ArrayList<>(Arrays.asList(value.split("\\|")));
+    }
+
+    private static void putRouteCustoms(List<String> list) {
+        Prefers.put("route_customs", String.join("|", list));
+    }
+
+    public static void addRouteCustom(String socks) {
+        if (socks == null || socks.isEmpty()) return;
+        List<String> list = getRouteCustoms();
+        if (list.contains(socks)) return;
+        list.add(socks);
+        putRouteCustoms(list);
+    }
+
+    public static void removeRouteCustom(String socks) {
+        List<String> list = getRouteCustoms();
+        if (list.remove(socks)) putRouteCustoms(list);
     }
 
     public static boolean isAdblock() {

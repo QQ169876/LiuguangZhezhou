@@ -444,6 +444,8 @@
 
     <!-- Error -->
     <string name="error_config_get">配置取得失败</string>
+
+    <string name="error_config_large">点播源文件太大，本机处理不了，请换个小一些的源</string>
     <string name="error_play_next">已经是最后一集了！</string>
     <string name="error_play_prev">已经是第一集了！</string>
     <string name="error_play_parse">播放地址解析失败</string>
@@ -475,6 +477,11 @@
     <string name="route_hint">代理地址，如 192.168.1.100:1080</string>
     <string name="route_bad">地址或端口不对，端口要填数字</string>
     <string name="route_saved">SOCKS5 代理已保存</string>
+
+    <string name="route_delete">删除这个代理</string>
+    <string name="route_removed">代理已删除</string>
+    <string name="route_socks_prefix">SOCKS5 %1$s</string>
+    <string name="route_list_tip">选择更新走的线路，自己添加的可以用右边的删除按钮去掉</string>
     <string name="route_lan_tip">手机扫二维码，在网页里填好点确定，设备这边自动写入</string>
     <string name="route_clear">清除并恢复自动</string>
     <string name="route_scan">扫码录入</string>

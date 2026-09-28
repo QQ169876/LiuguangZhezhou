@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.dialog;
 
 import android.app.Activity;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.text.format.DateFormat;
@@ -72,6 +73,15 @@ public class MoonDialog extends BaseBottomSheetDialog {
         binding.scan.setOnClickListener(this::onScan);
         binding.qrcode.setOnClickListener(this::onQrCode);
         binding.moonLan.setOnClickListener(this::onLan);
+        binding.enable.setOnCheckedChangeListener((view, checked) -> save(false));
+        binding.auto.setOnCheckedChangeListener((view, checked) -> save(false));
+    }
+
+    /** 关掉对话框时兜底保存一次，改完直接退出也不会白改 */
+    @Override
+    public void onDismiss(@NonNull DialogInterface dialog) {
+        save(false);
+        super.onDismiss(dialog);
     }
 
     private void setLastText() {

@@ -1,9 +1,11 @@
 package com.fongmi.android.tv.ui.dialog;
 
+import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.text.format.DateFormat;
 import android.view.View;
 
+import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
 import androidx.viewbinding.ViewBinding;
 
@@ -65,6 +67,15 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.pull.setOnClickListener(this::onPull);
         binding.qrcode.setOnClickListener(this::onQrCode);
         binding.lan.setOnClickListener(this::onLan);
+        binding.enable.setOnCheckedChangeListener((view, checked) -> save());
+        binding.auto.setOnCheckedChangeListener((view, checked) -> save());
+    }
+
+    /** 关掉对话框时兜底保存一次，改完直接退出也不会白改 */
+    @Override
+    public void onDismiss(@NonNull DialogInterface dialog) {
+        save();
+        super.onDismiss(dialog);
     }
 
     private void onLan(View view) {

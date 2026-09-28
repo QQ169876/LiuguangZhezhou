@@ -97,6 +97,12 @@ public class CastDialog extends BaseBottomSheetDialog implements DeviceAdapter.O
         DLNACastManager.get().setDeviceListener(this);
         setRecyclerView();
         getDevice();
+        repeatSearch();
+    }
+
+    /** 有些大屏响应慢，连扫几轮更容易被搜到 */
+    private void repeatSearch() {
+        for (int i = 1; i <= 3; i++) App.post(() -> DLNACastManager.get().search(), i * 2000L);
     }
 
     @Override
@@ -133,6 +139,7 @@ public class CastDialog extends BaseBottomSheetDialog implements DeviceAdapter.O
             if (fm) scanTask.start();
             DLNACastManager.get().search();
             adapter.sort(DLNACastManager.get().getRegistered(), this::setRecyclerVisible);
+            repeatSearch();
         });
     }
 

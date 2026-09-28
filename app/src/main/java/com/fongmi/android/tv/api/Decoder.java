@@ -22,30 +22,55 @@ public class Decoder {
 
     private static final Pattern JS_URI = Pattern.compile("\"(\\.|\\.\\.)/(.?|.+?)\\.js\\?(.?|.+?)\"");
 
+    /** 超过这个体量的配置不再做正则扫描与整串替换，避免大文件把内存打爆 */
+    private static final int SCAN_LIMIT = 1024 * 1024;
+    /** 单个配置文件上限，超过直接报错，不让超大文件把 App 拖崩 */
+    private static final int MAX_SIZE = 24 * 1024 * 1024;
+
     public static String getJson(String url, String tag) throws Exception {
         try (Response res = OkHttp.newCall(url, tag).execute()) {
             HttpUrl httpUrl = res.request().url();
             int size = HttpUrl.parse(url).querySize();
             if (httpUrl.querySize() == size) url = httpUrl.toString();
-            return verify(url, res.body().string());
+            long length = res.body().contentLength();
+            if (length > MAX_SIZE) throw new Exception("config too large: " + length);
+            String data = res.body().string();
+            if (data.length() > MAX_SIZE) throw new Exception("config too large: " + data.length());
+            return verify(url, data);
         }
     }
 
     private static String verify(String url, String data) throws Exception {
         if (data.isEmpty()) throw new Exception();
-        if (Json.isObj(data)) return fix(url, data);
+        if (isJson(data)) return fix(url, data);
+        if (data.length() <= SCAN_LIMIT && Json.isObj(data)) return fix(url, data);
         if (data.contains("**")) data = base64(data);
         if (data.startsWith("2423")) data = cbc(data.replaceAll("\\s+", ""));
         return fix(url, data);
     }
 
+    /**
+     * 只看第一个有效字符判断是不是 JSON。
+     * 以前用 org.json 把整份配置再解析一遍来判断，大文件等于多占一份完整内存，是崩溃主因。
+     */
+    private static boolean isJson(String data) {
+        for (int i = 0; i < data.length(); i++) {
+            char c = data.charAt(i);
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
+            return c == '{' || c == '[';
+        }
+        return false;
+    }
+
     private static String fix(String url, String data) {
-        Matcher matcher = JS_URI.matcher(data);
-        while (matcher.find()) data = replace(url, data, matcher.group());
-        if (data.contains("../")) data = data.replace("../", UrlUtil.resolve(url, "../"));
-        if (data.contains("./")) data = data.replace("./", UrlUtil.resolve(url, "./"));
-        if (data.contains("__JS1__")) data = data.replace("__JS1__", "./");
-        if (data.contains("__JS2__")) data = data.replace("__JS2__", "../");
+        if (data.length() <= SCAN_LIMIT) {
+            Matcher matcher = JS_URI.matcher(data);
+            while (matcher.find()) data = replace(url, data, matcher.group());
+            if (data.contains("../")) data = data.replace("../", UrlUtil.resolve(url, "../"));
+            if (data.contains("./")) data = data.replace("./", UrlUtil.resolve(url, "./"));
+            if (data.contains("__JS1__")) data = data.replace("__JS1__", "./");
+            if (data.contains("__JS2__")) data = data.replace("__JS2__", "../");
+        }
         return data;
     }
 

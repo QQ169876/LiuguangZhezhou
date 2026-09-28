@@ -445,6 +445,8 @@
 
     <!-- Error -->
     <string name="error_config_get">Configuration get failed</string>
+
+    <string name="error_config_large">The vod source file is too big for this device, please use a smaller one</string>
     <string name="error_play_next">It\'s the last episode!</string>
     <string name="error_play_prev">It\'s the first episode!</string>
     <string name="error_play_parse">Unable to parse url</string>
@@ -475,6 +477,11 @@
     <string name="route_hint">Proxy address, e.g. 192.168.1.100:1080</string>
     <string name="route_bad">Wrong host or port</string>
     <string name="route_saved">SOCKS5 proxy saved</string>
+
+    <string name="route_delete">Remove this proxy</string>
+    <string name="route_removed">Proxy removed</string>
+    <string name="route_socks_prefix">SOCKS5 %1$s</string>
+    <string name="route_list_tip">Pick a line for updates; custom ones can be removed with the trash icon</string>
     <string name="route_lan_tip">Scan the QR code with your phone, fill in the form and submit</string>
     <string name="route_clear">Clear (back to auto)</string>
     <string name="route_scan">Scan to fill</string>

@@ -53,8 +53,16 @@ public class GhRoute {
         });
     }
 
+    /** 内置公益加速（不可删除） + 用户自己存的自定义代理（可删除） */
     public static List<String> accel() {
-        return Arrays.asList(ACCEL);
+        List<String> result = new ArrayList<>(Arrays.asList(ACCEL));
+        for (String socks : Setting.getRouteCustoms()) if (validSocks(socks)) result.add(SOCKS5 + socks);
+        return result;
+    }
+
+    public static void removeCustom(String route) {
+        if (!isSocks(route)) return;
+        Setting.removeRouteCustom(route.substring(SOCKS5.length()));
     }
 
     public static boolean isDirect(String route) {
@@ -169,6 +177,7 @@ public class GhRoute {
         List<String> result = new ArrayList<>();
         result.add("");
         for (String host : ACCEL) result.add(host);
+        for (String socks : Setting.getRouteCustoms()) if (validSocks(socks)) result.add(SOCKS5 + socks);
         String socks = Setting.getSocks();
         if (validSocks(socks)) result.add(SOCKS5 + socks);
         return result;

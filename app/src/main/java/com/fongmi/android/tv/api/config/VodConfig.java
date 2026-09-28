@@ -18,6 +18,7 @@ import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.sync.SyncProfile;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Doh;
@@ -113,7 +114,8 @@ public class VodConfig extends BaseConfig {
                     get().loadCache(config); // 内存被清空了，用缓存那份顶回去
                     get().postEvent();
                 }
-                callback.error(Notify.getError(R.string.error_config_get, e));
+                if (e instanceof OutOfMemoryError) callback.error(ResUtil.getString(R.string.error_config_large));
+                else callback.error(Notify.getError(R.string.error_config_get, e));
             });
         }
     }

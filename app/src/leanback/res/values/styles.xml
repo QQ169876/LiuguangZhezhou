@@ -1,7 +1,25 @@
 <resources>
 
+    <!-- 固定深蓝色调：TV 端同样不再用默认的灰绿配色 -->
     <style name="Theme.Base" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/white</item>
+        <item name="colorPrimary">@color/blue_primary</item>
+        <item name="colorOnPrimary">@color/blue_on_primary</item>
+        <item name="colorPrimaryContainer">@color/blue_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/blue_on_primary_container</item>
+        <item name="colorSecondary">@color/blue_secondary</item>
+        <item name="colorOnSecondary">@color/blue_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/blue_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/blue_on_secondary_container</item>
+        <item name="colorSurface">@color/blue_surface</item>
+        <item name="colorOnSurface">@color/blue_on_surface</item>
+        <item name="colorSurfaceVariant">@color/blue_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/blue_on_surface_variant</item>
+        <item name="colorOutline">@color/blue_outline</item>
+        <item name="colorError">@color/blue_error</item>
+        <item name="colorOnError">@color/blue_on_error</item>
+        <item name="android:colorBackground">@color/blue_bg</item>
+        <item name="android:windowBackground">@color/blue_bg</item>
+
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:windowTranslucentNavigation">true</item>
@@ -10,14 +28,14 @@
 
     <style name="Theme.Splash" parent="Theme.SplashScreen">
         <item name="postSplashScreenTheme">@style/Theme.App</item>
-        <item name="windowSplashScreenBackground">#141218</item>
+        <item name="windowSplashScreenBackground">@color/blue_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
     </style>
 
     <style name="Theme.App" parent="Theme.Base" />
 
     <style name="Theme.Crash" parent="Theme.Base">
-        <item name="android:windowBackground">@color/grey_800</item>
+        <item name="android:windowBackground">@color/blue_bg</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
 
