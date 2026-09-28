@@ -22,6 +22,10 @@ public class MoonCode {
         }
     }
 
+    /**
+     * 扫码导入只写站点网址 / 账号 / 密码，不启用同步。
+     * 由用户确认账号无误后手动打开「启用同步」。
+     */
     public static boolean decode(String text) {
         if (text == null || !text.trim().startsWith("{")) return false;
         try {
@@ -33,7 +37,7 @@ public class MoonCode {
             MoonSetting.putUrl(url);
             MoonSetting.putUser(user);
             MoonSetting.putPass(decodePass(object.optString("pass")));
-            MoonSetting.putEnabled(true);
+            MoonSetting.putEnabled(false);
             return true;
         } catch (Exception e) {
             return false;

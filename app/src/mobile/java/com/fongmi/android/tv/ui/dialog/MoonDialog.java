@@ -170,7 +170,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     private void apply(String text) {
         if (MoonCode.decode(text)) {
-            Notify.show(R.string.moontv_saved);
+            Notify.show(R.string.moontv_lan_saved);
             initView();
             confirm(R.string.moontv_pull, R.string.moontv_confirm_pull, () -> {
                 Notify.progress(requireActivity());
