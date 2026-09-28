@@ -113,6 +113,25 @@
                     <button class="md-btn md-btn-filled md-btn-full" onclick="moontv()">確定</button>
                 </div>
             </div>
+            <!-- SOCKS5 代理 -->
+            <div id="panel8" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="socks_host" class="md-input" type="text" placeholder="請輸入代理地址..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="socks_port" class="md-input" type="text" placeholder="請輸入埠號，如 1080" />
+                    </div>
+                    <div class="md-field">
+                        <input id="socks_user" class="md-input" type="text" placeholder="用戶名（免認證可留空）" />
+                    </div>
+                    <div class="md-field">
+                        <input id="socks_pass" class="md-input" type="password" placeholder="密碼（免認證可留空）" />
+                    </div>
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:var(--md-on-surface-variant)">格式 socks5://用戶名:密碼@地址:埠號，免認證的只填地址和埠號。</p>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="socks()">確定</button>
+                </div>
+            </div>
         </div>
         <!-- M3 Navigation Bar -->
         <nav class="md-nav-bar">
@@ -158,6 +177,10 @@
                 </div>
                 <span class="md-nav-label">影視站</span>
             </div>
+            <div id="tab8" class="md-nav-item" onclick="showPanel(8)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.18 5 4.05 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                </div>
                 <span class="md-nav-label">代理</span>
             </div>
         </nav>

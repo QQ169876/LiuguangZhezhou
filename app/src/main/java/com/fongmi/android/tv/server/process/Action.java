@@ -22,7 +22,9 @@ import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.FileUtil;
+import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.webdav.SyncManager;
@@ -61,6 +63,7 @@ public class Action implements Process {
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
             case "moontv" -> onMoonTV(params);
+            case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
             case "search" -> onSearch(params);
             case "setting" -> onSetting(params);
@@ -115,6 +118,21 @@ public class Action implements Process {
         MoonSetting.putEnabled(false);
         MoonApi.reset();
         App.post(() -> Notify.show(R.string.moontv_lan_saved));
+    }
+
+    /**
+     * 网页 / 局域网提交的 SOCKS5：地址、端口、账号分开传，账号可空
+     */
+    private void onSocks(Map<String, String> params) {
+        String host = params.get("host");
+        String port = params.get("port");
+        if (TextUtils.isEmpty(host) || TextUtils.isEmpty(port)) return;
+        String socks = GhRoute.socks(host, port, params.get("user"), params.get("pass"));
+        if (!GhRoute.validSocks(socks)) return;
+        Setting.putSocks(socks);
+        Setting.putRoute("");
+        Setting.putRouteAuto(false);
+        App.post(() -> Notify.show(R.string.route_saved));
     }
 
     private void onMerge(Map<String, String> params) {

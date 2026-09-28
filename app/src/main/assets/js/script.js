@@ -33,6 +33,11 @@ function moontv() {
     warnToast('已提交，請查看設備提示');
 }
 
+function socks() {
+    doAction('socks', { host: $('#socks_host').val(), port: $('#socks_port').val(), user: $('#socks_user').val(), pass: $('#socks_pass').val() });
+    warnToast('已提交，請查看設備提示');
+}
+
 function sendDanmaku() {
     const text = $('#danmaku_text').val().trim();
     if (!text) return;
@@ -271,7 +276,7 @@ function warnToast(msg) {
 }
 
 function showPanel(id) {
-    for (let i = 1; i <= 7; i++) {
+    for (let i = 1; i <= 8; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
@@ -327,5 +332,6 @@ $(function () {
     $('#setting_name, #setting_text').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); setting(); } });
     $('#webdav_url, #webdav_user, #webdav_pass, #webdav_folder').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); webdav(); } });
     $('#moontv_url, #moontv_user, #moontv_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); moontv(); } });
+    $('#socks_host, #socks_port, #socks_user, #socks_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); socks(); } });
     $('#newFolderContent').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); confirmNewFolder(1); } });
 });

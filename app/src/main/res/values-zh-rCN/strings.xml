@@ -459,7 +459,17 @@
     <string name="route_direct">直连 GitHub</string>
     <string name="route_custom">自定义 SOCKS5…</string>
     <string name="route_hint">代理地址，如 192.168.1.100:1080</string>
-    <string name="route_bad">格式不对，请填 主机:端口</string>
+    <string name="route_bad">地址或端口不对，端口要填数字</string>
+    <string name="route_saved">SOCKS5 代理已保存</string>
+    <string name="route_lan_tip">手机扫二维码，在网页里填好点确定，设备这边自动写入</string>
+    <string name="route_clear">清除并恢复自动</string>
+    <string name="route_scan">扫码录入</string>
+    <string name="route_pass">密码（可留空）</string>
+    <string name="route_user">用户名（可留空）</string>
+    <string name="route_port">端口</string>
+    <string name="route_host_tip">如 192.168.1.100，也可以整串粘贴 socks5://user:pwd@1.2.3.4:1080</string>
+    <string name="route_host">地址</string>
+    <string name="route_tip">格式 socks5://用户名:密码@地址:端口，免认证的只填地址和端口</string>
 
     <!-- Crash -->
     <string name="crash_info">发生意外错误\n抱歉给您带来不便</string>

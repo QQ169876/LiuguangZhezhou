@@ -459,7 +459,17 @@
     <string name="route_direct">Direct GitHub</string>
     <string name="route_custom">Custom SOCKS5…</string>
     <string name="route_hint">Proxy address, e.g. 192.168.1.100:1080</string>
-    <string name="route_bad">Wrong format, use host:port</string>
+    <string name="route_bad">Wrong host or port</string>
+    <string name="route_saved">SOCKS5 proxy saved</string>
+    <string name="route_lan_tip">Scan the QR code with your phone, fill in the form and submit</string>
+    <string name="route_clear">Clear (back to auto)</string>
+    <string name="route_scan">Scan to fill</string>
+    <string name="route_pass">Password (optional)</string>
+    <string name="route_user">Username (optional)</string>
+    <string name="route_port">Port</string>
+    <string name="route_host_tip">e.g. 192.168.1.100, or paste socks5://user:pass@1.2.3.4:1080</string>
+    <string name="route_host">Host</string>
+    <string name="route_tip">Format: socks5://user:pass@host:port — credentials are optional</string>
 
     <!-- Crash -->
     <string name="crash_info">An unexpected error occurred.\nSorry for the inconvenience.</string>
