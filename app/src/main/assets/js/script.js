@@ -33,11 +33,6 @@ function moontv() {
     warnToast('已提交，請查看設備提示');
 }
 
-function proxy() {
-    doAction('proxy', { url: $('#proxy_url').val(), link: $('#proxy_link').val() });
-    warnToast('已提交，請查看設備提示');
-}
-
 function sendDanmaku() {
     const text = $('#danmaku_text').val().trim();
     if (!text) return;
@@ -276,14 +271,13 @@ function warnToast(msg) {
 }
 
 function showPanel(id) {
-    for (let i = 1; i <= 8; i++) {
+    for (let i = 1; i <= 7; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
     if (id === 5 && document.getElementById('file_list').innerHTML === '') listFile('');
     if (id === 6) loadWebDav();
     if (id === 7) loadMoonTV();
-    if (id === 8) loadProxy();
 }
 
 function loadWebDav() {
@@ -335,9 +329,3 @@ $(function () {
     $('#moontv_url, #moontv_user, #moontv_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); moontv(); } });
     $('#newFolderContent').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); confirmNewFolder(1); } });
 });
-
-function loadProxy() {
-    $.get('/proxy', function (data) {
-        if (data) $('#proxy_url').val(data);
-    });
-}

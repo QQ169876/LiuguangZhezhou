@@ -19,8 +19,6 @@ import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonApi;
 import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.moontv.MoonSync;
-import com.fongmi.android.tv.proxy.ProxySetting;
-import com.fongmi.android.tv.proxy.ProxySub;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
@@ -64,7 +62,6 @@ public class Action implements Process {
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
             case "moontv" -> onMoonTV(params);
-            case "proxy" -> onProxy(params);
             case "merge" -> onMerge(params);
             case "search" -> onSearch(params);
             case "setting" -> onSetting(params);
@@ -116,19 +113,6 @@ public class Action implements Process {
         MoonApi.reset();
         App.post(() -> Notify.show(R.string.moontv_saved));
         MoonSync.pull((success, message) -> Notify.show(message));
-    }
-
-    private void onProxy(Map<String, String> params) {
-        String url = params.get("url");
-        String link = params.get("link");
-        if (!TextUtils.isEmpty(url)) {
-            ProxySetting.putSub(url);
-            ProxySub.update((count, error) -> Notify.show(error == null ? App.get().getString(R.string.proxy_updated, count) : App.get().getString(R.string.proxy_update_fail, error)));
-        }
-        if (!TextUtils.isEmpty(link)) {
-            int count = ProxySub.add(link);
-            if (count > 0) App.post(() -> Notify.show(App.get().getString(R.string.proxy_added, count)));
-        }
     }
 
     private void onMerge(Map<String, String> params) {

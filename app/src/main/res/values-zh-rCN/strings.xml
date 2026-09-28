@@ -261,7 +261,6 @@
     <string name="setting_custom">自定义</string>
     <string name="setting_size">图片尺寸</string>
     <string name="setting_doh">DoH</string>
-    <string name="setting_proxy">代理</string>
     <string name="setting_cache">缓存</string>
     <string name="setting_backup">备份</string>
     <string name="setting_restore">恢复</string>
@@ -512,29 +511,4 @@
         <item>选择字幕</item>
     </string-array>
 
-    <!-- proxy -->
-    <string name="proxy_title">代理</string>
-    <string name="proxy_sub">订阅地址</string>
-    <string name="proxy_update">更新订阅</string>
-    <string name="proxy_qrcode">扫码填写</string>
-    <string name="proxy_test">测延时</string>
-    <string name="proxy_enable">启用全局代理</string>
-    <string name="proxy_idle">空闲 1 分钟自动断开</string>
-    <string name="proxy_state">状态：%1$s</string>
-    <string name="proxy_nodes">选择节点</string>
-    <string name="proxy_link">节点链接</string>
-    <string name="proxy_add">添加节点</string>
-    <string name="proxy_running">已连接：%1$s</string>
-    <string name="proxy_stop">断开</string>
-    <string name="proxy_notify_start">正在启动…</string>
-    <string name="proxy_empty">没有可用节点</string>
-    <string name="proxy_updated">已更新 %1$d 个节点</string>
-    <string name="proxy_update_fail">更新失败：%1$s</string>
-    <string name="proxy_added">已添加 %1$d 个节点</string>
-    <string name="proxy_none">无节点</string>
-    <string name="proxy_off">未连接</string>
-    <string name="proxy_on">已连接</string>
-    <string name="proxy_permission">请允许 VPN 连接</string>
-    <string name="proxy_unsupported">不支持的链接</string>
-    <string name="proxy_auto">自动（最低延时）</string>
 </resources>

@@ -34,9 +34,6 @@ import com.fongmi.android.tv.ui.dialog.ConfigDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.MoonDialog;
-import com.fongmi.android.tv.ui.dialog.ProxyDialog;
-import com.fongmi.android.tv.proxy.ProxyBox;
-import com.fongmi.android.tv.proxy.ProxySetting;
 import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
@@ -112,7 +109,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
-        mBinding.proxyText.setText(getProxyText());
     }
 
     private String getWebDavText() {
@@ -144,7 +140,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.webdav.setOnClickListener(this::onWebDav);
         mBinding.moontv.setOnClickListener(this::onMoonTV);
-        mBinding.proxy.setOnClickListener(this::onProxy);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.backup.setOnClickListener(this::onBackup);
@@ -337,16 +332,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         MoonDialog.create().show(requireActivity());
     }
 
-    private void onProxy(View view) {
-        ProxyDialog.create().show(requireActivity());
-    }
-
-    private String getProxyText() {
-        if (!ProxySetting.isEnabled()) return getString(R.string.proxy_off);
-        if (ProxyBox.get().isRunning()) return getString(R.string.proxy_on) + " · " + ProxySetting.getTag();
-        return String.valueOf(ProxySetting.getNodes().size());
-    }
-
     private void onPush(View view) {
         PushDialog.create().show(requireActivity());
     }
@@ -410,7 +395,6 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         setCacheText();
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
-        mBinding.proxyText.setText(getProxyText());
     }
 
     @Override
