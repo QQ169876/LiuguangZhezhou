@@ -15,6 +15,7 @@ import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.sync.SyncProfile;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Task;
@@ -203,6 +204,7 @@ public class VodConfig extends BaseConfig {
     }
 
     private void parseConfig(Config config, JsonObject object) {
+        this.config = config;
         initList(object);
         initLive(config, object);
         initWall(config, object);
@@ -212,6 +214,7 @@ public class VodConfig extends BaseConfig {
         config.setAssrt(Json.safeString(object, "assrt"));
         config.setNotice(Json.safeString(object, "notice"));
         config.setDanmaku(Json.safeString(object, "danmaku"));
+        SyncProfile.onVodChanged(getCid()); // 换源 = 换一批数据，同步设置跟着换并先关掉
     }
 
     private void initList(JsonObject object) {
