@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Doh;
 import com.github.catvod.bean.Header;
@@ -113,6 +114,21 @@ public class VodConfig extends BaseConfig {
     protected void load(Config config) throws Throwable {
         String json = Decoder.getJson(UrlUtil.convert(config.getUrl()), TAG);
         checkJson(config, Json.parse(json).getAsJsonObject());
+        ConfigCache.put(VOD, config.getUrl(), json);
+    }
+
+    @Override
+    protected boolean loadCache(Config config) {
+        String json = ConfigCache.get(VOD, config.getUrl());
+        if (TextUtils.isEmpty(json)) return false;
+        try {
+            JsonObject object = Json.parse(json).getAsJsonObject();
+            if (object.has("urls")) return false;
+            checkJson(config, object);
+            return isLoaded();
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     @Override

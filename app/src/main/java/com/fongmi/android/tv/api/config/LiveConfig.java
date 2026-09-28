@@ -17,6 +17,7 @@ import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.setting.LiveSetting;
+import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Header;
 import com.github.catvod.bean.Proxy;
@@ -117,6 +118,25 @@ public class LiveConfig extends BaseConfig {
         String json = Decoder.getJson(UrlUtil.convert(config.getUrl()), TAG);
         if (Json.isObj(json)) checkJson(config, Json.parse(json).getAsJsonObject());
         else parseText(config, json);
+        ConfigCache.put(LIVE, config.getUrl(), json);
+    }
+
+    @Override
+    protected boolean loadCache(Config config) {
+        String json = ConfigCache.get(LIVE, config.getUrl());
+        if (TextUtils.isEmpty(json)) return false;
+        try {
+            if (Json.isObj(json)) {
+                JsonObject object = Json.parse(json).getAsJsonObject();
+                if (object.has("urls")) return false;
+                checkJson(config, object);
+            } else {
+                parseText(config, json);
+            }
+            return isLoaded();
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     @Override

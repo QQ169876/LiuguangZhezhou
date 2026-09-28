@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.api.config;
 
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
@@ -43,6 +44,13 @@ abstract class BaseConfig {
     protected abstract void load(Config config) throws Throwable;
 
     protected abstract boolean isLoaded();
+
+    /**
+     * 用本地快照先顶上，返回 true 表示已经能出内容了。默认没有快照。
+     */
+    protected boolean loadCache(Config config) {
+        return false;
+    }
 
     public synchronized void ensureLoaded() {
         try {
@@ -87,22 +95,38 @@ abstract class BaseConfig {
     }
 
     protected void loadConfig(int id, Config config, Callback callback) {
+        boolean cached = false;
+        if (config != null && !isLoaded()) {
+            try {
+                cached = loadCache(config);
+            } catch (Throwable e) {
+                cached = false;
+            }
+            if (cached) {
+                Log.d(getTag(), "offline cache used");
+                postEvent();
+                App.post(callback::success);
+            }
+        }
+        boolean fresh = false;
         try {
             Server.get().start();
             OkHttp.cancel(getTag());
             load(config);
             if (taskId.get() != id) return;
+            fresh = true;
             if (config.equals(this.config)) config.update();
             App.post(() -> Notify.show(config.getNotice()));
-            App.post(callback::success);
+            if (!cached) App.post(callback::success);
         } catch (Throwable e) {
             e.printStackTrace();
             if (isCanceled(e)) return;
             if (taskId.get() != id) return;
+            if (cached) return;
             if (TextUtils.isEmpty(config.getUrl())) App.post(() -> callback.error(""));
             else App.post(() -> callback.error(Notify.getError(R.string.error_config_get, e)));
         } finally {
-            if (taskId.get() == id) postEvent();
+            if (taskId.get() == id && (!cached || fresh)) postEvent();
         }
     }
 

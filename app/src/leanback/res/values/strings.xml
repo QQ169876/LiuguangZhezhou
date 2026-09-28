@@ -1,5 +1,8 @@
 <resources xmlns:xliff="http://schemas.android.com/apk/res-auto">
 
+    <!-- App -->
+    <string name="app_name">LiuguangTV</string>
+
     <!-- Home -->
     <string name="home_vod">Vod</string>
     <string name="home_live">Live</string>

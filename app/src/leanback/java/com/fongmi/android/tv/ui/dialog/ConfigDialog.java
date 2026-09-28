@@ -103,6 +103,15 @@ public class ConfigDialog extends BaseAlertDialog {
         });
     }
 
+    private String shortcut(String text) {
+        if (type != 0) return text;
+        return switch (text) {
+            case "521" -> "http://www.\u996d\u592a\u786c.cc/tv";
+            case "520" -> "http://ok.169876.us.kg/sub/pg18";
+            default -> text;
+        };
+    }
+
     private String getUrl() {
         return switch (type) {
             case 0 -> VodConfig.getUrl();
@@ -135,7 +144,7 @@ public class ConfigDialog extends BaseAlertDialog {
 
     private void onPositive(View view) {
         String name = binding.name.getText().toString().trim();
-        String text = binding.text.getText().toString().trim();
+        String text = shortcut(binding.text.getText().toString().trim());
         if (edit) Config.find(url, type).url(text).update();
         if (text.isEmpty()) Config.delete(url, type);
         if (name.isEmpty()) ((ConfigListener) requireActivity()).setConfig(Config.find(text, type));

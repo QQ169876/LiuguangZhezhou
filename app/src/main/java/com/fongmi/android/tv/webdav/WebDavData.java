@@ -2,6 +2,7 @@ package com.fongmi.android.tv.webdav;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.Backup;
+import com.fongmi.android.tv.utils.ConfigCache;
 import com.github.catvod.utils.Prefers;
 import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
@@ -20,6 +21,8 @@ public class WebDavData {
     private String device;
     @SerializedName("data")
     private Backup data;
+    @SerializedName("cache")
+    private Map<String, String> cache;
 
     public static WebDavData create() {
         WebDavData item = new WebDavData();
@@ -27,6 +30,7 @@ public class WebDavData {
         item.time = System.currentTimeMillis();
         item.device = WebDavSetting.getDevice();
         item.data = Backup.create();
+        item.cache = ConfigCache.export();
         item.setPrefers(Prefers.getPrefers().getAll());
         return item;
     }
@@ -82,6 +86,14 @@ public class WebDavData {
 
     public void setData(Backup data) {
         this.data = data;
+    }
+
+    public Map<String, String> getCache() {
+        return cache == null ? new HashMap<>() : cache;
+    }
+
+    public void setCache(Map<String, String> cache) {
+        this.cache = cache;
     }
 
     public Map<String, ?> getPrefers() {

@@ -16,6 +16,7 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Prefers;
@@ -159,6 +160,7 @@ public class SyncManager {
         if (remoteData == null) throw new Exception("Remote file not found");
         AppDatabase.get().clearAllTables();
         insertAll(remoteData);
+        ConfigCache.apply(remoteData.getCache());
         writeBaseline(remoteData);
         remoteData.setTime(System.currentTimeMillis());
         save(url, remoteData);
@@ -182,6 +184,9 @@ public class SyncManager {
         String json = data.toJson();
         if (json.length() <= MAX_SIZE) return json;
         for (Config config : data.getData().getConfig()) config.setJson("");
+        json = data.toJson();
+        if (json.length() <= MAX_SIZE) return json;
+        data.setCache(new HashMap<>());
         return data.toJson();
     }
 
@@ -276,6 +281,10 @@ public class SyncManager {
         merged.getData().setSite(mergeList(backup(base).getSite(), backup(local).getSite(), backup(remote).getSite(), SyncManager::key, (a, b) -> a));
         merged.getData().setLive(mergeList(backup(base).getLive(), backup(local).getLive(), backup(remote).getLive(), SyncManager::key, (a, b) -> a));
         merged.setPrefers(mergeMap(backup(base).getPrefers(), backup(local).getPrefers(), backup(remote).getPrefers()));
+        Map<String, String> remoteCache = remote == null ? null : remote.getCache();
+        Map<String, String> localCache = local == null ? null : local.getCache();
+        if (remoteCache != null && !remoteCache.isEmpty()) merged.setCache(remoteCache);
+        else if (localCache != null && !localCache.isEmpty()) merged.setCache(localCache);
         return merged;
     }
 
@@ -479,6 +488,7 @@ public class SyncManager {
             AppDatabase.get().getLiveDao().insertOrUpdate(item);
         }
         applyPrefers(merged.getPrefers(), backup(local).getPrefers());
+        ConfigCache.apply(merged.getCache());
         return configChanged;
     }
 
