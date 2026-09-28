@@ -429,11 +429,41 @@ public class MoonSync {
         if (!MoonSetting.isSyncable()) return;
         Task.execute(() -> {
             try {
+                purgeLocal(siteKey, favorite); // 本机同 key 的残留先清掉，免得下次同步又被推回站点
                 deleteOne(siteKey, favorite);
+                if (stillThere(siteKey, favorite)) { // 站点写库有延迟，复查一次再补一刀
+                    Thread.sleep(1500);
+                    deleteOne(siteKey, favorite);
+                }
             } catch (Throwable e) {
                 Log.w(TAG, "Flush delete failed " + siteKey, e);
             }
         });
+    }
+
+    /** 同一部片在本机可能还留着别的条目（重复项、换过点播配置留下的旧 cid 记录），一起清掉 */
+    private static void purgeLocal(String siteKey, boolean favorite) {
+        if (favorite) {
+            for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+                if (item.getType() != 0) continue;
+                if (!siteKey.equals(siteKey(item))) continue;
+                AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
+            }
+        } else {
+            for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+                if (!siteKey.equals(siteKey(item))) continue;
+                AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
+                AppDatabase.get().getTrackDao().delete(item.getKey());
+            }
+        }
+    }
+
+    private static boolean stillThere(String siteKey, boolean favorite) {
+        try {
+            return favorite ? MoonApi.hasFavorite(siteKey) : MoonApi.hasRecord(siteKey);
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     private static void deleteOne(String key, boolean favorite) throws Exception {
@@ -761,12 +791,14 @@ public class MoonSync {
 
     private static int[] pushRecords(JSONObject remote) {
         int add = 0, update = 0;
+        JSONObject tomb = loadTomb(TOMB_RECORD);
         for (History item : AppDatabase.get().getHistoryDao().findAll()) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
             String name = source.concat("+").concat(id);
             long saveTime = item.getCreateTime();
+            if (dead(tomb, name, saveTime)) continue; // 本机删过的，别再推回站点
             JSONObject old = remote.optJSONObject(name);
             try {
                 JSONObject record = new JSONObject();
@@ -794,11 +826,13 @@ public class MoonSync {
 
     private static int[] pushFavorites(JSONObject remote) {
         int add = 0, update = 0;
+        JSONObject tomb = loadTomb(TOMB_FAVORITE);
         for (Keep item : AppDatabase.get().getKeepDao().getVod()) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
             String name = source.concat("+").concat(id);
+            if (dead(tomb, name, item.getCreateTime())) continue; // 本机删过的，别再推回站点
             JSONObject old = remote.optJSONObject(name);
             try {
                 JSONObject favorite = new JSONObject();

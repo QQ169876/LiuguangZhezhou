@@ -66,8 +66,23 @@ public class MoonApi {
         if (matcher.find()) cookie = matcher.group(1);
     }
 
+    /**
+     * 请求一律带 no-cache：站点前面常挂着 CDN（Vercel / Cloudflare），
+     * 不加的话可能拿到上一秒的旧列表，删掉的记录又会被别的设备拉回来。
+     * GET 额外拼一个时间戳参数，双保险。
+     */
     private static Request.Builder auth(String path) throws IOException {
-        return new Request.Builder().url(api(path)).addHeader("Cookie", "user_auth=" + cookie).addHeader("Accept", "application/json");
+        return auth(path, false);
+    }
+
+    private static Request.Builder auth(String path, boolean bust) throws IOException {
+        String url = api(path);
+        if (bust) url = url.concat(url.contains("?") ? "&" : "?").concat("_t=").concat(String.valueOf(System.currentTimeMillis()));
+        return new Request.Builder().url(url)
+                .addHeader("Cookie", "user_auth=" + cookie)
+                .addHeader("Accept", "application/json")
+                .addHeader("Cache-Control", "no-cache, no-store, max-age=0")
+                .addHeader("Pragma", "no-cache");
     }
 
     private static JSONObject call(Request.Builder builder) throws Exception {
@@ -83,7 +98,7 @@ public class MoonApi {
     private static JSONObject get(String path) throws Exception {
         for (int i = 0; i < 2; i++) {
             if (cookie.isEmpty()) login();
-            JSONObject result = call(auth(path).get());
+            JSONObject result = call(auth(path, true).get());
             if (result != null) return result;
             cookie = "";
         }
@@ -128,6 +143,15 @@ public class MoonApi {
 
     public static JSONObject playRecords() throws Exception {
         return get("/api/playrecords");
+    }
+
+    /** 删除之后复查一次：站点写库有延迟，确认真的没了才算删干净 */
+    public static boolean hasFavorite(String key) throws Exception {
+        return favorites().has(key);
+    }
+
+    public static boolean hasRecord(String key) throws Exception {
+        return playRecords().has(key);
     }
 
     public static void saveFavorite(String key, JSONObject favorite) throws Exception {
