@@ -35,6 +35,26 @@
         <item name="android:shadowRadius">2</item>
     </style>
 
+    <!-- TV 端对话框按钮：没焦点是白底黑字，有焦点反色成深底白字 + 白色描边，遥控器一眼能看清 -->
+    <style name="DialogAction" parent="Widget.Material3.Button">
+        <item name="android:minHeight">52dp</item>
+        <item name="android:stateListAnimator">@animator/dialog_focus</item>
+        <item name="android:textColor">@color/selector_dialog_button_text</item>
+        <item name="backgroundTint">@color/selector_dialog_button_tint</item>
+        <item name="strokeColor">@color/selector_dialog_button_stroke</item>
+        <item name="strokeWidth">2dp</item>
+    </style>
+
+    <!-- TV 端对话框开关：聚焦时整条加白框 -->
+    <style name="DialogCheck">
+        <item name="android:background">@drawable/selector_dialog_check</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:stateListAnimator">@animator/dialog_focus</item>
+    </style>
+
     <style name="Control">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>

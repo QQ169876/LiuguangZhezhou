@@ -84,6 +84,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <androidx.appcompat.widget.AppCompatCheckBox
+            style="@style/DialogCheck"
             android:id="@+id/enable"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -92,6 +93,7 @@
             android:textColor="@color/white" />
 
         <androidx.appcompat.widget.AppCompatCheckBox
+            style="@style/DialogCheck"
             android:id="@+id/auto"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -110,6 +112,7 @@
             android:textSize="12sp" />
 
         <com.google.android.material.button.MaterialButton
+            style="@style/DialogAction"
             android:id="@+id/sync"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -123,6 +126,7 @@
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
+                style="@style/DialogAction"
                 android:id="@+id/test"
                     android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -131,6 +135,7 @@
                 android:text="@string/webdav_test" />
 
             <com.google.android.material.button.MaterialButton
+                style="@style/DialogAction"
                 android:id="@+id/scan"
                     android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -147,6 +152,7 @@
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
+                style="@style/DialogAction"
                 android:id="@+id/push"
                     android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -155,6 +161,7 @@
                 android:text="@string/webdav_push" />
 
             <com.google.android.material.button.MaterialButton
+                style="@style/DialogAction"
                 android:id="@+id/pull"
                     android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -165,6 +172,7 @@
         </androidx.appcompat.widget.LinearLayoutCompat>
 
         <com.google.android.material.button.MaterialButton
+            style="@style/DialogAction"
             android:id="@+id/qrcode"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -172,6 +180,7 @@
             android:text="@string/webdav_qrcode" />
 
         <com.google.android.material.button.MaterialButton
+            style="@style/DialogAction"
             android:id="@+id/lan"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

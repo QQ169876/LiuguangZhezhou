@@ -64,6 +64,12 @@ public class UpdateDialog extends BaseAlertDialog {
         binding.cancel.setOnClickListener(this::onCancel);
     }
 
+    @Override
+    public void onStart() {
+        super.onStart();
+        binding.confirm.requestFocus();
+    }
+
     public void setProgress(int progress) {
         binding.confirm.setText(String.format(Locale.getDefault(), "%1$d%%", progress));
     }

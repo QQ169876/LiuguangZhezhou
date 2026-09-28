@@ -51,24 +51,30 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="16dp"
             android:layout_weight="1"
-            android:background="@drawable/selector_button"
+            android:background="@drawable/selector_dialog_action"
             android:focusable="true"
             android:focusableInTouchMode="true"
             android:gravity="center"
+            android:minHeight="52dp"
+            android:nextFocusRight="@id/cancel"
+            android:stateListAnimator="@animator/dialog_focus"
             android:text="@string/update_confirm"
-            android:textColor="@color/white" />
+            android:textColor="@color/selector_dialog_action_text" />
 
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/cancel"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/selector_button"
+            android:background="@drawable/selector_dialog_action"
             android:focusable="true"
             android:focusableInTouchMode="true"
             android:gravity="center"
+            android:minHeight="52dp"
+            android:nextFocusLeft="@id/confirm"
+            android:stateListAnimator="@animator/dialog_focus"
             android:text="@string/dialog_negative"
-            android:textColor="@color/white" />
+            android:textColor="@color/selector_dialog_action_text" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
 </androidx.appcompat.widget.LinearLayoutCompat>

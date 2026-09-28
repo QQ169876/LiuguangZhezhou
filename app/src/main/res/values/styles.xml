@@ -37,4 +37,10 @@
         <item name="keep_content_on_player_reset">true</item>
     </style>
 
+    <!-- 对话框里的操作按钮，TV 端会覆盖成高对比焦点样式 -->
+    <style name="DialogAction" parent="Widget.Material3.Button" />
+
+    <!-- 对话框里的开关，TV 端会覆盖成带焦点框的样式 -->
+    <style name="DialogCheck" />
+
 </resources>
