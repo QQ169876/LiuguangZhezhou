@@ -25,13 +25,12 @@ public class GhRoute {
     /** 本地 SOCKS5 前缀，后面接 host:port */
     public static final String SOCKS5 = "socks5://";
 
+    // 只保留实测能用的（能取到 raw 文件且能对 Release 做断点续传），挂掉的不再占位
     private static final String[] ACCEL = {
             "https://p.169876.us.kg/proxy/",
             "https://gh-proxy.com/",
             "https://ghproxy.net/",
             "https://gh-proxy.org/",
-            "https://ghp.ci/",
-            "https://hub.gitmirror.com/",
     };
 
     public static List<String> accel() {
