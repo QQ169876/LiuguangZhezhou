@@ -18,11 +18,14 @@ import okhttp3.Response;
 
 public class Download {
 
+    private static final int PARTIAL = 206;
+
     private final File file;
     private final String url;
     private Callback callback;
-    private Future<?> future;
     private OkHttpClient client;
+    private Future<?> future;
+    private long expect;
     private long maxBytes;
     private String tag;
 
@@ -37,12 +40,6 @@ public class Download {
         this.file = file;
     }
 
-    /** 走指定客户端（比如 SOCKS5 线路）下载 */
-    public Download client(OkHttpClient client) {
-        this.client = client;
-        return this;
-    }
-
     public Download tag(String tag) {
         this.tag = tag;
         return this;
@@ -50,6 +47,18 @@ public class Download {
 
     public Download maxBytes(long maxBytes) {
         this.maxBytes = maxBytes > 0 ? maxBytes : Long.MAX_VALUE;
+        return this;
+    }
+
+    /** 走指定客户端（比如 SOCKS5 线路）下载 */
+    public Download client(OkHttpClient client) {
+        this.client = client;
+        return this;
+    }
+
+    /** 预期总大小：给了才知道本地那份半成品有没有用 */
+    public Download expect(long expect) {
+        this.expect = expect;
         return this;
     }
 
@@ -70,38 +79,58 @@ public class Download {
         return this;
     }
 
+    /**
+     * 已经下了多少字节（只有小于预期总大小时才算有效的半成品）
+     */
+    private long getResume() {
+        if (expect <= 0 || file == null || !file.exists()) return 0;
+        long done = file.length();
+        return done > 0 && done < expect ? done : 0;
+    }
+
     private void doInBackground() {
-        try (Response res = call().execute()) {
-            download(res.body().byteStream(), getLength(res));
+        long offset = getResume();
+        try (Response res = call(offset).execute()) {
+            boolean partial = res.code() == PARTIAL;
+            if (!partial) offset = 0; // 服务端不接受断点，老实从头下
+            double remain = getLength(res);
+            double total = offset + remain;
+            if (total <= 0) total = expect;
+            download(res.body().byteStream(), total, offset);
+            if (expect > 0 && file.length() < expect) throw new IOException("Download incomplete");
             if (callback != null) App.post(() -> callback.success(file));
         } catch (Exception e) {
-            Path.clear(file);
+            if (expect <= 0) Path.clear(file); // 续传模式留着半成品，下次能接着下
             if (callback != null) App.post(() -> callback.error(e.getMessage()));
             else throw new RuntimeException(e.getMessage(), e);
         }
     }
 
-    private void download(InputStream is, double length) throws IOException {
-        if (length > maxBytes) throw new IOException("Download size limit exceeded");
-        try (BufferedInputStream input = new BufferedInputStream(is); FileOutputStream os = new FileOutputStream(Path.create(file))) {
+    private void download(InputStream is, double total, long offset) throws IOException {
+        if (total > maxBytes) throw new IOException("Download size limit exceeded");
+        boolean append = offset > 0;
+        if (!append) Path.create(file);
+        try (BufferedInputStream input = new BufferedInputStream(is); FileOutputStream os = new FileOutputStream(file, append)) {
             byte[] buffer = new byte[16384];
             int readBytes;
-            long totalBytes = 0;
+            long written = offset;
             while ((readBytes = input.read(buffer)) != -1) {
                 if (Thread.interrupted()) return;
-                totalBytes += readBytes;
-                if (totalBytes > maxBytes) throw new IOException("Download size limit exceeded");
+                written += readBytes;
                 os.write(buffer, 0, readBytes);
-                if (length <= 0) continue;
-                int progress = (int) (totalBytes / length * 100.0);
+                if (written > maxBytes) throw new IOException("Download size limit exceeded");
+                if (total <= 0) continue;
+                int progress = (int) (written / total * 100.0);
                 if (callback != null) App.post(() -> callback.progress(progress));
             }
         }
     }
 
-    private okhttp3.Call call() {
-        if (client == null) return OkHttp.newCall(url, tag);
-        return client.newCall(new Request.Builder().url(url).get().build());
+    private okhttp3.Call call(long offset) {
+        Request.Builder builder = new Request.Builder().url(url).tag(tag).get();
+        if (offset > 0) builder.header(HttpHeaders.RANGE, "bytes=" + offset + "-");
+        OkHttpClient use = client != null ? client : OkHttp.client();
+        return use.newCall(builder.build());
     }
 
     private double getLength(Response res) {

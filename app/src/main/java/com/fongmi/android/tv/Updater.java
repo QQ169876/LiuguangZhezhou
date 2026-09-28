@@ -15,6 +15,7 @@ import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Path;
+import com.github.catvod.utils.Prefers;
 
 import org.json.JSONObject;
 
@@ -46,6 +47,8 @@ public class Updater implements Download.Callback, UpdateListener {
     private UpdateDialog dialog;
     private Probe route;
     private String apk;
+    private String tag;
+    private long size;
 
     private Updater() {
     }
@@ -85,7 +88,7 @@ public class Updater implements Download.Callback, UpdateListener {
             JSONObject object = new JSONObject(probes.get(0).body);
             String name = object.optString("name");
             String desc = object.optString("desc");
-            String tag = object.optString("tag");
+            tag = object.optString("tag");
             int code = object.optInt("code");
             if (code <= BuildConfig.VERSION_CODE) return;
             apk = getApk(tag);
@@ -112,8 +115,34 @@ public class Updater implements Download.Callback, UpdateListener {
         return routes;
     }
 
+    /**
+     * 换版本就丢掉上一版的半成品；同一个包记住大小，下次能接着下
+     */
     private Download createDownload(String route) {
-        return Download.create(GhRoute.wrap(route, apk), getFile()).client(GhRoute.stream(route));
+        if (!tag.equals(Prefers.getString("update_tag"))) {
+            Path.clear(getFile());
+            Prefers.put("update_tag", tag);
+            Prefers.put("update_size", 0L);
+            size = 0;
+        }
+        if (size <= 0) size = Prefers.getLong("update_size");
+        if (size <= 0) size = probeSize(route);
+        if (size > 0) Prefers.put("update_size", size);
+        return Download.create(GhRoute.wrap(route, apk), getFile()).client(GhRoute.stream(route)).expect(size);
+    }
+
+    /**
+     * 只取 1 个字节，从 Content-Range 里拿到整包大小
+     */
+    private long probeSize(String route) {
+        try (Response res = GhRoute.probe(route, 10000).newCall(new Request.Builder().url(GhRoute.wrap(route, apk)).header("Range", "bytes=0-0").get().build()).execute()) {
+            String range = res.header("Content-Range");
+            if (range != null && range.contains("/")) return Long.parseLong(range.substring(range.lastIndexOf('/') + 1).trim());
+            String length = res.header("Content-Length");
+            return res.code() == 200 && length != null ? Long.parseLong(length) : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /**
