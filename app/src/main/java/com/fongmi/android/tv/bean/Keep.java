@@ -176,9 +176,13 @@ public class Keep implements Diffable<Keep> {
         return this;
     }
 
-    /** 用户主动删一条：记下来，下次同步时站点上这条也删掉 */
+    /**
+     * 用户主动删一条：立刻从站点上把这条删掉，并留一张带时间的墓碑，
+     * 之后别的设备再把旧记录传上来也不会把它拉回来（除非那边删除后又重新收藏）。
+     */
     public Keep deleteUser() {
         MoonSync.markDeleted(getKey(), true);
+        MoonSync.touch();
         return delete();
     }
 

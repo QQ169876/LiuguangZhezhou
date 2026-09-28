@@ -203,13 +203,15 @@ public class MoonSync {
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        pruneTomb();
+        dropAlive();
+        applyTomb(records, favorites);
         Map<String, long[]> skip = skipSnapshot();
         AppDatabase.get().getHistoryDao().delete(cid);
         AppDatabase.get().getKeepDao().delete();
         int[] gotRecords = pullRecords(records, cid, skip);
         int[] gotFavorites = pullFavorites(favorites, cid);
         saveBase(records, favorites, null, null);
-        clearTomb();
         MoonSetting.putLast(System.currentTimeMillis());
         refresh();
         return ResUtil.getString(R.string.moontv_summary_pull, gotRecords[0] + gotRecords[1], gotFavorites[0] + gotFavorites[1]);
@@ -223,6 +225,8 @@ public class MoonSync {
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
         dedupe();
+        dropAlive();
+        applyTomb(records, favorites);
         Set<String> localRecords = localRecordKeys();
         Set<String> localFavorites = localKeepKeys();
         int delRecords = deleteRemote(diff(keysOf(records), localRecords), false);
@@ -230,7 +234,7 @@ public class MoonSync {
         int[] upRecords = pushRecords(records);
         int[] upFavorites = pushFavorites(favorites);
         saveBase(records, favorites, localRecords, localFavorites);
-        clearTomb();
+        clearTomb(); // 站点已经和本机一致了，墓碑没有再留着的必要
         MoonSetting.putLast(System.currentTimeMillis());
         refresh();
         return ResUtil.getString(R.string.moontv_summary_push, upRecords[0] + upRecords[1], upFavorites[0] + upFavorites[1], delRecords + delFavorites);
@@ -269,9 +273,11 @@ public class MoonSync {
     private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip) {
         int add = 0, update = 0;
         List<Entry> items = sort(remote);
+        JSONObject tomb = loadTomb(TOMB_RECORD);
         for (int i = 0; i < items.size(); i++) {
             Entry entry = items.get(i);
             JSONObject item = entry.item;
+            if (dead(tomb, entry.source.concat("+").concat(entry.id), entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             long saveTime = visible(entry.time(), i);
             long duration = Math.round(item.optDouble("total_time", 0) * 1000);
             long position = Math.round(item.optDouble("play_time", 0) * 1000);
@@ -322,8 +328,10 @@ public class MoonSync {
 
     private static int[] pullFavorites(JSONObject remote, int cid) {
         int add = 0, update = 0;
+        JSONObject tomb = loadTomb(TOMB_FAVORITE);
         for (Entry entry : sort(remote)) {
             JSONObject item = entry.item;
+            if (dead(tomb, entry.source.concat("+").concat(entry.id), entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             long saveTime = entry.time();
             Keep target = new Keep();
             target.setKey(entry.source.concat(AppDatabase.SYMBOL).concat(entry.id));
@@ -366,8 +374,10 @@ public class MoonSync {
             removed += deleteLocalHistory(diff(loadSet(BASE_RECORD), remoteRecords), cid);
             removed += deleteLocalKeep(diff(loadSet(BASE_FAVORITE), remoteFavorites));
         }
-        removedUp += deleteRemote(loadSet(TOMB_RECORD), false);
-        removedUp += deleteRemote(loadSet(TOMB_FAVORITE), true);
+        pruneTomb();
+        dropAlive();
+        int[] tombed = applyTomb(records, favorites);
+        removedUp += tombed[0] + tombed[1];
         int[] down = pullRecords(records, cid);
         int[] keepDown = pullFavorites(favorites, cid);
         int[] clean = dedupe();
@@ -376,21 +386,172 @@ public class MoonSync {
         int[] up = pushRecords(records);
         int[] keepUp = pushFavorites(favorites);
         saveBase(records, favorites, localRecords, localFavorites);
-        clearTomb();
+        pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
         refresh();
         return join(down, keepDown, up, keepUp, clean, removed, removedUp);
     }
 
-    /* ---------- 删除同步 ---------- */
+    /* ---------- 删除同步：记墓碑 + 比时间，谁在后听谁的 ---------- */
 
-    /** 本机删掉的历史 / 收藏先记一笔，下次同步时把站点上的也删掉 */
+    /**
+     * 本机删掉的历史 / 收藏记一笔墓碑：键是站点 key，值是删除时刻。
+     * 墓碑立刻往站点发一次删除，不用等下一次自动同步，免得别的设备在这空档又补回来。
+     */
     public static void markDeleted(String localKey, boolean favorite) {
         String siteKey = toSiteKey(localKey);
         if (siteKey == null) return;
         String pref = favorite ? TOMB_FAVORITE : TOMB_RECORD;
-        Set<String> items = loadSet(pref);
-        if (items.add(siteKey)) saveSet(pref, items);
+        JSONObject map = loadTomb(pref);
+        try {
+            map.put(siteKey, System.currentTimeMillis());
+        } catch (Exception ignored) {
+            return;
+        }
+        saveTomb(pref, map);
+        flushTomb(siteKey, favorite);
+    }
+
+    private static void flushTomb(String siteKey, boolean favorite) {
+        if (!MoonSetting.isSyncable()) return;
+        Task.execute(() -> {
+            try {
+                deleteOne(siteKey, favorite);
+            } catch (Throwable e) {
+                Log.w(TAG, "Flush delete failed " + siteKey, e);
+            }
+        });
+    }
+
+    private static void deleteOne(String key, boolean favorite) throws Exception {
+        if (favorite) MoonApi.deleteFavorite(key);
+        else MoonApi.deleteRecord(key);
+    }
+
+    /**
+     * 把墓碑用到这次拉下来的站点数据上：
+     * 站点那条的时间不比删除时刻新 → 说明是「删在前、记录在后面补上来的」，站点删掉、本机也不拉回；
+     * 站点那条比删除时刻新 → 说明删除之后又有人看过，撤掉墓碑，按正常记录拉回来。
+     *
+     * @return {删掉的观看记录数, 删掉的收藏数}
+     */
+    private static int[] applyTomb(JSONObject records, JSONObject favorites) {
+        return new int[]{applyTomb(records, TOMB_RECORD, false), applyTomb(favorites, TOMB_FAVORITE, true)};
+    }
+
+    private static int applyTomb(JSONObject remote, String pref, boolean favorite) {
+        JSONObject tomb = loadTomb(pref);
+        if (tomb.length() == 0) return 0;
+        JSONObject next = new JSONObject();
+        int removed = 0;
+        for (String name : keyList(tomb)) {
+            long dead = tomb.optLong(name, 0);
+            JSONObject item = remote == null ? null : remote.optJSONObject(name);
+            if (item != null && item.optLong("save_time", 0) > dead) continue; // 站点更新，撤墓碑
+            if (item != null) {
+                try {
+                    deleteOne(name, favorite);
+                    remote.remove(name);
+                    ++removed;
+                } catch (Throwable e) {
+                    Log.w(TAG, "Tomb delete failed " + name, e);
+                }
+            }
+            try {
+                next.put(name, dead); // 站点已经没有的，墓碑先留着防别的设备再补回来
+            } catch (Exception ignored) {
+            }
+        }
+        saveTomb(pref, next);
+        return removed;
+    }
+
+    /** 本机又看了 / 又收藏了这部（时间比墓碑新），墓碑作废 */
+    private static void dropAlive() {
+        dropAlive(TOMB_RECORD, false);
+        dropAlive(TOMB_FAVORITE, true);
+    }
+
+    private static void dropAlive(String pref, boolean favorite) {
+        JSONObject tomb = loadTomb(pref);
+        if (tomb.length() == 0) return;
+        List<String> alive = new ArrayList<>();
+        if (favorite) {
+            for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+                if (item.getType() != 0) continue;
+                if (alive(tomb, siteKey(item), item.getCreateTime())) alive.add(siteKey(item));
+            }
+        } else {
+            for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+                if (alive(tomb, siteKey(item), item.getCreateTime())) alive.add(siteKey(item));
+            }
+        }
+        for (String key : alive) tomb.remove(key);
+        if (!alive.isEmpty()) saveTomb(pref, tomb);
+    }
+
+    /** 站点这条记录的时间不比删除时刻新 → 已经被本机删过，不该再拉回来 */
+    private static boolean dead(JSONObject tomb, String key, long time) {
+        long dead = tomb.optLong(key, 0);
+        return dead > 0 && time <= dead;
+    }
+
+    private static boolean alive(JSONObject tomb, String key, long time) {
+        long dead = tomb.optLong(key, 0);
+        return dead > 0 && time > dead;
+    }
+
+    /** 墓碑留 30 天够用了：别的设备早就同步到删除了，太久的丢掉免得一直攒着 */
+    private static void pruneTomb() {
+        pruneTomb(TOMB_RECORD);
+        pruneTomb(TOMB_FAVORITE);
+    }
+
+    private static void pruneTomb(String pref) {
+        JSONObject tomb = loadTomb(pref);
+        if (tomb.length() == 0) return;
+        long expire = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30);
+        JSONObject next = new JSONObject();
+        for (String name : keyList(tomb)) {
+            long dead = tomb.optLong(name, 0);
+            if (dead >= expire) {
+                try {
+                    next.put(name, dead);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (next.length() != tomb.length()) saveTomb(pref, next);
+    }
+
+    private static JSONObject loadTomb(String pref) {
+        String text = Prefers.getString(pref);
+        if (text.isEmpty()) return new JSONObject();
+        try {
+            return new JSONObject(text);
+        } catch (Exception ignored) {
+            JSONObject result = new JSONObject();
+            try { // 老版本存的是数组，按「刚删的」处理
+                JSONArray array = new JSONArray(text);
+                for (int i = 0; i < array.length(); i++) {
+                    String key = array.optString(i, "");
+                    if (!key.isEmpty()) result.put(key, System.currentTimeMillis());
+                }
+            } catch (Exception e) {
+                return new JSONObject();
+            }
+            return result;
+        }
+    }
+
+    private static void saveTomb(String pref, JSONObject map) {
+        Prefers.put(pref, map.toString());
+    }
+
+    private static List<String> keyList(JSONObject object) {
+        List<String> result = new ArrayList<>();
+        for (Iterator<String> it = keys(object); it.hasNext(); ) result.add(it.next());
+        return result;
     }
 
     private static int deleteRemote(Set<String> siteKeys, boolean favorite) {
@@ -493,8 +654,8 @@ public class MoonSync {
     }
 
     private static void clearTomb() {
-        saveSet(TOMB_RECORD, Collections.emptySet());
-        saveSet(TOMB_FAVORITE, Collections.emptySet());
+        saveTomb(TOMB_RECORD, new JSONObject());
+        saveTomb(TOMB_FAVORITE, new JSONObject());
     }
 
     private static Set<String> loadSet(String pref) {
