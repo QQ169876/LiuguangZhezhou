@@ -28,6 +28,7 @@ import java.util.Date;
 public class WebDavDialog extends BaseAlertDialog {
 
     private DialogWebdavBinding binding;
+    private boolean asked;
 
     public static WebDavDialog create() {
         return new WebDavDialog();
@@ -85,6 +86,19 @@ public class WebDavDialog extends BaseAlertDialog {
     public void onDismiss(@NonNull DialogInterface dialog) {
         save();
         super.onDismiss(dialog);
+        askOnClose(R.string.sync_risk_dav, WebDavSetting.isEnabled() && WebDavSetting.isSyncable() && WebDavSetting.isSwitch());
+    }
+
+    /**
+     * 遥控器改完参数就退出时，如果同步是开着的、目标又变过，
+     * 直接问清楚以哪边为准，免得下一次自动同步闷头合并。
+     */
+    private void askOnClose(int message, boolean need) {
+        FragmentActivity activity = getActivity();
+        if (asked || !need) return;
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        asked = true;
+        SyncRiskDialog.show(activity, message, () -> SyncDirectionDialog.show(activity, direction -> onDirection(activity, direction)));
     }
 
     private void onLan(View view) {
@@ -148,14 +162,20 @@ public class WebDavDialog extends BaseAlertDialog {
 
     /** 换过地址、目录或账号：作废旧基线，并把当前目标标记为已确认 */
     private void checkSwitch() {
+        asked = true;
         if (!WebDavSetting.isSwitch()) return;
         SyncManager.resetBase();
         WebDavSetting.putConfirm();
     }
 
     private void onDirection(int direction) {
+        onDirection(requireActivity(), direction);
+    }
+
+    private void onDirection(FragmentActivity activity, int direction) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         checkSwitch();
-        Notify.progress(requireActivity());
+        Notify.progress(activity);
         if (direction == SyncDirectionDialog.CLOUD) SyncManager.pull(getListener());
         else if (direction == SyncDirectionDialog.LOCAL) SyncManager.push(getListener());
         else SyncManager.sync(getListener());
@@ -179,7 +199,7 @@ public class WebDavDialog extends BaseAlertDialog {
         return (success, message) -> {
             Notify.dismiss();
             Notify.show(message);
-            setLastText();
+            if (binding != null) setLastText();
         };
     }
 }
