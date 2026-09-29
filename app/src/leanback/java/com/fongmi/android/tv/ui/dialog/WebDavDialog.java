@@ -138,7 +138,8 @@ public class WebDavDialog extends BaseAlertDialog {
     private void onSync(View view) {
         save();
         if (WebDavSetting.isSwitch()) {
-            SyncDirectionDialog.show(requireActivity(), this::onDirection);
+            // 目标变过：先讲风险，确认后再选 合并/本机/云端
+            SyncRiskDialog.show(requireActivity(), R.string.sync_risk_dav, () -> SyncDirectionDialog.show(requireActivity(), this::onDirection));
         } else {
             Notify.progress(requireActivity());
             SyncManager.sync(getListener());

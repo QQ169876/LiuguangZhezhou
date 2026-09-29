@@ -306,6 +306,7 @@
     <string name="webdav_busy">正在同步中</string>
     <string name="webdav_empty">WebDAV 位址為空</string>
     <string name="webdav_saved">設定已儲存</string>
+    <string name="webdav_lan_saved">已收到 WebDAV 設定，同步維持關閉，請確認位址目錄帳號後再手動開啟</string>
     <string name="webdav_scan_fail">QR Code 內容無效</string>
     <string name="webdav_test_ok">連線成功</string>
     <string name="webdav_test_fail">連線失敗</string>
@@ -373,6 +374,12 @@
     <string name="sync_direction_local">使用本機資料（覆蓋雲端）</string>
     <string name="sync_direction_merge">合併資料（兩邊取最新）</string>
     <string name="sync_direction_wait">待選擇同步方向（點「雙向同步」）</string>
+
+    <string name="sync_risk_title">操作風險提示</string>
+    <string name="sync_risk_confirm">我知道了</string>
+    <string name="sync_risk_vod">你正在切換點播源。收藏和觀看記錄會隨點播源變化，同步設定也已跟隨切換並取消啟用。開啟同步或執行同步前，請確認本機記錄、收藏與雲端是否需要合併、使用本機覆蓋雲端、或使用雲端覆蓋本機，避免資料互相混淆。</string>
+    <string name="sync_risk_moon">影視站位址或帳號剛改動過。不同帳號的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。</string>
+    <string name="sync_risk_dav">WebDAV 位址、目錄或帳號剛改動過。不同目錄裡的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。</string>
     <string name="moontv_empty">站點網址或帳號沒填完整</string>
     <string name="moontv_saved">設定已儲存</string>
     <string name="moontv_lan_saved">已收到影視站設定，同步維持關閉，請確認站點帳號後再手動開啟</string>

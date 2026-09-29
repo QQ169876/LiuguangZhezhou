@@ -307,6 +307,7 @@
     <string name="webdav_busy">Sync is busy</string>
     <string name="webdav_empty">WebDAV address is empty</string>
     <string name="webdav_saved">Settings saved</string>
+    <string name="webdav_lan_saved">WebDAV config received, sync stays off. Turn it on manually after you check the address, folder, and account.</string>
     <string name="webdav_scan_fail">Invalid QR code</string>
     <string name="webdav_test_ok">Connection successful</string>
     <string name="webdav_test_fail">Connection failed</string>
@@ -374,6 +375,12 @@
     <string name="sync_direction_local">Use this device (overwrite the cloud)</string>
     <string name="sync_direction_merge">Merge (keep the newer side)</string>
     <string name="sync_direction_wait">Waiting: pick a side (tap two-way sync)</string>
+
+    <string name="sync_risk_title">Heads-up</string>
+    <string name="sync_risk_confirm">Got it</string>
+    <string name="sync_risk_vod">You are switching the vod source. Favorites and watch history change with the source, and sync settings have been switched over and turned off. Before enabling or running sync, decide whether local and cloud data should merge, local overwrite cloud, or cloud overwrite local — to avoid mixing them up.</string>
+    <string name="sync_risk_moon">The site address or account was just changed. Watch history and favorites under different accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud.</string>
+    <string name="sync_risk_dav">The WebDAV address, folder, or account was just changed. Watch history and favorites in different folders are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud.</string>
     <string name="moontv_empty">Site address or account is incomplete</string>
     <string name="moontv_saved">Settings saved</string>
     <string name="moontv_lan_saved">Site config received, sync stays off. Turn it on manually after you check the account.</string>

@@ -93,6 +93,10 @@ public class Action implements Process {
         ServerEvent.search(word);
     }
 
+    /**
+     * 局域网 / 网页提交的 WebDAV 参数只落盘，不启用也不自动同步，
+     * 确认地址、目录、账号无误后由本机「启用同步」开关手动开跑，避免一提交就把两边数据合并污染。
+     */
     private void onWebDav(Map<String, String> params) {
         String url = params.get("url");
         if (TextUtils.isEmpty(url)) return;
@@ -100,9 +104,9 @@ public class Action implements Process {
         WebDavSetting.putUser(params.get("user"));
         WebDavSetting.putPass(params.get("pass"));
         WebDavSetting.putFolder(params.get("folder"));
-        WebDavSetting.putEnabled(true);
-        App.post(() -> Notify.show(R.string.webdav_saved));
-        SyncManager.sync((success, message) -> Notify.show(message));
+        WebDavSetting.putEnabled(false);
+        SyncManager.resetBase();
+        App.post(() -> Notify.show(R.string.webdav_lan_saved));
     }
 
     /**

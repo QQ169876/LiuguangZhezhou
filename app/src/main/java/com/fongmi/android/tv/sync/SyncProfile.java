@@ -3,6 +3,7 @@ package com.fongmi.android.tv.sync;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.ui.dialog.SyncRiskDialog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Prefers;
@@ -69,7 +70,10 @@ public class SyncProfile {
         WebDavSetting.putEnabled(false);
         Prefers.put("moontv_confirm", ""); // 换源之后第一次双向同步要重新选方向
         Prefers.put("webdav_confirm", "");
-        App.post(() -> Notify.show(known ? R.string.sync_profile_switch : R.string.sync_profile_new));
+        App.post(() -> {
+            Notify.show(known ? R.string.sync_profile_switch : R.string.sync_profile_new);
+            SyncRiskDialog.show(App.activity(), R.string.sync_risk_vod, null);
+        });
     }
 
     private static boolean restore(int cid) {
