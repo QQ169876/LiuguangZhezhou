@@ -87,7 +87,7 @@ public class Updater implements Download.Callback, UpdateListener {
             if (probes.isEmpty()) return;
             JSONObject object = new JSONObject(probes.get(0).body);
             String name = object.optString("name");
-            String desc = object.optString("desc");
+            String desc = wrap(object.optString("desc"));
             tag = object.optString("tag");
             int code = object.optInt("code");
             if (code <= BuildConfig.VERSION_CODE) return;
@@ -100,6 +100,14 @@ public class Updater implements Download.Callback, UpdateListener {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * 更新说明的换行：json 里写成 \n（真换行）或 \\n（字面反斜杠 n）都能正常分行
+     */
+    private String wrap(String desc) {
+        if (desc == null) return "";
+        return desc.replace("\\n", "\n").replace("<br>", "\n").replace("<br/>", "\n");
     }
 
     /**
