@@ -184,6 +184,27 @@ public class GhRoute {
     }
 
     /**
+     * 隐藏开关打开时：App 内所有请求（点播、直播、图片、同步…）都走这台 SOCKS5
+     */
+    public static void applyGlobal() {
+        OkHttp.selector().setGlobal(Setting.isIPv6() ? wildcard() : null);
+    }
+
+    /** 当前这台代理，没有就退到自定义列表里第一台能用的 */
+    private static com.github.catvod.bean.Proxy wildcard() {
+        String socks = Setting.getSocks();
+        if (!validSocks(socks)) for (String item : Setting.getRouteCustoms()) if (validSocks(item)) {
+            socks = item;
+            break;
+        }
+        if (!validSocks(socks)) return null;
+        com.github.catvod.bean.Proxy proxy = new com.github.catvod.bean.Proxy();
+        proxy.setHosts(List.of("*"));
+        proxy.setUrls(List.of("socks://" + socks));
+        return proxy;
+    }
+
+    /**
      * 探测用客户端：整体有超时，测不通立刻放弃
      */
     public static OkHttpClient probe(String route, int timeout) {

@@ -173,6 +173,15 @@ public class Setting {
         if (list.remove(socks)) putRouteCustoms(list);
     }
 
+    /** App 内所有请求强制走 IPv6（默认关） */
+    public static boolean isIPv6() {
+        return Prefers.getBoolean("ipv6");
+    }
+
+    public static void putIPv6(boolean ipv6) {
+        Prefers.put("ipv6", ipv6);
+    }
+
     public static boolean isAdblock() {
         return Prefers.getBoolean("adblock", true);
     }

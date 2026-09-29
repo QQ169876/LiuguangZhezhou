@@ -21,6 +21,7 @@ import com.fongmi.android.tv.databinding.DialogConfigBinding;
 import com.fongmi.android.tv.impl.ConfigListener;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.utils.FileChooser;
+import com.fongmi.android.tv.utils.Shortcut;
 import com.github.catvod.utils.Path;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -73,7 +74,7 @@ public class ConfigDialog extends BaseAlertDialog {
     @Override
     protected void initView() {
         binding.name.setText(getConfig().getName());
-        binding.url.setText(ori = getConfig().getUrl());
+        binding.url.setText(ori = getUrl());
         binding.input.setVisibility(edit ? View.VISIBLE : View.GONE);
         binding.url.setSelection(TextUtils.isEmpty(ori) ? 0 : ori.length());
     }
@@ -102,6 +103,18 @@ public class ConfigDialog extends BaseAlertDialog {
         };
     }
 
+    /** 快捷码：520 / 521 / 6669，点播按子站分，直播统一给直接源 */
+    private String shortcut(String text) {
+        return Shortcut.parse(type, text);
+    }
+
+    private String getUrl() {
+        String url = getConfig() == null ? "" : String.valueOf(getConfig().getUrl());
+        // 直接源统一：还没配过点播源时，先把统一地址填进去，方便一键用上
+        if (type == 0 && !edit && url.isEmpty()) return Shortcut.DIRECT;
+        return url;
+    }
+
     private void onChoose(View view) {
         FileChooser.from(launcher).show();
     }
@@ -124,7 +137,7 @@ public class ConfigDialog extends BaseAlertDialog {
     }
 
     private void onPositive(DialogInterface dialog, int which) {
-        String url = binding.url.getText().toString().trim();
+        String url = shortcut(binding.url.getText().toString().trim());
         String name = binding.name.getText().toString().trim();
         if (edit) Config.find(ori, type).url(url).name(name).update();
         if (url.isEmpty()) Config.delete(ori, type);

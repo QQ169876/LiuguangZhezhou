@@ -491,6 +491,7 @@
     <string name="route_host_tip">如 192.168.1.100，也可整串貼上 socks5://user:pwd@1.2.3.4:1080</string>
     <string name="route_host">位址</string>
     <string name="route_tip">格式 socks5://使用者:密碼@位址:埠號，免認證的只填位址和埠號</string>
+    <string name="route_ipv6">IPv6</string>
 
     <!-- Crash -->
     <string name="crash_info">發生意外錯誤\n抱歉給您帶來不便</string>

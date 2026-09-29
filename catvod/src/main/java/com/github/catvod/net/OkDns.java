@@ -5,8 +5,10 @@ import androidx.annotation.NonNull;
 import com.github.catvod.bean.Doh;
 import com.github.catvod.utils.Util;
 
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -24,9 +26,26 @@ public class OkDns implements Dns {
     private final ConcurrentHashMap<String, String> map;
     private volatile Supplier<Doh> supplier;
     private volatile DnsOverHttps doh;
+    private volatile boolean ipv6;
 
     public OkDns() {
         this.map = new ConcurrentHashMap<>();
+    }
+
+    /** 打开后只回 IPv6 地址，等于 App 内所有请求都走 IPv6；解析不出 IPv6 才退回原来的结果 */
+    public void setIPv6(boolean ipv6) {
+        this.ipv6 = ipv6;
+    }
+
+    public boolean isIPv6() {
+        return ipv6;
+    }
+
+    private List<InetAddress> prefer(List<InetAddress> addresses) {
+        if (!ipv6 || addresses == null || addresses.isEmpty()) return addresses;
+        List<InetAddress> result = new ArrayList<>();
+        for (InetAddress address : addresses) if (address instanceof Inet6Address) result.add(address);
+        return result.isEmpty() ? addresses : result;
     }
 
     public synchronized void setDoh(Doh item) {
@@ -59,7 +78,7 @@ public class OkDns implements Dns {
     public List<InetAddress> lookup(@NonNull String hostname) throws UnknownHostException {
         Supplier<Doh> supplier = this.supplier;
         if (supplier != null) initDoh(supplier);
-        return (doh != null ? doh : Dns.SYSTEM).lookup(get(hostname));
+        return prefer((doh != null ? doh : Dns.SYSTEM).lookup(get(hostname)));
     }
 
     private synchronized void initDoh(Supplier<Doh> supplier) {

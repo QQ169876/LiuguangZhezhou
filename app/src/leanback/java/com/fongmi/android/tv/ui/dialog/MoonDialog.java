@@ -4,6 +4,7 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.text.format.DateFormat;
 import android.view.View;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
@@ -68,6 +69,14 @@ public class MoonDialog extends BaseAlertDialog {
         binding.moonLan.setOnClickListener(this::onLan);
         binding.enable.setOnCheckedChangeListener((view, checked) -> save());
         binding.auto.setOnCheckedChangeListener((view, checked) -> save());
+        watch(binding.url, binding.user, binding.pass);
+    }
+
+    /** 输入框失焦就存一次，不用非得点按钮 */
+    private void watch(TextView... views) {
+        for (TextView view : views) view.setOnFocusChangeListener((v, focus) -> {
+            if (!focus) save();
+        });
     }
 
     /** 关掉对话框时兜底保存一次，改完直接退出也不会白改 */

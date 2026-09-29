@@ -24,6 +24,7 @@ import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.QRCode;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.Shortcut;
 import com.github.catvod.utils.Path;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -104,21 +105,19 @@ public class ConfigDialog extends BaseAlertDialog {
     }
 
     private String shortcut(String text) {
-        if (type != 0) return text;
-        return switch (text) {
-            case "521" -> "http://www.\u996d\u592a\u786c.cc/tv";
-            case "520" -> "http://ok.169876.us.kg/sub/pg18";
-            default -> text;
-        };
+        return Shortcut.parse(type, text);
     }
 
     private String getUrl() {
-        return switch (type) {
+        String url = switch (type) {
             case 0 -> VodConfig.getUrl();
             case 1 -> LiveConfig.getUrl();
             case 2 -> WallConfig.getUrl();
             default -> "";
         };
+        // 直接源统一：还没配过点播源时，先把统一地址填进去，方便一键用上
+        if (type == 0 && !edit && url.isEmpty()) return Shortcut.DIRECT;
+        return url;
     }
 
     private void onChoose(View view) {

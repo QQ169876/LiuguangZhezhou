@@ -17,6 +17,7 @@ import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.github.catvod.net.OkHttp;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,7 @@ public class RouteDialog {
 
     private final FragmentActivity activity;
     private final Listener listener;
+    private int taps;
 
     public static void show(FragmentActivity activity, Listener listener) {
         new RouteDialog(activity, listener).show();
@@ -71,7 +73,32 @@ public class RouteDialog {
         DialogRouteBinding binding = DialogRouteBinding.inflate(LayoutInflater.from(activity));
         AlertDialog dialog = new AlertDialog.Builder(activity).setTitle(R.string.setting_route).setView(binding.getRoot()).setNegativeButton(R.string.dialog_negative, null).create();
         render(binding.list, dialog);
+        binding.ipv6.setChecked(Setting.isIPv6());
+        binding.ipv6.setOnClickListener(view -> onIPv6((android.widget.CheckBox) view));
         dialog.show();
+    }
+
+    /**
+     * IPv6：勾上之后 App 里所有请求都走 IPv6。默认关，要连点三下才真勾上，中间不给任何提示。
+     */
+    private void onIPv6(android.widget.CheckBox box) {
+        if (!box.isChecked()) {
+            taps = 0;
+            apply(false);
+            return;
+        }
+        if (++taps < 3) {
+            box.setChecked(false);
+            return;
+        }
+        taps = 0;
+        apply(true);
+    }
+
+    private void apply(boolean ipv6) {
+        Setting.putIPv6(ipv6);
+        OkHttp.dns().setIPv6(ipv6);
+        GhRoute.applyGlobal();
     }
 
     private void render(androidx.appcompat.widget.LinearLayoutCompat container, AlertDialog dialog) {
@@ -196,6 +223,7 @@ public class RouteDialog {
     }
 
     private void changed() {
+        if (Setting.isIPv6()) GhRoute.applyGlobal();
         if (listener != null) listener.onRouteChanged();
     }
 

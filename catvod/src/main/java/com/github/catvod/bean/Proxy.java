@@ -59,6 +59,14 @@ public class Proxy implements Comparable<Proxy> {
         return proxies == null ? Collections.emptyList() : proxies;
     }
 
+    public void setHosts(List<String> hosts) {
+        this.hosts = hosts;
+    }
+
+    public void setUrls(List<String> urls) {
+        this.urls = urls;
+    }
+
     public String getUserInfo(String host) {
         return getUserInfo(host, "socks");
     }

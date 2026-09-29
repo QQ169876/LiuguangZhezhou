@@ -8,6 +8,7 @@ import android.text.format.DateFormat;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -74,6 +75,14 @@ public class WebDavDialog extends BaseBottomSheetDialog {
         binding.lan.setOnClickListener(this::onLan);
         binding.enable.setOnCheckedChangeListener((view, checked) -> save(false));
         binding.auto.setOnCheckedChangeListener((view, checked) -> save(false));
+        watch(binding.url, binding.user, binding.pass, binding.folder);
+    }
+
+    /** 输入框失焦就存一次，不用非得点按钮 */
+    private void watch(TextView... views) {
+        for (TextView view : views) view.setOnFocusChangeListener((v, focus) -> {
+            if (!focus) save(false);
+        });
     }
 
     /** 关掉对话框时兜底保存一次，改完直接退出也不会白改 */

@@ -28,6 +28,21 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
+        <CheckBox
+            android:id="@+id/ipv6"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="2dp"
+            android:alpha="0.45"
+            android:buttonTint="@color/white"
+            android:minHeight="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="0dp"
+            android:text="@string/route_ipv6"
+            android:textColor="@color/white"
+            android:textSize="11sp" />
+
     </androidx.appcompat.widget.LinearLayoutCompat>
 
 </androidx.core.widget.NestedScrollView>

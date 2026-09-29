@@ -16,8 +16,8 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 591
-        versionName rootProject.legacy ? "5.6.31-legacy" : "5.6.31"
+        versionCode 592
+        versionName rootProject.legacy ? "5.6.32-legacy" : "5.6.32"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
         javaCompileOptions {
             annotationProcessorOptions {

@@ -15,6 +15,7 @@ public class OkProxySelector extends ProxySelector {
 
     private final List<Proxy> proxy;
     private final ProxySelector system;
+    private volatile Proxy global;
     private boolean authSet;
 
     public OkProxySelector() {
@@ -30,9 +31,21 @@ public class OkProxySelector extends ProxySelector {
         proxy.sort(null);
     }
 
+    /** 全局代理：匹配所有域名，传 null 表示取消 */
+    public synchronized void setGlobal(Proxy item) {
+        if (global != null) proxy.remove(global);
+        global = null;
+        if (item == null) return;
+        item.init();
+        if (item.getProxies().isEmpty()) return;
+        global = item;
+        proxy.add(item);
+    }
+
     public synchronized void clear() {
         Authenticator.setDefault(null);
         proxy.clear();
+        global = null;
     }
 
     public List<Proxy> getProxy() {

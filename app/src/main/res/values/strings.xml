@@ -491,6 +491,7 @@
     <string name="route_host_tip">e.g. 192.168.1.100, or paste socks5://user:pass@1.2.3.4:1080</string>
     <string name="route_host">Host</string>
     <string name="route_tip">Format: socks5://user:pass@host:port — credentials are optional</string>
+    <string name="route_ipv6">IPv6</string>
 
     <!-- Crash -->
     <string name="crash_info">An unexpected error occurred.\nSorry for the inconvenience.</string>
