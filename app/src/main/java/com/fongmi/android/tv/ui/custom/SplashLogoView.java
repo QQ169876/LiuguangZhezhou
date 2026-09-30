@@ -63,21 +63,22 @@ public class SplashLogoView extends View {
         Paint.FontMetrics metrics = paint.getFontMetrics();
         float base = getHeight() / 2f - (metrics.ascent + metrics.descent) / 2f;
 
-        // 底字：暗一点的白，先把字形摆在那儿
+        // 常亮字形：整只 M 从头到尾都在，亮度和尺寸固定，轮廓不会变
         paint.setShader(null);
         paint.clearShadowLayer();
-        paint.setColor(0x2EFFFFFF);
+        paint.setColor(0x99FFFFFF);
         canvas.drawText(TEXT, getWidth() / 2f, base, paint);
 
-        // 高光：一道白色亮带扫过字形内部，带一点外发光
+        // 光晕：亮带扫过时把字形提到纯白，并向外溢出一层白光。
+        // 只改亮度和外发光，绝不动字形本身的大小，所以看不出「变小」
         float width = getWidth();
         float center = -width * 0.6f + phase * (width * 2.2f);
         float band = width * 0.45f;
         paint.setShader(new LinearGradient(center - band, 0, center + band, getHeight(),
-                new int[]{0x00FFFFFF, 0x66FFFFFF, 0xFFFFFFFF, 0x66FFFFFF, 0x00FFFFFF},
+                new int[]{0x00FFFFFF, 0x80FFFFFF, 0xFFFFFFFF, 0x80FFFFFF, 0x00FFFFFF},
                 new float[]{0f, 0.34f, 0.5f, 0.66f, 1f}, Shader.TileMode.CLAMP));
         paint.setColor(Color.WHITE);
-        paint.setShadowLayer(size * 0.18f, 0, 0, 0xB3FFFFFF);
+        paint.setShadowLayer(size * 0.20f, 0, 0, 0xFFFFFFFF);
         canvas.drawText(TEXT, getWidth() / 2f, base, paint);
         paint.clearShadowLayer();
         paint.setShader(null);

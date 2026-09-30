@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统开屏画面用它当图标：全透明，等于只留纯黑底。
+     以前这里放的是 App 图标（大号 M），跟我们自己的开屏动画 M 尺寸不一致，
+     两个画面交接时会看到 M 明显变小一下。现在系统层不画东西，全屏只有一只 M。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+</shape>

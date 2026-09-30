@@ -40,7 +40,9 @@ public class SplashOverlay {
         layer = new FrameLayout(activity);
         layer.setBackgroundColor(0xFF000000);
         SplashLogoView logo = new SplashLogoView(activity, null);
-        int size = Math.round(140 * activity.getResources().getDisplayMetrics().density);
+        // 168dp：跟以前系统开屏画面那只图标 M 的视觉大小对齐，
+        // 现在系统层不画了，眼前的 M 不会比刚才那只小
+        int size = Math.round(168 * activity.getResources().getDisplayMetrics().density);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(size, size);
         params.gravity = Gravity.CENTER;
         layer.addView(logo, params);
