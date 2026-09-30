@@ -21,6 +21,7 @@ import com.fongmi.android.tv.utils.Task;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +52,12 @@ public class MoonSync {
     private static final String BASE_FAVORITE = "moontv_base_favorite";
     private static final String TOMB_RECORD = "moontv_tomb_record";
     private static final String TOMB_FAVORITE = "moontv_tomb_favorite";
+    private static final String OWNER_RECORD = "moontv_owner_record";
+    private static final String OWNER_FAVORITE = "moontv_owner_favorite";
+    private static final String SCOPES = "moontv_scopes";
+
+    /** 最多记住几个账号的账本，超了就把最久没用的那份清掉 */
+    private static final int MAX_SCOPE = 6;
 
     private static final AtomicBoolean busy = new AtomicBoolean(false);
     private static volatile boolean writing = false;
@@ -135,14 +142,132 @@ public class MoonSync {
     }
 
     /**
-     * 换了站点或账号：把上次同步留下的基线和墓碑作废，
+     * 换了站点或账号：把这次目标留下的基线和墓碑作废，
      * 免得拿旧站点的记录去判断新站点上谁删了谁、谁新谁旧。
+     * 每个账号各有一份账本，这里只动当前这个账号的，别的账号不受影响。
      */
     public static void resetBase() {
-        Prefers.put(BASE_RECORD, "");
-        Prefers.put(BASE_FAVORITE, "");
-        saveTomb(TOMB_RECORD, new JSONObject());
-        saveTomb(TOMB_FAVORITE, new JSONObject());
+        Prefers.put(baseRecord(), "");
+        Prefers.put(baseFavorite(), "");
+        saveTomb(tombRecord(), new JSONObject());
+        saveTomb(tombFavorite(), new JSONObject());
+    }
+
+    /* ---------- 账号归属：这条数据是哪个账号的 ---------- */
+
+    /**
+     * 登录过多个账号时，本机库里可能混着不同账号拉下来的记录。
+     * 这里给每条记一个「归属账号」（站点网址+账号）：
+     * 推的时候只推归当前账号的（含本机自己看的），拉下来的归当前账号；
+     * 站点上删掉的也只删归当前账号的那几条，别的账号的留在本地不动。
+     */
+    private static String me() {
+        return MoonSetting.getScope();
+    }
+
+    private static String hash(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] bytes = digest.digest(text.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < bytes.length; i++) {
+                String hex = Integer.toHexString(bytes[i] & 0xFF);
+                if (hex.length() == 1) sb.append('0');
+                sb.append(hex);
+            }
+            return sb.substring(0, 12);
+        } catch (Exception e) {
+            return "s".concat(String.valueOf(text.hashCode()));
+        }
+    }
+
+    /** 基线 / 墓碑按账号分开存：换账号时各算各的账 */
+    private static String scoped(String pref, String scope) {
+        return pref.concat(".").concat(hash(scope));
+    }
+
+    private static String baseRecord() {
+        return scoped(BASE_RECORD, me());
+    }
+
+    private static String baseFavorite() {
+        return scoped(BASE_FAVORITE, me());
+    }
+
+    private static String tombRecord() {
+        return scoped(TOMB_RECORD, me());
+    }
+
+    private static String tombFavorite() {
+        return scoped(TOMB_FAVORITE, me());
+    }
+
+    /** 记住用过哪些账号，超量的把最老那份的账本清掉，别越攒越多 */
+    private static void touchScope() {
+        JSONObject reg = loadJson(SCOPES);
+        try {
+            reg.put(hash(me()), System.currentTimeMillis());
+        } catch (Exception ignored) {
+            return;
+        }
+        if (reg.length() > MAX_SCOPE) {
+            final JSONObject used = reg;
+            List<String> all = keyList(reg);
+            Collections.sort(all, (a, b) -> Long.compare(used.optLong(b, 0), used.optLong(a, 0)));
+            JSONObject next = new JSONObject();
+            for (int i = 0; i < all.size(); i++) {
+                String key = all.get(i);
+                if (i < MAX_SCOPE) {
+                    try {
+                        next.put(key, used.optLong(key, 0));
+                    } catch (Exception ignored) {
+                    }
+                } else {
+                    dropScope(key);
+                }
+            }
+            reg = next;
+        }
+        Prefers.put(SCOPES, reg.toString());
+    }
+
+    private static void dropScope(String key) {
+        Prefers.put(BASE_RECORD.concat(".").concat(key), "");
+        Prefers.put(BASE_FAVORITE.concat(".").concat(key), "");
+        Prefers.put(TOMB_RECORD.concat(".").concat(key), "");
+        Prefers.put(TOMB_FAVORITE.concat(".").concat(key), "");
+    }
+
+    private static JSONObject loadJson(String pref) {
+        String text = Prefers.getString(pref);
+        if (text.isEmpty()) return new JSONObject();
+        try {
+            return new JSONObject(text);
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
+    }
+
+    /** 这条数据归哪个账号；空 = 本机自己看的，还没归到任何账号 */
+    private static String ownerOf(JSONObject owner, String key) {
+        return owner.optString(key, "");
+    }
+
+    /** 别的数据源的账号：当前账号不该碰 */
+    private static boolean foreign(String who) {
+        return !who.isEmpty() && !who.equals(me());
+    }
+
+    private static boolean foreign(JSONObject owner, String key) {
+        return foreign(ownerOf(owner, key));
+    }
+
+    /** 登记归属：这条数据属于当前账号 */
+    private static void mark(JSONObject owner, String key) {
+        try {
+            owner.put(key, me());
+        } catch (Exception ignored) {
+        }
     }
 
     public static void pull(Listener listener) {
@@ -234,17 +359,22 @@ public class MoonSync {
      */
     private static String doPullOverwrite() throws Exception {
         check();
+        touchScope();
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        JSONObject ownerRecord = loadJson(OWNER_RECORD);
+        JSONObject ownerFavorite = loadJson(OWNER_FAVORITE);
         pruneTomb();
         dropAlive();
         applyTomb(records, favorites);
         Map<String, long[]> skip = skipSnapshot();
         AppDatabase.get().getHistoryDao().delete(cid);
         AppDatabase.get().getKeepDao().delete(cid); // 只清当前源的收藏，别的源不受影响
-        int[] gotRecords = pullRecords(records, cid, skip);
-        int[] gotFavorites = pullFavorites(favorites, cid);
+        int[] gotRecords = pullRecords(records, cid, skip, ownerRecord);
+        int[] gotFavorites = pullFavorites(favorites, cid, ownerFavorite);
+        Prefers.put(OWNER_RECORD, ownerRecord.toString()); // 拉下来的都归当前账号
+        Prefers.put(OWNER_FAVORITE, ownerFavorite.toString());
         saveBase(records, favorites, null, null);
         MoonSetting.putLast(System.currentTimeMillis());
         refresh();
@@ -256,6 +386,7 @@ public class MoonSync {
      */
     private static String doPushOverwrite() throws Exception {
         check();
+        touchScope();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
         dedupe();
@@ -265,8 +396,9 @@ public class MoonSync {
         Set<String> localFavorites = localKeepKeys();
         int delRecords = deleteRemote(diff(scopedRemote(records, localRecords), localRecords), false);
         int delFavorites = deleteRemote(diff(scopedRemote(favorites, localFavorites), localFavorites), true);
-        int[] upRecords = pushRecords(records);
-        int[] upFavorites = pushFavorites(favorites);
+        // 手动「上传」= 明确要求把本机这份搬到当前账号上，所以不看原来的归属，搬完统一归当前账号
+        int[] upRecords = pushRecords(records, true);
+        int[] upFavorites = pushFavorites(favorites, true);
         saveBase(records, favorites, localRecords, localFavorites);
         // 墓碑留着：删过的东西不能再被别的设备补回来（站点条目时间比删除时刻新才会复活）
         MoonSetting.putLast(System.currentTimeMillis());
@@ -297,21 +429,24 @@ public class MoonSync {
         return items;
     }
 
-    private static int[] pullRecords(JSONObject remote, int cid) {
-        return pullRecords(remote, cid, null);
+    private static int[] pullRecords(JSONObject remote, int cid, JSONObject owner) {
+        return pullRecords(remote, cid, null, owner);
     }
 
     /**
      * @param skip 本机清空历史前抄下来的片头片尾（source+id → {片头, 片尾}），站点没存时用本机这份兜底
+     * @param owner 拉下来的条目登记归属：这条数据是从当前账号来的
      */
-    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip) {
+    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip, JSONObject owner) {
         int add = 0, update = 0;
         List<Entry> items = sort(remote);
-        JSONObject tomb = loadTomb(TOMB_RECORD);
+        JSONObject tomb = loadTomb(tombRecord());
         for (int i = 0; i < items.size(); i++) {
             Entry entry = items.get(i);
             JSONObject item = entry.item;
-            if (dead(tomb, entry.source.concat("+").concat(entry.id), entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            String name = entry.source.concat("+").concat(entry.id);
+            if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            mark(owner, name);
             long saveTime = visible(entry.time(), i);
             long duration = Math.round(item.optDouble("total_time", 0) * 1000);
             long position = Math.round(item.optDouble("play_time", 0) * 1000);
@@ -360,12 +495,14 @@ public class MoonSync {
         return new int[]{add, update};
     }
 
-    private static int[] pullFavorites(JSONObject remote, int cid) {
+    private static int[] pullFavorites(JSONObject remote, int cid, JSONObject owner) {
         int add = 0, update = 0;
-        JSONObject tomb = loadTomb(TOMB_FAVORITE);
+        JSONObject tomb = loadTomb(tombFavorite());
         for (Entry entry : sort(remote)) {
             JSONObject item = entry.item;
-            if (dead(tomb, entry.source.concat("+").concat(entry.id), entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            String name = entry.source.concat("+").concat(entry.id);
+            if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            mark(owner, name);
             long saveTime = entry.time();
             Keep target = new Keep();
             target.setKey(entry.source.concat(AppDatabase.SYMBOL).concat(entry.id));
@@ -398,27 +535,33 @@ public class MoonSync {
      */
     private static String doSync() throws Exception {
         check();
+        touchScope();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
         int cid = VodConfig.getCid();
+        JSONObject ownerRecord = loadJson(OWNER_RECORD);
+        JSONObject ownerFavorite = loadJson(OWNER_FAVORITE);
         Set<String> remoteRecords = keysOf(records);
         Set<String> remoteFavorites = keysOf(favorites);
         int removed = 0, removedUp = 0;
         if (hasBase()) {
-            removed += deleteLocalHistory(diff(loadSet(BASE_RECORD), remoteRecords), cid);
-            removed += deleteLocalKeep(diff(loadSet(BASE_FAVORITE), remoteFavorites));
+            removed += deleteLocalHistory(diff(loadSet(baseRecord()), remoteRecords), cid, ownerRecord);
+            removed += deleteLocalKeep(diff(loadSet(baseFavorite()), remoteFavorites), ownerFavorite);
         }
         pruneTomb();
         dropAlive();
         int[] tombed = applyTomb(records, favorites);
         removedUp += tombed[0] + tombed[1];
-        int[] down = pullRecords(records, cid);
-        int[] keepDown = pullFavorites(favorites, cid);
+        int[] down = pullRecords(records, cid, ownerRecord);
+        int[] keepDown = pullFavorites(favorites, cid, ownerFavorite);
+        Prefers.put(OWNER_RECORD, ownerRecord.toString()); // 站点拉下来的归当前账号
+        Prefers.put(OWNER_FAVORITE, ownerFavorite.toString());
         int[] clean = dedupe();
-        Set<String> localRecords = localRecordKeys();
-        Set<String> localFavorites = localKeepKeys();
-        int[] up = pushRecords(records);
-        int[] keepUp = pushFavorites(favorites);
+        // 基线只记当前账号这一份：别的账号的条目不该被算进「站点上少了什么」的判断里
+        Set<String> localRecords = mineOnly(localRecordKeys(), ownerRecord);
+        Set<String> localFavorites = mineOnly(localKeepKeys(), ownerFavorite);
+        int[] up = pushRecords(records, false);
+        int[] keepUp = pushFavorites(favorites, false);
         saveBase(records, favorites, localRecords, localFavorites);
         pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
@@ -435,7 +578,10 @@ public class MoonSync {
     public static void markDeleted(String localKey, boolean favorite) {
         String siteKey = toSiteKey(localKey);
         if (siteKey == null) return;
-        String pref = favorite ? TOMB_FAVORITE : TOMB_RECORD;
+        String who = ownerOf(loadJson(favorite ? OWNER_FAVORITE : OWNER_RECORD), siteKey);
+        boolean mine = !foreign(who); // 没归属的就是本机自己看的，算当前账号的
+        // 墓碑记在这条数据所属账号的账本上：别的账号现在没登录，先记账，等下次同步到那个账号时再删
+        String pref = scoped(favorite ? TOMB_FAVORITE : TOMB_RECORD, mine ? me() : who);
         JSONObject map = loadTomb(pref);
         try {
             map.put(siteKey, System.currentTimeMillis());
@@ -443,7 +589,7 @@ public class MoonSync {
             return;
         }
         saveTomb(pref, map);
-        flushTomb(siteKey, favorite);
+        if (mine) flushTomb(siteKey, favorite);
     }
 
     /**
@@ -454,23 +600,35 @@ public class MoonSync {
     public static void tombstoneLocal() {
         if (!MoonSetting.isSyncable()) return;
         int cid = VodConfig.getCid();
-        List<String> recordKeys = new ArrayList<>();
-        List<String> keepKeys = new ArrayList<>();
+        JSONObject ownerRecord = loadJson(OWNER_RECORD);
+        JSONObject ownerFavorite = loadJson(OWNER_FAVORITE);
+        Map<String, List<String>> recordKeys = new HashMap<>();
+        Map<String, List<String>> keepKeys = new HashMap<>();
         for (History item : AppDatabase.get().getHistoryDao().findByCid(cid)) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
-            recordKeys.add(siteKey(item));
+            group(recordKeys, ownerRecord, siteKey(item));
         }
         for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(cid)) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
-            keepKeys.add(siteKey(item));
+            group(keepKeys, ownerFavorite, siteKey(item));
         }
         if (recordKeys.isEmpty() && keepKeys.isEmpty()) return;
         long now = System.currentTimeMillis();
-        writeTomb(TOMB_RECORD, recordKeys, now);
-        writeTomb(TOMB_FAVORITE, keepKeys, now);
-        Task.execute(() -> {
+        for (Map.Entry<String, List<String>> entry : recordKeys.entrySet()) {
+            writeTomb(scoped(TOMB_RECORD, entry.getKey()), entry.getValue(), now);
+        }
+        for (Map.Entry<String, List<String>> entry : keepKeys.entrySet()) {
+            writeTomb(scoped(TOMB_FAVORITE, entry.getKey()), entry.getValue(), now);
+        }
+        List<String> mineRecords = recordKeys.get(me());
+        List<String> mineFavorites = keepKeys.get(me());
+        if (mineRecords == null) mineRecords = new ArrayList<>();
+        if (mineFavorites == null) mineFavorites = new ArrayList<>();
+        List<String> upRecords = mineRecords;
+        List<String> upFavorites = mineFavorites;
+        Task.execute(() -> { // 只有当前账号的才现在删；别的账号的等登录那个账号时按墓碑删
             int count = 0;
-            for (String key : recordKeys) {
+            for (String key : upRecords) {
                 if (count++ >= 300) break;
                 try {
                     deleteOne(key, false);
@@ -478,7 +636,7 @@ public class MoonSync {
                 }
             }
             count = 0;
-            for (String key : keepKeys) {
+            for (String key : upFavorites) {
                 if (count++ >= 300) break;
                 try {
                     deleteOne(key, true);
@@ -486,6 +644,18 @@ public class MoonSync {
                 }
             }
         });
+    }
+
+    /** 按归属账号分组：清空时要分清楚哪些是当前账号站点上的，哪些是别的账号的 */
+    private static void group(Map<String, List<String>> map, JSONObject owner, String key) {
+        String who = ownerOf(owner, key);
+        if (who.isEmpty()) who = me();
+        List<String> list = map.get(who);
+        if (list == null) {
+            list = new ArrayList<>();
+            map.put(who, list);
+        }
+        list.add(key);
     }
 
     private static void writeTomb(String pref, List<String> keys, long time) {
@@ -554,7 +724,7 @@ public class MoonSync {
      * @return {删掉的观看记录数, 删掉的收藏数}
      */
     private static int[] applyTomb(JSONObject records, JSONObject favorites) {
-        return new int[]{applyTomb(records, TOMB_RECORD, false), applyTomb(favorites, TOMB_FAVORITE, true)};
+        return new int[]{applyTomb(records, tombRecord(), false), applyTomb(favorites, tombFavorite(), true)};
     }
 
     private static int applyTomb(JSONObject remote, String pref, boolean favorite) {
@@ -586,21 +756,24 @@ public class MoonSync {
 
     /** 本机又看了 / 又收藏了这部（时间比墓碑新），墓碑作废 */
     private static void dropAlive() {
-        dropAlive(TOMB_RECORD, false);
-        dropAlive(TOMB_FAVORITE, true);
+        dropAlive(tombRecord(), false);
+        dropAlive(tombFavorite(), true);
     }
 
     private static void dropAlive(String pref, boolean favorite) {
         JSONObject tomb = loadTomb(pref);
         if (tomb.length() == 0) return;
+        JSONObject owner = loadJson(favorite ? OWNER_FAVORITE : OWNER_RECORD);
         List<String> alive = new ArrayList<>();
         if (favorite) {
             for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
                 if (item.getType() != 0) continue;
+                if (foreign(owner, siteKey(item))) continue; // 别的账号的记录不算「又看/又收藏了」
                 if (alive(tomb, siteKey(item), item.getCreateTime())) alive.add(siteKey(item));
             }
         } else {
             for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+                if (foreign(owner, siteKey(item))) continue;
                 if (alive(tomb, siteKey(item), item.getCreateTime())) alive.add(siteKey(item));
             }
         }
@@ -621,8 +794,8 @@ public class MoonSync {
 
     /** 墓碑留 90 天：删过的记录得压得住，别的设备才补不回来 */
     private static void pruneTomb() {
-        pruneTomb(TOMB_RECORD);
-        pruneTomb(TOMB_FAVORITE);
+        pruneTomb(tombRecord());
+        pruneTomb(tombFavorite());
     }
 
     private static void pruneTomb(String pref) {
@@ -686,12 +859,14 @@ public class MoonSync {
         return count;
     }
 
-    private static int deleteLocalHistory(Set<String> siteKeys, int cid) {
+    private static int deleteLocalHistory(Set<String> siteKeys, int cid, JSONObject owner) {
         if (siteKeys.isEmpty()) return 0;
         int count = 0;
         for (History item : AppDatabase.get().getHistoryDao().findAll()) {
             if (item.getCid() != cid) continue;
-            if (!siteKeys.contains(siteKey(item))) continue;
+            String name = siteKey(item);
+            if (!siteKeys.contains(name)) continue;
+            if (foreign(owner, name)) continue; // 站点上没了的是当前账号的，别的账号那份留在本地
             AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
             AppDatabase.get().getTrackDao().delete(item.getKey());
             ++count;
@@ -699,11 +874,13 @@ public class MoonSync {
         return count;
     }
 
-    private static int deleteLocalKeep(Set<String> siteKeys) {
+    private static int deleteLocalKeep(Set<String> siteKeys, JSONObject owner) {
         if (siteKeys.isEmpty()) return 0;
         int count = 0;
         for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
-            if (!siteKeys.contains(siteKey(item))) continue;
+            String name = siteKey(item);
+            if (!siteKeys.contains(name)) continue;
+            if (foreign(owner, name)) continue;
             AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
             ++count;
         }
@@ -727,7 +904,7 @@ public class MoonSync {
     /* ---------- 基线：记住上次同步时站点上有哪些条目 ---------- */
 
     private static boolean hasBase() {
-        return !Prefers.getString(BASE_RECORD).isEmpty() || !Prefers.getString(BASE_FAVORITE).isEmpty();
+        return !Prefers.getString(baseRecord()).isEmpty() || !Prefers.getString(baseFavorite()).isEmpty();
     }
 
     private static Set<String> keysOf(JSONObject remote) {
@@ -762,6 +939,13 @@ public class MoonSync {
         return set;
     }
 
+    /** 只留归当前账号的那些（本机自己看的没归属，也算当前账号的） */
+    private static Set<String> mineOnly(Set<String> keys, JSONObject owner) {
+        Set<String> set = new HashSet<>();
+        for (String key : keys) if (!foreign(owner, key)) set.add(key);
+        return set;
+    }
+
     /**
      * 站点上「属于本次同步范围」的条目：只看本机当前源里出现过的那些站点 key。
      * 别的源 / 别的账号留下的记录不在这个范围里，同步不碰它们，免得被当成多余数据删掉。
@@ -793,13 +977,13 @@ public class MoonSync {
         if (localRecords != null) baseRecords.addAll(localRecords);
         Set<String> baseFavorites = keysOf(favorites);
         if (localFavorites != null) baseFavorites.addAll(localFavorites);
-        saveSet(BASE_RECORD, baseRecords);
-        saveSet(BASE_FAVORITE, baseFavorites);
+        saveSet(baseRecord(), baseRecords);
+        saveSet(baseFavorite(), baseFavorites);
     }
 
     private static void clearTomb() {
-        saveTomb(TOMB_RECORD, new JSONObject());
-        saveTomb(TOMB_FAVORITE, new JSONObject());
+        saveTomb(tombRecord(), new JSONObject());
+        saveTomb(tombFavorite(), new JSONObject());
     }
 
     private static Set<String> loadSet(String pref) {
@@ -889,9 +1073,11 @@ public class MoonSync {
         return text == null ? "" : text.replaceAll("\\s+", "").toLowerCase();
     }
 
-    private static int[] pushRecords(JSONObject remote) {
+    private static int[] pushRecords(JSONObject remote, boolean takeover) {
         int add = 0, update = 0;
-        JSONObject tomb = loadTomb(TOMB_RECORD);
+        JSONObject tomb = loadTomb(tombRecord());
+        JSONObject owner = loadJson(OWNER_RECORD);
+        boolean dirty = false;
         for (History item : AppDatabase.get().getHistoryDao().findByCid(VodConfig.getCid())) {
             String source = item.getSiteKey();
             String id = item.getVodId();
@@ -899,6 +1085,7 @@ public class MoonSync {
             String name = source.concat("+").concat(id);
             long saveTime = item.getCreateTime();
             if (dead(tomb, name, saveTime)) continue; // 本机删过的，别再推回站点
+            if (!takeover && foreign(owner, name)) continue; // 别的账号的记录，不混进当前账号
             JSONObject old = remote.optJSONObject(name);
             try {
                 JSONObject record = new JSONObject();
@@ -915,24 +1102,30 @@ public class MoonSync {
                 record.put("search_title", "");
                 record.put("remarks", item.getVodRemarks());
                 MoonApi.saveRecord(name, record);
+                if (!me().equals(ownerOf(owner, name))) mark(owner, name);
+                dirty = true;
                 if (old == null) ++add;
                 else ++update;
             } catch (Exception e) {
                 Log.w(TAG, "Push record failed " + name, e);
             }
         }
+        if (dirty) Prefers.put(OWNER_RECORD, owner.toString());
         return new int[]{add, update};
     }
 
-    private static int[] pushFavorites(JSONObject remote) {
+    private static int[] pushFavorites(JSONObject remote, boolean takeover) {
         int add = 0, update = 0;
-        JSONObject tomb = loadTomb(TOMB_FAVORITE);
+        JSONObject tomb = loadTomb(tombFavorite());
+        JSONObject owner = loadJson(OWNER_FAVORITE);
+        boolean dirty = false;
         for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
             String name = source.concat("+").concat(id);
             if (dead(tomb, name, item.getCreateTime())) continue; // 本机删过的，别再推回站点
+            if (!takeover && foreign(owner, name)) continue; // 别的账号的记录，不混进当前账号
             JSONObject old = remote.optJSONObject(name);
             try {
                 JSONObject favorite = new JSONObject();
@@ -945,12 +1138,15 @@ public class MoonSync {
                 favorite.put("search_title", "");
                 favorite.put("origin", "vod");
                 MoonApi.saveFavorite(name, favorite);
+                if (!me().equals(ownerOf(owner, name))) mark(owner, name);
+                dirty = true;
                 if (old == null) ++add;
                 else ++update;
             } catch (Exception e) {
                 Log.w(TAG, "Push favorite failed " + name, e);
             }
         }
+        if (dirty) Prefers.put(OWNER_FAVORITE, owner.toString());
         return new int[]{add, update};
     }
 
