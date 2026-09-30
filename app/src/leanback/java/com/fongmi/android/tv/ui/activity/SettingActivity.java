@@ -29,6 +29,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.ConfigDialog;
+import com.fongmi.android.tv.ui.dialog.ClearDialog;
 import com.fongmi.android.tv.ui.dialog.DohDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
@@ -133,6 +134,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.route.setOnClickListener(this::onRoute);
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.version.setOnClickListener(this::onVersion);
+        mBinding.clear.setOnClickListener(this::onClear);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
         mBinding.vodRefresh.setOnClickListener(this::onVodRefresh);
         mBinding.vodHome.setOnClickListener(this::onVodHome);
@@ -276,6 +278,11 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onVersion(View view) {
         Updater.create().force().start(this);
+    }
+
+    /** 设置页最下面那个红色按钮：挑要清哪部分数据，二次确认后动手 */
+    private void onClear(View view) {
+        ClearDialog.show(this);
     }
 
     private void setWallDefault(View view) {

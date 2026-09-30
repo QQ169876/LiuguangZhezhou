@@ -1,0 +1,4 @@
+<resources>
+    <color name="danger">#D32F2F</color>
+    <color name="danger_focused">#FF5252</color>
+</resources>

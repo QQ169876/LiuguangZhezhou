@@ -31,6 +31,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.activity.HomeActivity;
 import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.dialog.ConfigDialog;
+import com.fongmi.android.tv.ui.dialog.ClearDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.MoonDialog;
@@ -148,6 +149,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.player.setOnClickListener(this::onPlayer);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.version.setOnClickListener(this::onVersion);
+        mBinding.clear.setOnClickListener(this::onClear);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
         mBinding.vodRefresh.setOnClickListener(this::onVodRefresh);
         mBinding.vodHome.setOnClickListener(this::onVodHome);
@@ -302,6 +304,11 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private void onVersion(View view) {
         Updater.create().force().start(requireActivity());
+    }
+
+    /** 设置页最下面那个红色按钮：挑要清哪部分数据，二次确认后动手 */
+    private void onClear(View view) {
+        ClearDialog.show(requireActivity());
     }
 
     private void setWallDefault(View view) {

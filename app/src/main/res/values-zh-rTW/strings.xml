@@ -564,4 +564,13 @@
         <item>選擇字幕</item>
     </string-array>
 
+    <string name="setting_clear">清除資料</string>
+    <string name="clear_title">要清除哪部分資料？</string>
+    <string name="clear_option_history">清除播放紀錄和收藏資料</string>
+    <string name="clear_option_all">清除所有資料（回到新安裝狀態）</string>
+    <string name="clear_confirm_history">將清除全部播放紀錄和收藏，清除後無法找回。確定繼續嗎？</string>
+    <string name="clear_confirm_all">將清除點播源、直播源、收藏、播放紀錄、裝置記錄和全部設定，App 隨後重啟，像剛裝上一樣。確定繼續嗎？</string>
+    <string name="clear_confirm">清除</string>
+    <string name="clear_done_history">播放紀錄和收藏已清除</string>
+    <string name="clear_done_all">已清除全部資料，正在重啟</string>
 </resources>

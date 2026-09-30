@@ -574,4 +574,13 @@
         <item>Select subtitle track</item>
     </string-array>
 
+    <string name="setting_clear">Clear data</string>
+    <string name="clear_title">What do you want to clear?</string>
+    <string name="clear_option_history">Clear watch history &amp; favorites</string>
+    <string name="clear_option_all">Clear everything (back to fresh install)</string>
+    <string name="clear_confirm_history">All watch history and favorites will be erased. This cannot be undone. Continue?</string>
+    <string name="clear_confirm_all">Source configs, favorites, history, devices and every setting will be erased, then the app restarts like it was just installed. Continue?</string>
+    <string name="clear_confirm">Clear</string>
+    <string name="clear_done_history">History and favorites cleared</string>
+    <string name="clear_done_all">All data cleared, restarting</string>
 </resources>
