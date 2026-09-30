@@ -482,6 +482,7 @@
     <string name="update_version">发现新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在检测更新…</string>
     <string name="update_confirm">更新</string>
+    <string name="update_latest">当前已是最新版</string>
     <string name="setting_route">更新线路</string>
     <string name="route_auto">自动（直连优先）</string>
     <string name="route_direct">直连 GitHub</string>

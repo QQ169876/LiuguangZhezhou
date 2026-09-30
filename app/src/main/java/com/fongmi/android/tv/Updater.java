@@ -45,6 +45,7 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private Download download;
     private UpdateDialog dialog;
+    private boolean forced;
     private boolean retried;
     private Probe route;
     private String apk;
@@ -66,12 +67,22 @@ public class Updater implements Download.Callback, UpdateListener {
         return Github.getJson(BuildConfig.FLAVOR_mode);
     }
 
+    /**
+     * 版本文件带个时间戳再取：公益代理会缓存 raw 内容，
+     * 不带这个参数改了更新说明可能还拿到旧的。
+     */
+    private String getJsonUrl() {
+        String url = getJson();
+        return url + (url.contains("?") ? "&" : "?") + "_t=" + System.currentTimeMillis();
+    }
+
     private String getApk(String tag) {
         if (tag == null || tag.isEmpty()) return "";
         return Github.getApk(tag, BuildConfig.FLAVOR_mode + "-" + BuildConfig.FLAVOR_abi);
     }
 
     public Updater force() {
+        forced = true;
         Notify.show(R.string.update_check);
         Setting.putUpdate(true);
         return this;
@@ -84,14 +95,17 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private void doInBackground(FragmentActivity activity) {
         try {
-            List<Probe> probes = probeAll(getRoutes(), getJson());
+            List<Probe> probes = probeAll(getRoutes(), getJsonUrl());
             if (probes.isEmpty()) return;
             JSONObject object = new JSONObject(probes.get(0).body);
             String name = object.optString("name");
             String desc = wrap(object.optString("desc"));
             tag = object.optString("tag");
             int code = object.optInt("code");
-            if (code <= BuildConfig.VERSION_CODE) return;
+            if (code <= BuildConfig.VERSION_CODE) {
+                if (forced) App.post(() -> Notify.show(R.string.update_latest));
+                return;
+            }
             apk = getApk(tag);
             if (apk.isEmpty()) return;
             route = choose(probes, apk);
