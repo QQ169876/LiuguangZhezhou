@@ -13,13 +13,26 @@ import com.fongmi.android.tv.App;
 /**
  * 开屏页：盖在主界面上面，等点播源配置加载完再撤，但最少也要停 3 秒，
  * 免得网速快的时候一闪而过。撤的时候淡出，不会生硬地跳一下。
+ * 兜底 15 秒：配置一直不回来也不能一直杵着。
  */
 public class SplashOverlay {
 
     private static final long MIN_SHOW = 3000;
+    private static final long MAX_SHOW = 15000;
+
+    private final Runnable minTick = () -> {
+        elapsed = true;
+        maybe();
+    };
+
+    private final Runnable maxTick = () -> {
+        loaded = true;
+        maybe();
+    };
 
     private final FrameLayout layer;
     private final ViewGroup parent;
+    private boolean elapsed;
     private boolean loaded;
     private boolean gone;
 
@@ -49,7 +62,8 @@ public class SplashOverlay {
             return;
         }
         App.post(() -> parent.addView(layer, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)), 0);
-        App.post(this::maybe, MIN_SHOW);
+        App.post(minTick, MIN_SHOW);
+        App.post(maxTick, MAX_SHOW);
     }
 
     /** 点播源配置加载完了（成功失败都算完） */
@@ -58,9 +72,12 @@ public class SplashOverlay {
         maybe();
     }
 
+    /** 两个条件都满足才撤：配置加载完了，而且最少停留时间也到了 */
     private synchronized void maybe() {
-        if (gone || !loaded) return;
+        if (gone || !elapsed || !loaded) return;
         gone = true;
+        App.removeCallbacks(minTick);
+        App.removeCallbacks(maxTick);
         App.post(this::fade, 0);
     }
 
