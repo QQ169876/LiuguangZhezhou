@@ -24,7 +24,9 @@ import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.impl.ParseCallback;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.dialog.WebDialog;
+import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Sniffer;
+import com.fongmi.android.tv.webdav.SyncManager;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderDebug;
 import com.github.catvod.utils.Util;
@@ -53,8 +55,10 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
     private Runnable timer;
     private boolean stopped;
     private boolean detect;
+    private boolean shown;
     private String click;
     private String from;
+    private String last;
     private String key;
     private String url;
 
@@ -102,6 +106,7 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
     }
 
     private void start(Map<String, String> headers) {
+        CookieStore.restore();
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true);
         checkHeader(url, headers);
         loadUrl(url, headers);
@@ -110,7 +115,10 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
     private void checkHeader(String url, Map<String, String> headers) {
         for (String key : headers.keySet()) {
             if (HttpHeaders.USER_AGENT.equalsIgnoreCase(key)) getSettings().setUserAgentString(headers.get(key));
-            else if (HttpHeaders.COOKIE.equalsIgnoreCase(key)) CookieManager.getInstance().setCookie(url, headers.get(key));
+            else if (HttpHeaders.COOKIE.equalsIgnoreCase(key)) {
+                CookieManager.getInstance().setCookie(url, headers.get(key));
+                CookieStore.put(url, headers.get(key));
+            }
         }
     }
 
@@ -132,6 +140,7 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (url.equals(BLANK)) return;
+                last = url;
                 evaluate(getScript(url), 0);
             }
 
@@ -156,8 +165,21 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
     private void showDialog() {
         if (dialog != null || App.activity() == null) return;
         if (getParent() != null) ((ViewGroup) getParent()).removeView(this);
+        shown = true;
         dialog = WebDialog.create(this).show();
         App.removeCallbacks(timer);
+    }
+
+    /**
+     * 需要人工过一下的页面（登录、扫码、验证）看完之后，
+     * 把这一页留下的 Cookie 抄进同步数据，别的设备就不用再扫一次。
+     */
+    private void keepCookie() {
+        if (!shown) return;
+        shown = false;
+        boolean changed = CookieStore.capture(url);
+        if (last != null && !last.equals(url)) changed |= CookieStore.capture(last);
+        if (changed) SyncManager.touch();
     }
 
     private void hideDialog() {
@@ -167,6 +189,7 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
 
     @Override
     public void onDismiss(DialogInterface dialog) {
+        keepCookie();
         stop(true);
     }
 
@@ -223,6 +246,7 @@ public class CustomWebView extends WebView implements DialogInterface.OnDismissL
     public void stop(boolean error) {
         if (stopped) return;
         stopped = true;
+        keepCookie();
         hideDialog();
         stopLoading();
         loadUrl(BLANK);

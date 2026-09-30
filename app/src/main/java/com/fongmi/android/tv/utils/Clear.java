@@ -42,6 +42,7 @@ public class Clear {
             AppDatabase.get().getConfigDao().delete();
             AppDatabase.get().getDeviceDao().delete();
             Path.clear(Path.cache());
+            CookieStore.clear();
             clearPrefs();
             App.post(callback::success);
         });

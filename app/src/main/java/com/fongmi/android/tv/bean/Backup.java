@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.utils.CookieStore;
 import com.github.catvod.utils.Prefers;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -29,10 +30,13 @@ public class Backup {
     private List<History> history;
     @SerializedName("prefers")
     private Map<String, ?> prefers;
+    @SerializedName("cookies")
+    private Map<String, String> cookies;
 
     public static Backup create() {
         Backup backup = new Backup();
         backup.setPrefers(Prefers.getPrefers().getAll());
+        backup.setCookies(CookieStore.all());
         backup.setSite(AppDatabase.get().getSiteDao().findAll());
         backup.setLive(AppDatabase.get().getLiveDao().findAll());
         backup.setKeep(AppDatabase.get().getKeepDao().findAll());
@@ -59,6 +63,7 @@ public class Backup {
         AppDatabase.get().getConfigDao().insertOrUpdate(getConfig());
         AppDatabase.get().getHistoryDao().insertOrUpdate(getHistory());
         for (Map.Entry<String, ?> entry : getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
+        CookieStore.apply(getCookies());
     }
 
     public List<Site> getSite() {
@@ -107,6 +112,14 @@ public class Backup {
 
     public void setPrefers(Map<String, ?> prefers) {
         this.prefers = prefers;
+    }
+
+    public Map<String, String> getCookies() {
+        return cookies == null ? new HashMap<>() : cookies;
+    }
+
+    public void setCookies(Map<String, String> cookies) {
+        this.cookies = cookies;
     }
 
     @NonNull

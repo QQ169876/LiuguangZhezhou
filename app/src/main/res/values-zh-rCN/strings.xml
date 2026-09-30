@@ -293,6 +293,7 @@
     <string name="webdav_folder_tip">相同标识的设备之间互相同步，默认 okmove</string>
     <string name="webdav_enable">启用同步</string>
     <string name="webdav_auto">数据变化时自动同步</string>
+    <string name="webdav_cookie">同步扫码登录状态（Cookie）</string>
     <string name="webdav_test">测试连接</string>
     <string name="webdav_scan">扫码导入</string>
     <string name="webdav_qrcode">生成二维码</string>

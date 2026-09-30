@@ -101,6 +101,15 @@
             android:text="@string/webdav_auto"
             android:textColor="@color/white" />
 
+        <androidx.appcompat.widget.AppCompatCheckBox
+            style="@style/DialogCheck"
+            android:id="@+id/cookie"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/webdav_cookie"
+            android:textColor="@color/white" />
+
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/last"
             android:layout_width="match_parent"

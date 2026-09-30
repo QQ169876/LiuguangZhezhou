@@ -18,6 +18,7 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.utils.ConfigCache;
+import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
@@ -277,6 +278,7 @@ public class SyncManager {
             }
         }
         if (!data.getPrefers().isEmpty()) applyPrefers(data.getPrefers(), local.getPrefers());
+        if (!data.getCookies().isEmpty()) CookieStore.apply(data.getCookies());
         if (configChanged) reload();
         App.post(() -> {
             RefreshEvent.history();
@@ -321,6 +323,7 @@ public class SyncManager {
         merged.getData().setSite(mergeList(backup(base).getSite(), backup(local).getSite(), backup(remote).getSite(), SyncManager::key, (a, b) -> a));
         merged.getData().setLive(mergeList(backup(base).getLive(), backup(local).getLive(), backup(remote).getLive(), SyncManager::key, (a, b) -> a));
         merged.setPrefers(mergeMap(backup(base).getPrefers(), backup(local).getPrefers(), backup(remote).getPrefers()));
+        merged.getData().setCookies(mergeCookies(backup(base).getCookies(), backup(local).getCookies(), backup(remote).getCookies()));
         Map<String, String> remoteCache = remote == null ? null : remote.getCache();
         Map<String, String> localCache = local == null ? null : local.getCache();
         if (remoteCache != null && !remoteCache.isEmpty()) merged.setCache(remoteCache);
@@ -371,6 +374,35 @@ public class SyncManager {
             Object b = base.get(name);
             Object l = local.get(name);
             Object r = remote.get(name);
+            if (l == null && r == null) continue;
+            boolean localChanged = l != null && !Objects.equals(l, b);
+            boolean remoteChanged = r != null && !Objects.equals(r, b);
+            if (l == null) {
+                if (b == null) result.put(name, r);
+            } else if (r == null) {
+                if (b == null) result.put(name, l);
+            } else if (remoteChanged && !localChanged) {
+                result.put(name, r);
+            } else {
+                result.put(name, l);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 扫码登录的 Cookie：谁变过就听谁的，两边都变过以本机为准。
+     * 本机没扫过码（压根没有这个域名）而云端有，就直接拿来用。
+     */
+    private static Map<String, String> mergeCookies(Map<String, String> base, Map<String, String> local, Map<String, String> remote) {
+        Set<String> keys = new HashSet<>(local.keySet());
+        keys.addAll(remote.keySet());
+        keys.addAll(base.keySet());
+        Map<String, String> result = new LinkedHashMap<>();
+        for (String name : keys) {
+            String b = base.get(name);
+            String l = local.get(name);
+            String r = remote.get(name);
             if (l == null && r == null) continue;
             boolean localChanged = l != null && !Objects.equals(l, b);
             boolean remoteChanged = r != null && !Objects.equals(r, b);
@@ -534,6 +566,7 @@ public class SyncManager {
             AppDatabase.get().getLiveDao().insertOrUpdate(item);
         }
         applyPrefers(merged.getPrefers(), backup(local).getPrefers());
+        CookieStore.apply(merged.getData().getCookies());
         ConfigCache.apply(merged.getCache());
         return configChanged;
     }
@@ -546,6 +579,7 @@ public class SyncManager {
         AppDatabase.get().getKeepDao().insertOrUpdate(backup.getKeep());
         AppDatabase.get().getHistoryDao().insertOrUpdate(backup.getHistory());
         for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
+        CookieStore.apply(backup.getCookies());
     }
 
     private static <T> Set<String> keys(List<T> items, Function<T, String> key) {

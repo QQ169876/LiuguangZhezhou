@@ -59,6 +59,15 @@ public class WebDavSetting {
         Prefers.put("webdav_auto", auto);
     }
 
+    /** 是否把扫码登录后留下的 Cookie 也一起同步（默认开） */
+    public static boolean isCookie() {
+        return Prefers.getBoolean("webdav_cookie", true);
+    }
+
+    public static void putCookie(boolean cookie) {
+        Prefers.put("webdav_cookie", cookie);
+    }
+
     public static long getLast() {
         return Prefers.getLong("webdav_last");
     }

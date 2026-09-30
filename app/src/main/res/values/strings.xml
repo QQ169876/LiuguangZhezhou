@@ -294,6 +294,7 @@
     <string name="webdav_folder_tip">Devices with the same ID sync together (default: okmove)</string>
     <string name="webdav_enable">Enable sync</string>
     <string name="webdav_auto">Sync on change</string>
+    <string name="webdav_cookie">Sync scan-login cookies</string>
     <string name="webdav_test">Test</string>
     <string name="webdav_scan">Scan QR</string>
     <string name="webdav_qrcode">QR code</string>

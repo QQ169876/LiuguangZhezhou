@@ -293,6 +293,7 @@
     <string name="webdav_folder_tip">相同標識的設備之間互相同步，預設 okmove</string>
     <string name="webdav_enable">啟用同步</string>
     <string name="webdav_auto">資料變更時自動同步</string>
+    <string name="webdav_cookie">同步掃碼登入狀態（Cookie）</string>
     <string name="webdav_test">測試連線</string>
     <string name="webdav_scan">掃碼匯入</string>
     <string name="webdav_qrcode">產生 QR Code</string>

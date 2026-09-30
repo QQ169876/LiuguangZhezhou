@@ -66,6 +66,7 @@ public class WebDavDialog extends BaseBottomSheetDialog {
         binding.folder.setText(WebDavSetting.getFolder());
         binding.enable.setChecked(WebDavSetting.isEnabled());
         binding.auto.setChecked(WebDavSetting.isAuto());
+        binding.cookie.setChecked(WebDavSetting.isCookie());
         setLastText();
     }
 
@@ -80,6 +81,7 @@ public class WebDavDialog extends BaseBottomSheetDialog {
         binding.lan.setOnClickListener(this::onLan);
         binding.enable.setOnCheckedChangeListener((view, checked) -> save(false));
         binding.auto.setOnCheckedChangeListener((view, checked) -> save(false));
+        binding.cookie.setOnCheckedChangeListener((view, checked) -> save(false));
         watch(binding.url, binding.user, binding.pass, binding.folder);
     }
 
@@ -181,6 +183,7 @@ public class WebDavDialog extends BaseBottomSheetDialog {
         WebDavSetting.putFolder(binding.folder.getText().toString());
         WebDavSetting.putEnabled(binding.enable.isChecked());
         WebDavSetting.putAuto(binding.auto.isChecked());
+        WebDavSetting.putCookie(binding.cookie.isChecked());
         if (hint) Notify.show(R.string.webdav_saved);
     }
 

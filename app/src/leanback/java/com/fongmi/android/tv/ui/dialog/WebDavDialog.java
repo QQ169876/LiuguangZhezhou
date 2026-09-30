@@ -60,6 +60,7 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.folder.setText(WebDavSetting.getFolder());
         binding.enable.setChecked(WebDavSetting.isEnabled());
         binding.auto.setChecked(WebDavSetting.isAuto());
+        binding.cookie.setChecked(WebDavSetting.isCookie());
         setLastText();
     }
 
@@ -73,6 +74,7 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.lan.setOnClickListener(this::onLan);
         binding.enable.setOnCheckedChangeListener((view, checked) -> save());
         binding.auto.setOnCheckedChangeListener((view, checked) -> save());
+        binding.cookie.setOnCheckedChangeListener((view, checked) -> save());
         watch(binding.url, binding.user, binding.pass, binding.folder);
     }
 
@@ -176,6 +178,7 @@ public class WebDavDialog extends BaseAlertDialog {
         WebDavSetting.putFolder(binding.folder.getText().toString());
         WebDavSetting.putEnabled(binding.enable.isChecked());
         WebDavSetting.putAuto(binding.auto.isChecked());
+        WebDavSetting.putCookie(binding.cookie.isChecked());
     }
 
     private void onQrCode(View view) {
