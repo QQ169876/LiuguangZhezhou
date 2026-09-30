@@ -17,6 +17,7 @@ import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
+import com.fongmi.android.tv.sync.Owner;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
@@ -44,6 +45,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import org.json.JSONObject;
+
 public class SyncManager {
 
     private static final String TAG = SyncManager.class.getSimpleName();
@@ -65,8 +68,20 @@ public class SyncManager {
         void done(boolean success, String message);
     }
 
+    /**
+     * 基线按「同步标识」分开存。
+     * 以前全设备共用一个 webdav-baseline.json：换了个同步标识（或换服务器、换目录），
+     * 三向合并拿的还是上一个标识的账，本机旧数据就被当成「云端少了」或者「本机多了」，
+     * 一同步就把另一个人的记录糊进来。现在一个身份一份基线，各算各的。
+     * 老文件（不带身份后缀）升级上来时自动认领为当前身份那份。
+     */
     private static File getBaseline() {
-        return new File(App.get().getFilesDir(), BASELINE);
+        File current = Owner.baseline();
+        File legacy = new File(App.get().getFilesDir(), BASELINE.concat(".json"));
+        if (!current.exists() && legacy.exists() && legacy.renameTo(current)) {
+            Log.i(TAG, "Baseline migrated to current identity");
+        }
+        return current;
     }
 
     public static void boot() {
@@ -213,42 +228,164 @@ public class SyncManager {
 
     /* ---------- actions ---------- */
 
+    /**
+     * 本机这份要参与本次同步的数据：只带上「属于当前同步标识」的
+     * （没打过归属标记的本机自己看的也算），别的同步标识的一条都不带，
+     * 也不让它们出现在后面那个「本机有、云端没有就删掉」的比较里。
+     *
+     * @param takeover true = 明确的「用本机覆盖云端」，整份搬过去不看旧归属
+     */
+    private static WebDavData participate(boolean takeover, JSONObject bookRecord, JSONObject bookFavorite) {
+        WebDavData data = WebDavData.create();
+        Backup backup = data.getData();
+        List<History> history = new ArrayList<>();
+        for (History item : backup.getHistory()) {
+            String name = Owner.key(item.getKey());
+            if (name == null) {
+                history.add(item);
+            } else if (takeover || !Owner.foreign(Owner.DAV, bookRecord, name)) {
+                history.add(item);
+            }
+        }
+        List<Keep> keep = new ArrayList<>();
+        for (Keep item : backup.getKeep()) {
+            String name = Owner.key(item.getKey());
+            if (name == null) {
+                keep.add(item);
+            } else if (takeover || !Owner.foreign(Owner.DAV, bookFavorite, name)) {
+                keep.add(item);
+            }
+        }
+        backup.setHistory(history);
+        backup.setKeep(keep);
+        return data;
+    }
+
+    /** 同步完这批数据都算进了当前同步标识的名下，记一笔 */
+    private static void absorb(WebDavData data, JSONObject bookRecord, JSONObject bookFavorite) {
+        for (History item : data.getData().getHistory()) {
+            String name = Owner.key(item.getKey());
+            if (name != null) Owner.mark(Owner.DAV, bookRecord, name);
+        }
+        for (Keep item : data.getData().getKeep()) {
+            String name = Owner.key(item.getKey());
+            if (name != null) Owner.mark(Owner.DAV, bookFavorite, name);
+        }
+    }
+
+    /** 本机里属于别的同步标识的那些，同步时不碰（既不上传也不删除） */
+    private static List<History> foreignHistory(JSONObject book) {
+        List<History> result = new ArrayList<>();
+        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+            String name = Owner.key(item.getKey());
+            if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
+        }
+        return result;
+    }
+
+    private static List<Keep> foreignKeep(JSONObject book) {
+        List<Keep> result = new ArrayList<>();
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+            String name = Owner.key(item.getKey());
+            if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
+        }
+        return result;
+    }
+
     private static String doSync() throws Exception {
         check();
+        Owner.touch();
         String url = WebDavSetting.getFileUrl();
+        JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
+        JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
         WebDavData remoteData = WebDavData.from(WebDav.get(url));
         WebDavData baseData = readBaseline();
-        WebDavData localData = WebDavData.create();
+        WebDavData localData = participate(false, bookRecord, bookFavorite);
         if (remoteData == null) remoteData = baseData == null ? WebDavData.empty() : WebDavData.from(baseData.toJson());
         WebDavData merged = merge(baseData, localData, remoteData);
+        absorb(merged, bookRecord, bookFavorite); // 拉下来/推上去的都归当前同步标识
         boolean changed = apply(merged, localData);
         merged.setTime(System.currentTimeMillis());
         save(url, merged);
+        Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
+        Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
         if (changed) reload();
         return getSummary(merged);
     }
 
     private static String doPush() throws Exception {
         check();
-        WebDavData localData = WebDavData.create();
+        Owner.touch();
+        JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
+        JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
+        // 手动「上传」= 明确要求把本机这份搬到当前同步标识下，所以不看原来归属，搬完统一改归属
+        WebDavData localData = participate(true, bookRecord, bookFavorite);
+        absorb(localData, bookRecord, bookFavorite);
         localData.setTime(System.currentTimeMillis());
         save(WebDavSetting.getFileUrl(), localData);
+        Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
+        Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
         return getSummary(localData);
     }
 
+    /**
+     * 用云端覆盖本机：只覆盖属于当前同步标识的那部分，
+     * 别的同步标识留在本机的数据原样放着（删了它们等于替别人清库，也会在下一次被推回去）。
+     */
     private static String doPull() throws Exception {
         check();
+        Owner.touch();
         String url = WebDavSetting.getFileUrl();
         WebDavData remoteData = WebDavData.from(WebDav.get(url));
         if (remoteData == null) throw new Exception("Remote file not found");
-        AppDatabase.get().clearAllTables();
+        JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
+        JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
+        WebDavData mine = participate(false, bookRecord, bookFavorite);
+        replaceLocal(mine);
+        List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
+        List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
         insertAll(remoteData);
+        if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
+        if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
         ConfigCache.apply(remoteData.getCache());
+        absorb(remoteData, bookRecord, bookFavorite); // 云端这份就是当前同步标识的
+        Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
+        Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
         writeBaseline(remoteData);
         remoteData.setTime(System.currentTimeMillis());
         save(url, remoteData);
         reload();
         return getSummary(remoteData);
+    }
+
+    /** 清掉本机参与本次同步的那部分（连同播放轨道），并重建配置/站点/直播 */
+    private static void replaceLocal(WebDavData mine) {
+        for (History item : mine.getData().getHistory()) {
+            AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
+            AppDatabase.get().getTrackDao().delete(item.getKey());
+        }
+        for (Keep item : mine.getData().getKeep()) {
+            AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
+        }
+        AppDatabase.get().getConfigDao().delete();
+        AppDatabase.get().getSiteDao().delete();
+        AppDatabase.get().getLiveDao().delete();
+        ConfigCache.apply(new HashMap<>());
+    }
+
+    /** 留下来不删的那些里，云端也有的就算了（主键相同会互盖），只保留云端没有的 */
+    private static <T> List<T> keepKeys(List<T> left, List<?> remote) {
+        Set<String> remoteKeys = new HashSet<>();
+        for (Object item : remote) {
+            if (item instanceof History) remoteKeys.add(((History) item).getKey());
+            else if (item instanceof Keep) remoteKeys.add(baseKey(((Keep) item).getKey()));
+        }
+        List<T> result = new ArrayList<>();
+        for (T item : left) {
+            String key = item instanceof History ? ((History) item).getKey() : baseKey(((Keep) item).getKey());
+            if (!remoteKeys.contains(key)) result.add(item);
+        }
+        return result;
     }
 
     private static void check() throws Exception {
@@ -416,6 +553,7 @@ public class SyncManager {
         for (String name : keys) {
             if (name.startsWith("webdav_")) continue;
             if (name.startsWith("moontv_")) continue;
+            if (name.startsWith("owner_")) continue;
             Object b = base.get(name);
             Object l = local.get(name);
             Object r = remote.get(name);
@@ -638,6 +776,7 @@ public class SyncManager {
             String name = entry.getKey();
             if (name == null || name.startsWith("webdav_")) continue;
             if (name.startsWith("moontv_")) continue;
+            if (name.startsWith("owner_")) continue;
             if (Objects.equals(current.get(name), entry.getValue())) continue;
             values.put(name, entry.getValue());
         }

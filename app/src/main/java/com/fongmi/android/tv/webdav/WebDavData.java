@@ -104,7 +104,9 @@ public class WebDavData {
         Map<String, Object> values = new HashMap<>();
         for (Map.Entry<String, ?> entry : prefers.entrySet()) {
             String key = entry.getKey();
-            if (key == null || key.startsWith("webdav_last") || key.startsWith("webdav_device")) continue;
+            // 同步配置文件本身就（干url、账号、同步标识）和归属账本（owner_*）不上云：
+            // 一个是别的设备不能直接套用别人的账号，一个是「谁的数据」是本机自己的判断
+            if (key == null || key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_")) continue;
             values.put(key, entry.getValue());
         }
         getData().setPrefers(values);

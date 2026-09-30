@@ -21,14 +21,13 @@ public class MoonSetting {
     }
 
     /**
-     * 站点网址或账号换了 = 换了一份数据源：上次同步留下的基线和墓碑全部作废，
-     * 并且把「以哪边为准」的确认清掉，下次同步重新问一次。
-     * 不然会拿旧账号的记录去比对新账号，把两边的数据糊到一起。
+     * 站点网址或账号换了 = 换了另一个账号的数据：把「以哪边为准」的确认清掉，
+     * 下次同步重新问一次。
+     * 基线和墓碑不用作废：现在按账号各存一份，换账号时自动切到那份新账号的账。
      */
     private static void onTargetChanged(String oldScope) {
         if (oldScope.equals(getScope())) return;
         Prefers.put("moontv_confirm", "");
-        MoonSync.resetBase();
     }
 
     public static String getUser() {

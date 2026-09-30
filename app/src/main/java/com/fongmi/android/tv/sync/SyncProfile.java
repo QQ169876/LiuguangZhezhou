@@ -22,6 +22,10 @@ import org.json.JSONObject;
  * 切换点播源时：先把当前这套存进旧源的档案，再套用新源上次用过的那套；
  * 新源从没配过就沿用现在的设置。不管哪种情况都把「启用同步」关掉，
  * 由用户确认无误后自己打开，避免换源瞬间就把两边的数据糊到一起。
+ *
+ * 这里不再去「作废基线」了：基线和墓碑现在按账号（同步标识 / 用户名）分开存，
+ * 每个账号各留各的账，换源、换账号都不需要再清空；
+ * 真正挡住数据混淆的是 sync/Owner 那份归属账本（每条记录记着它属于哪个账号）。
  */
 public class SyncProfile {
 
@@ -72,8 +76,6 @@ public class SyncProfile {
         WebDavSetting.putEnabled(false);
         Prefers.put("moontv_confirm", ""); // 换源之后第一次双向同步要重新选方向
         Prefers.put("webdav_confirm", "");
-        MoonSync.resetBase(); // 旧的基线/墓碑是上一个源的，留着会拿旧数据去判断新源
-        SyncManager.resetBase();
         App.post(() -> {
             Notify.show(known ? R.string.sync_profile_switch : R.string.sync_profile_new);
             SyncRiskDialog.show(App.activity(), R.string.sync_risk_vod, null);
