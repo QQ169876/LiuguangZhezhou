@@ -134,6 +134,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private Runnable mR2;
     private Runnable mR3;
     private Runnable mR4;
+    private boolean switching;
     private History mHistory;
     private boolean fullscreen;
     private boolean useParse;
@@ -605,6 +606,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.swipeLayout.setRefreshing(false);
         mBinding.progressLayout.showContent();
         mBinding.name.setText(item.getName());
+        switching = false;
         App.removeCallbacks(mR4);
         setArtwork(item.getPic());
         checkKeepImg();
@@ -717,11 +719,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void onDetailFallbackScheduled() {
+        switching = true;
         App.post(mR4, 10000);
     }
 
     @Override
     public void onDetailFallbackCancelled() {
+        switching = false;
         App.removeCallbacks(mR4);
     }
 
@@ -731,7 +735,15 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void onSearchResult() {
+        switching = false;
         App.removeCallbacks(mR4);
+    }
+
+    @Override
+    public void onSourceExhausted() {
+        switching = false;
+        App.removeCallbacks(mR4);
+        mBinding.progressLayout.showEmpty(null, R.string.detail_all_failed);
     }
 
     @Override
@@ -780,7 +792,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void showEmpty() {
         showError(getString(R.string.error_detail));
         mBinding.swipeLayout.setEnabled(true);
-        mBinding.progressLayout.showEmpty();
+        mBinding.progressLayout.showEmpty(switching ? getString(R.string.detail_switching) : null);
     }
 
     private void setText(Vod item) {

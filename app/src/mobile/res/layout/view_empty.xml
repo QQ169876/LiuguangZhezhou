@@ -22,4 +22,15 @@
         android:textColor="@color/white"
         android:textSize="16sp" />
 
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/sub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="@string/detail_switching"
+        android:textColor="#B3FFFFFF"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
 </androidx.appcompat.widget.LinearLayoutCompat>

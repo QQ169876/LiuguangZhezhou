@@ -7,6 +7,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RelativeLayout;
 
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.ViewEmptyBinding;
 import com.fongmi.android.tv.databinding.ViewProgressBinding;
 
@@ -22,6 +23,7 @@ public class ProgressLayout extends RelativeLayout {
     }
 
     private List<View> mContentViews;
+    private ViewEmptyBinding mEmptyBinding;
     private View mProgressView;
     private View mEmptyView;
     private State mState;
@@ -47,7 +49,8 @@ public class ProgressLayout extends RelativeLayout {
     }
 
     private void initView() {
-        mEmptyView = ViewEmptyBinding.inflate(LayoutInflater.from(getContext())).getRoot();
+        mEmptyBinding = ViewEmptyBinding.inflate(LayoutInflater.from(getContext()));
+        mEmptyView = mEmptyBinding.getRoot();
         mEmptyView.setTag(TAG_PROGRESS);
         mEmptyView.setVisibility(GONE);
         mProgressView = ViewProgressBinding.inflate(LayoutInflater.from(getContext())).getRoot();
@@ -72,6 +75,20 @@ public class ProgressLayout extends RelativeLayout {
     }
 
     public void showEmpty() {
+        showEmpty(null, 0);
+    }
+
+    /** 空态下面再补一句说明，比如「请稍等，正在为您切换其他源。」 */
+    public void showEmpty(CharSequence sub) {
+        showEmpty(sub, 0);
+    }
+
+    /** 换掉空态主文案（所有源都找不到时用），sub 传 null 就不显示第二行 */
+    public void showEmpty(CharSequence sub, int mainRes) {
+        mEmptyBinding.text.setText(mainRes == 0 ? R.string.error_empty : mainRes);
+        if (sub == null) mEmptyBinding.sub.setVisibility(GONE);
+        else mEmptyBinding.sub.setText(sub);
+        if (sub != null) mEmptyBinding.sub.setVisibility(VISIBLE);
         switchState(State.EMPTY);
     }
 

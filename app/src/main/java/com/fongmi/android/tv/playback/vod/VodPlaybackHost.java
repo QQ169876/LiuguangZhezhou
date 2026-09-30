@@ -117,6 +117,9 @@ public interface VodPlaybackHost {
 
     void onSearchResult();
 
+    /** 自动换源时所有源都搜不到，告诉用户真的没戏了 */
+    void onSourceExhausted();
+
     void showDetailMessage(String msg);
 
     void showSwitchLine(Flag flag);

@@ -573,4 +573,6 @@
     <string name="clear_confirm">清除</string>
     <string name="clear_done_history">播放历史和收藏已清除</string>
     <string name="clear_done_all">已清除全部数据，正在重启</string>
+    <string name="detail_switching">请稍等，正在为您切换其他源。</string>
+    <string name="detail_all_failed">真的什么也找不到，返回看其他的吧</string>
 </resources>

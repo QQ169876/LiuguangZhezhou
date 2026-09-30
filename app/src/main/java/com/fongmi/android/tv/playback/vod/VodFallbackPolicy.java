@@ -51,7 +51,10 @@ class VodFallbackPolicy {
         state.setSources(items);
         host.renderSources(state.getSources());
         if (state.isSelectFirstSource()) nextSource();
-        if (items.isEmpty()) return;
+        if (items.isEmpty()) {
+            if (state.isAutoFallback()) host.onSourceExhausted();
+            return;
+        }
         host.onSearchResult();
     }
 
