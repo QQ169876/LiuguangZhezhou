@@ -59,6 +59,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
     @Override
     protected void initView() {
         binding.url.setText(MoonSetting.getUrl());
+        binding.url.setHint(MoonSetting.DEFAULT_URL);
         binding.user.setText(MoonSetting.getUser());
         binding.pass.setText(MoonSetting.getPass());
         binding.enable.setChecked(MoonSetting.isEnabled());

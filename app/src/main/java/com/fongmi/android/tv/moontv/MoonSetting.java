@@ -6,12 +6,12 @@ import org.json.JSONObject;
 
 public class MoonSetting {
 
-    /** 影视站默认地址，自己人不用手敲 */
+    /** 影视站默认地址：只当输入框的提示用，不会自己填进去。没设置过就是空的 */
     public static final String DEFAULT_URL = "https://ys.169876.us.kg";
 
+    /** 存什么返回什么：清空之后这里就是空的，不会冒出默认网址 */
     public static String getUrl() {
-        String url = Prefers.getString("moontv_url").trim();
-        return url.isEmpty() ? DEFAULT_URL : url;
+        return Prefers.getString("moontv_url").trim();
     }
 
     public static void putUrl(String url) {

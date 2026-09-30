@@ -67,9 +67,29 @@ public class CookieStore {
         return true;
     }
 
+    /** 局域网推送出去：不看同步开关，本机记过的就推 */
+    public static Map<String, String> snapshot() {
+        Map<String, String> map = read();
+        boolean dirty = false;
+        for (String host : new ArrayList<>(map.keySet())) {
+            String value = get(url(host));
+            if (value.isEmpty() || value.equals(map.get(host))) continue;
+            map.put(host, value);
+            dirty = true;
+        }
+        if (dirty) write(map);
+        return map;
+    }
+
     /** 同步拿回来的 Cookie：记下来，同时写回系统 WebView，下次请求直接带上 */
     public static void apply(Map<String, String> cookies) {
-        if (!WebDavSetting.isCookie() || cookies == null || cookies.isEmpty()) return;
+        if (!WebDavSetting.isCookie()) return;
+        merge(cookies);
+    }
+
+    /** 合并一份 Cookie 进来（局域网推送收到时用，不看开关） */
+    public static void merge(Map<String, String> cookies) {
+        if (cookies == null || cookies.isEmpty()) return;
         Map<String, String> map = read();
         Map<String, String> changed = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : cookies.entrySet()) {

@@ -35,6 +35,7 @@ public class Push {
     public static final String LIVE = "live";
     public static final String PREF = "pref";
     public static final String WEBDAV = "webdav";
+    public static final String COOKIE = "cookie";
     public static final String HISTORY = "history";
     public static final String KEEP = "keep";
     public static final String MOON = "moon";
@@ -71,6 +72,7 @@ public class Push {
         items.add(LIVE);
         items.add(PREF);
         items.add(WEBDAV);
+        items.add(COOKIE);
         items.add(HISTORY);
         items.add(KEEP);
         items.add(MOON);
@@ -83,6 +85,7 @@ public class Push {
             case LIVE -> R.string.push_item_live;
             case PREF -> R.string.push_item_setting;
             case WEBDAV -> R.string.push_item_webdav;
+            case COOKIE -> R.string.push_item_cookie;
             case HISTORY -> R.string.push_item_history;
             case KEEP -> R.string.push_item_keep;
             case MOON -> R.string.push_item_moon;
@@ -99,6 +102,13 @@ public class Push {
         if (keys.contains(WEBDAV)) {
             try {
                 if (webdav(host)) count++;
+            } catch (Throwable e) {
+                error = e;
+            }
+        }
+        if (keys.contains(COOKIE)) {
+            try {
+                if (cookie(host)) count++;
             } catch (Throwable e) {
                 error = e;
             }
@@ -131,6 +141,14 @@ public class Push {
         body.add("pass", WebDavSetting.getPass());
         body.add("folder", WebDavSetting.getFolder());
         post(host, "webdav", body.build());
+        return true;
+    }
+
+    /** 网盘 / 影视站的扫码登录状态（Cookie）一并推过去，对面就不用再扫一次 */
+    public static boolean cookie(String host) throws Exception {
+        Map<String, String> cookies = CookieStore.snapshot();
+        if (cookies.isEmpty()) return false;
+        post(host, "cookie", new FormBody.Builder().add("data", App.gson().toJson(cookies)).build());
         return true;
     }
 

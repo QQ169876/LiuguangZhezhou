@@ -53,6 +53,7 @@ public class MoonDialog extends BaseAlertDialog {
         setWidth(0.5f);
         binding.scan.setVisibility(View.GONE);
         binding.url.setText(MoonSetting.getUrl());
+        binding.url.setHint(MoonSetting.DEFAULT_URL);
         binding.user.setText(MoonSetting.getUser());
         binding.pass.setText(MoonSetting.getPass());
         binding.enable.setChecked(MoonSetting.isEnabled());

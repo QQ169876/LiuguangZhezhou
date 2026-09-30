@@ -340,6 +340,8 @@
     <string name="push_item_live">直播配置</string>
     <string name="push_item_setting">系统设置</string>
     <string name="push_item_webdav">WebDAV 同步设置</string>
+    <string name="push_item_cookie">网盘登录状态（Cookie）</string>
+    <string name="push_cookie_done">已收到网盘登录状态</string>
     <string name="push_item_history">历史记录</string>
     <string name="push_item_keep">收藏记录</string>
     <string name="push_item_moon">影视站设置</string>

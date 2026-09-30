@@ -23,6 +23,7 @@ import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Notify;
@@ -31,7 +32,9 @@ import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Path;
+import com.google.gson.reflect.TypeToken;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,6 +65,7 @@ public class Action implements Process {
             case "cast" -> onCast(params);
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
+            case "cookie" -> onCookie(params);
             case "moontv" -> onMoonTV(params);
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
@@ -122,6 +126,19 @@ public class Action implements Process {
         MoonSetting.putEnabled(false);
         MoonApi.reset();
         App.post(() -> Notify.show(R.string.moontv_lan_saved));
+    }
+
+    /**
+     * 对面推过来的网盘 / 影视站扫码登录状态：直接灌进本机 WebView，之后不用再扫一次码
+     */
+    private void onCookie(Map<String, String> params) {
+        String json = params.get("data");
+        if (TextUtils.isEmpty(json)) return;
+        Task.execute(() -> {
+            CookieStore.merge(App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
+            }.getType()));
+            App.post(() -> Notify.show(R.string.push_cookie_done));
+        });
     }
 
     /**

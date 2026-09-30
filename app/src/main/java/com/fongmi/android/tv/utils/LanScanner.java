@@ -11,6 +11,8 @@ import com.fongmi.android.tv.bean.Device;
 import com.github.catvod.net.OkHttp;
 
 import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -36,6 +38,7 @@ public class LanScanner {
 
     private final List<Device> items;
     private final Set<String> hosts;
+    private final Set<String> selfIp;
     private final Callback callback;
     private final String self;
 
@@ -56,6 +59,26 @@ public class LanScanner {
         this.items = Collections.synchronizedList(new ArrayList<>());
         this.hosts = Collections.synchronizedSet(new HashSet<>());
         this.self = Util.getAndroidId();
+        this.selfIp = localIps();
+    }
+
+    /** 本机所有网卡的 IPv4：扫描结果里只要碰到就当自己跳过，别把自己列进对端清单 */
+    private static Set<String> localIps() {
+        Set<String> result = new HashSet<>();
+        try {
+            for (NetworkInterface nif : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                for (InetAddress address : Collections.list(nif.getInetAddresses())) {
+                    if (address instanceof Inet4Address && !address.isLoopbackAddress()) result.add(address.getHostAddress());
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            String ip = com.github.catvod.utils.Util.getIp();
+            if (ip != null && !ip.isEmpty()) result.add(ip);
+        } catch (Throwable ignored) {
+        }
+        return result;
     }
 
     public List<Device> getItems() {
@@ -142,6 +165,7 @@ public class LanScanner {
             if (device == null) return null;
             if (device.getUuid().isEmpty()) return null;
             if (device.getUuid().equals(self)) return null;
+            if (selfIp.contains(host)) return null;
             device.setIp("http://" + host + ":" + port);
             return device;
         } catch (java.net.SocketTimeoutException e) {
@@ -170,6 +194,7 @@ public class LanScanner {
         long begin = (self & mask(prefix)) + 1;
         for (int i = 0; i < size - 2; i++) {
             long value = begin + i;
+            if (selfIp.contains(toIp(value))) continue;
             if (value == self) continue;
             result.add(toIp(value));
         }
