@@ -67,11 +67,29 @@ public class Notify {
         }
     }
 
+    /**
+     * 转圈提示框：异步回调常常落在页面已经切走之后，
+     * 这时候再 show 会抛 BadTokenException 直接崩，所以状态不对就不弹。
+     */
     private void create(Context context) {
-        ViewProgressBinding binding = ViewProgressBinding.inflate(LayoutInflater.from(context));
-        mDialog = new MaterialAlertDialogBuilder(context).setView(binding.getRoot()).create();
-        mDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        mDialog.show();
+        if (!alive(context)) return;
+        try {
+            ViewProgressBinding binding = ViewProgressBinding.inflate(LayoutInflater.from(context));
+            mDialog = new MaterialAlertDialogBuilder(context).setView(binding.getRoot()).create();
+            if (mDialog.getWindow() != null) mDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            mDialog.show();
+        } catch (Exception ignored) {
+            mDialog = null;
+        }
+    }
+
+    private boolean alive(Context context) {
+        if (context == null) return false;
+        if (context instanceof android.app.Activity) {
+            android.app.Activity activity = (android.app.Activity) context;
+            if (activity.isFinishing() || activity.isDestroyed()) return false;
+        }
+        return true;
     }
 
     private void makeText(String text) {

@@ -303,6 +303,9 @@
     <string name="webdav_last">上次同步：%s</string>
     <string name="webdav_success">同步成功</string>
     <string name="webdav_fail">同步失敗</string>
+    <string name="webdav_remote_title">這個目錄裡已經有資料</string>
+    <string name="webdav_remote_exists">你剛填的同步目錄在伺服器上已經存在，可能是別的設備或別的帳號留下的。繼續用下去，兩邊的觀看記錄、收藏會混在一起。是否繼續使用？</string>
+    <string name="webdav_auto_stop">連續 3 次連不上，已關閉自動同步。請核對位址、目錄、帳號沒問題後，再自己手動打開</string>
     <string name="webdav_busy">正在同步中</string>
     <string name="webdav_empty">WebDAV 位址為空</string>
     <string name="webdav_saved">設定已儲存</string>
@@ -318,6 +321,7 @@
     <string name="push_info_row">位址空白表示尚未選擇設備，可掃碼或手動填寫，再選擇要推送的內容。</string>
     <string name="push_webdav">推送同步設定</string>
     <string name="push_config">推送點播設定</string>
+    <string name="push_item_data">配置資料（點播 / 直播 / 設定 / 記錄 / 收藏）</string>
     <string name="push_file">推送檔案 / APK</string>
     <string name="push_done">推送成功</string>
     <string name="push_fail">推送失敗</string>
@@ -366,6 +370,7 @@
     <string name="moontv_last">上次同步：%s</string>
     <string name="moontv_success">同步成功</string>
     <string name="moontv_fail">同步失敗</string>
+    <string name="moontv_auto_stop">連續 3 次連不上，已關閉自動同步。請核對站點位址、帳號沒問題後，再自己手動打開</string>
     <string name="moontv_busy">正在同步中</string>
 
     <string name="sync_direction_title">選擇以哪邊為準</string>

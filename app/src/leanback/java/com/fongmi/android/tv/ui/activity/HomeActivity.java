@@ -55,6 +55,7 @@ import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.CustomRowPresenter;
 import com.fongmi.android.tv.ui.custom.CustomSelector;
 import com.fongmi.android.tv.ui.custom.CustomTitleView;
+import com.fongmi.android.tv.ui.custom.SplashOverlay;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.presenter.FuncPresenter;
 import com.fongmi.android.tv.ui.presenter.HeaderPresenter;
@@ -82,6 +83,7 @@ import java.util.List;
 import java.util.Optional;
 
 public class HomeActivity extends BaseActivity implements CustomTitleView.Listener, VodPresenter.OnClickListener, FuncPresenter.OnClickListener, HistoryPresenter.OnClickListener {
+    private SplashOverlay splash;
 
     private ActivityHomeBinding mBinding;
     private ArrayObjectAdapter mHistoryAdapter;
@@ -123,6 +125,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     @Override
     protected void initView(Bundle savedInstanceState) {
         mResult = Result.empty();
+        splash = SplashOverlay.attach(this);
         mClock = Clock.create(mBinding.clock);
         mBinding.progressLayout.showProgress();
         PermissionUtil.requestNotify(this);
@@ -213,14 +216,21 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
             @Override
             public void success() {
                 showContent();
+                finishSplash();
             }
 
             @Override
             public void error(String msg) {
                 Notify.show(msg);
                 showContent();
+                finishSplash();
             }
         };
+    }
+
+    /** 点播源配置加载完了，开屏页可以撤了（最少停留时间由开屏页自己把握） */
+    private void finishSplash() {
+        if (splash != null) splash.loaded();
     }
 
     private void showContent() {

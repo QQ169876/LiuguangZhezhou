@@ -18,6 +18,7 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.utils.ConfigCache;
+import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Prefers;
@@ -37,6 +38,7 @@ import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -47,6 +49,8 @@ public class SyncManager {
     private static final int MAX_SIZE = 6 * 1024 * 1024;
 
     private static final AtomicBoolean busy = new AtomicBoolean(false);
+    private static final AtomicInteger failures = new AtomicInteger();
+    private static final int MAX_FAIL = 3;
     private static ScheduledFuture<?> future;
 
     public interface Listener {
@@ -86,11 +90,26 @@ public class SyncManager {
         if (!busy.compareAndSet(false, true)) return;
         try {
             doSync();
+            failures.set(0);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
+            onFail();
         } finally {
             busy.set(false);
         }
+    }
+
+    /**
+     * 连续连不上就别再闷头重试了：关掉自动同步并提示一声，
+     * 让用户自己去设置里核对地址、账号，确认没问题再手动开。
+     */
+    private static synchronized void onFail() {
+        if (failures.incrementAndGet() < MAX_FAIL) return;
+        failures.set(0);
+        if (!WebDavSetting.isAuto()) return;
+        WebDavSetting.putAuto(false);
+        cancel();
+        App.post(() -> Notify.show(R.string.webdav_auto_stop));
     }
 
     /**
@@ -125,11 +144,13 @@ public class SyncManager {
         } catch (Throwable e) {
             Log.w(TAG, "WebDAV action failed", e);
             String error = ResUtil.getString(R.string.webdav_fail) + " " + describe(e);
+            onFail();
             App.post(() -> listener.done(false, error));
             return;
         } finally {
             busy.set(false);
         }
+        failures.set(0);
         String result = message;
         App.post(() -> listener.done(true, result));
     }

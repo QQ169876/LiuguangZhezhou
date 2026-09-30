@@ -93,6 +93,11 @@ public class WebDavSetting {
         return !getUrl().isEmpty();
     }
 
+    /** 有没有填账号密码；没填的服务就当它不需要鉴权 */
+    public static boolean hasAuth() {
+        return !getUser().isEmpty() || !getPass().isEmpty();
+    }
+
     public static boolean isSyncable() {
         return isEnabled() && isValid();
     }

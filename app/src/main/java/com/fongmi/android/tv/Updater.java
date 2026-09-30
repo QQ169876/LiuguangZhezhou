@@ -45,6 +45,7 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private Download download;
     private UpdateDialog dialog;
+    private boolean retried;
     private Probe route;
     private String apk;
     private String tag;
@@ -261,10 +262,25 @@ public class Updater implements Download.Callback, UpdateListener {
         }
     }
 
+    /**
+     * 弹更新框。探测是异步的，回来时页面可能已经切走甚至正在重建，
+     * 这时候 show 会崩，所以状态不对就缓一下再弹，实在不行这次就不弹。
+     */
     private void show(FragmentActivity activity, String version, String desc) {
         dismiss();
-        if (activity.isDestroyed() || activity.isFinishing()) return;
-        dialog = UpdateDialog.create().title(ResUtil.getString(R.string.update_version, version)).desc(desc).listener(this).show(activity);
+        if (activity == null || activity.isDestroyed() || activity.isFinishing()) return;
+        if (activity.getSupportFragmentManager().isStateSaved()) {
+            if (!retried) {
+                retried = true;
+                App.post(() -> show(activity, version, desc), 1500);
+            }
+            return;
+        }
+        try {
+            dialog = UpdateDialog.create().title(ResUtil.getString(R.string.update_version, version)).desc(desc).listener(this).show(activity);
+        } catch (Exception ignored) {
+            dialog = null;
+        }
     }
 
     @Override

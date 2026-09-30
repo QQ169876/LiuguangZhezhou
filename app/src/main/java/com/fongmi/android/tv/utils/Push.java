@@ -64,7 +64,7 @@ public class Push {
         return index > 0 ? text.substring(0, index) : text;
     }
 
-    /** 可勾选的推送项（tv=true 时最后一项是本机安装包，否则是选文件） */
+    /** 可勾选的推送项：只放配置数据，文件/安装包走单独的「文件推送」菜单 */
     public static List<String> keys(boolean tv) {
         List<String> items = new ArrayList<>();
         items.add(VOD);
@@ -74,7 +74,6 @@ public class Push {
         items.add(HISTORY);
         items.add(KEEP);
         items.add(MOON);
-        items.add(tv ? APK : FILE);
         return items;
     }
 

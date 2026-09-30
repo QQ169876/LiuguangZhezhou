@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.utils.Task;
@@ -32,6 +33,7 @@ import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,6 +54,8 @@ public class MoonSync {
 
     private static final AtomicBoolean busy = new AtomicBoolean(false);
     private static volatile boolean writing = false;
+    private static final AtomicInteger failures = new AtomicInteger();
+    private static final int MAX_FAIL = 3;
     private static ScheduledFuture<?> future;
 
     public interface Listener {
@@ -99,11 +103,26 @@ public class MoonSync {
         }
         try {
             guarded(MoonSync::doSync);
+            failures.set(0);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
+            onFail();
         } finally {
             busy.set(false);
         }
+    }
+
+    /**
+     * 连续连不上就别再闷头重试：关掉自动同步并提示一声，
+     * 让用户自己对一下站点地址、账号，确认没问题再手动开。
+     */
+    private static synchronized void onFail() {
+        if (failures.incrementAndGet() < MAX_FAIL) return;
+        failures.set(0);
+        if (!MoonSetting.isAuto()) return;
+        MoonSetting.putAuto(false);
+        cancel();
+        App.post(() -> Notify.show(R.string.moontv_auto_stop));
     }
 
     private static String guarded(Action action) throws Exception {
@@ -165,11 +184,13 @@ public class MoonSync {
         } catch (Throwable e) {
             Log.w(TAG, "MoonTV action failed", e);
             String error = ResUtil.getString(R.string.moontv_fail) + " " + describe(e);
+            onFail();
             App.post(() -> listener.done(false, error));
             return;
         } finally {
             busy.set(false);
         }
+        failures.set(0);
         String result = message;
         App.post(() -> listener.done(true, result));
     }

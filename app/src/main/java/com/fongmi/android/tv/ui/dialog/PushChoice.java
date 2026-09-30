@@ -22,6 +22,15 @@ public class PushChoice {
     }
 
     public static void show(FragmentActivity activity, String title, boolean tv, Sender sender) {
+        String[] menu = {activity.getString(R.string.push_item_data), activity.getString(R.string.push_file)};
+        new MaterialAlertDialogBuilder(activity).setTitle(title).setItems(menu, (dialog, which) -> {
+            if (which == 1) sender.send(List.of(tv ? Push.APK : Push.FILE));
+            else showChoice(activity, title, tv, sender);
+        }).setNegativeButton(R.string.dialog_negative, null).show();
+    }
+
+    /** 配置数据的多选清单 */
+    private static void showChoice(FragmentActivity activity, String title, boolean tv, Sender sender) {
         List<String> keys = Push.keys(tv);
         String[] items = new String[keys.size() + 1];
         boolean[] checked = new boolean[keys.size() + 1];

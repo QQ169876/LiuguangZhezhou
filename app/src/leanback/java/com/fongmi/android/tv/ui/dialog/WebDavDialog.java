@@ -4,13 +4,14 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.text.format.DateFormat;
 import android.view.View;
-import android.widget.TextView;
+import android.widget.EditText;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.App;
+import com.github.catvod.utils.Prefers;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogWebdavBinding;
 import com.fongmi.android.tv.server.Server;
@@ -28,6 +29,7 @@ import java.util.Date;
 public class WebDavDialog extends BaseAlertDialog {
 
     private DialogWebdavBinding binding;
+    private static final String KNOWN = "webdav_remote_known";
     private boolean asked;
 
     public static WebDavDialog create() {
@@ -75,9 +77,11 @@ public class WebDavDialog extends BaseAlertDialog {
     }
 
     /** 输入框失焦就存一次，不用非得点按钮 */
-    private void watch(TextView... views) {
-        for (TextView view : views) view.setOnFocusChangeListener((v, focus) -> {
-            if (!focus) save();
+    /** 输入框失焦就存一次；拿到焦点时把光标挪到内容最右边 */
+    private void watch(EditText... views) {
+        for (EditText view : views) view.setOnFocusChangeListener((v, focus) -> {
+            if (focus) view.setSelection(view.getText().length());
+            else save();
         });
     }
 
@@ -86,7 +90,52 @@ public class WebDavDialog extends BaseAlertDialog {
     public void onDismiss(@NonNull DialogInterface dialog) {
         save();
         super.onDismiss(dialog);
-        askOnClose(R.string.sync_risk_dav, WebDavSetting.isEnabled() && WebDavSetting.isSyncable() && WebDavSetting.isSwitch());
+        checkRemote(() -> askOnClose(R.string.sync_risk_dav, WebDavSetting.isEnabled() && WebDavSetting.isSyncable() && WebDavSetting.isSwitch()));
+    }
+
+    /**
+     * 远端这份同步目录里已经有数据（可能是别的设备、别的账号留下的）：
+     * 先把话说清楚，别稀里糊涂把两边的观看记录、收藏混在一起。
+     */
+    private void checkRemote(Runnable next) {
+        if (!WebDavSetting.isValid()) {
+            next.run();
+            return;
+        }
+        String scope = WebDavSetting.getScope();
+        if (Prefers.getString(KNOWN).equals(scope)) {
+            next.run();
+            return;
+        }
+        Task.execute(() -> {
+            boolean found = false;
+            try {
+                found = WebDav.exists(WebDavSetting.getFolderUrl());
+            } catch (Exception ignored) {
+            }
+            boolean exist = found;
+            App.post(() -> onRemote(exist, scope, next));
+        });
+    }
+
+    private void onRemote(boolean found, String scope, Runnable next) {
+        Prefers.put(KNOWN, scope);
+        if (!found) {
+            next.run();
+            return;
+        }
+        FragmentActivity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        asked = false;
+        try {
+            new MaterialAlertDialogBuilder(activity)
+                    .setTitle(R.string.webdav_remote_title)
+                    .setMessage(R.string.webdav_remote_exists)
+                    .setNegativeButton(R.string.dialog_negative, null)
+                    .setPositiveButton(R.string.dialog_positive, (dialog, which) -> SyncRiskDialog.show(activity, R.string.sync_risk_dav, () -> SyncDirectionDialog.show(activity, direction -> onDirection(activity, direction))))
+                    .show();
+        } catch (Exception ignored) {
+        }
     }
 
     /**

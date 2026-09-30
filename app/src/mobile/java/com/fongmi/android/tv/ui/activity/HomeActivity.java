@@ -34,6 +34,7 @@ import com.fongmi.android.tv.player.extractor.Source;
 import com.fongmi.android.tv.receiver.ShortcutReceiver;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.ui.custom.SplashOverlay;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.FragmentStateManager;
 import com.fongmi.android.tv.ui.fragment.SettingDanmakuFragment;
@@ -54,6 +55,7 @@ import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 
 public class HomeActivity extends BaseActivity implements NavigationBarView.OnItemSelectedListener {
+    private SplashOverlay splash;
 
     private FragmentStateManager mManager;
     private ActivityHomeBinding mBinding;
@@ -78,6 +80,7 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
 
     @Override
     protected void initView(Bundle savedInstanceState) {
+        splash = SplashOverlay.attach(this);
         orientation = getResources().getConfiguration().orientation;
         mBinding.navigation.setOnItemSelectedListener(this);
         PermissionUtil.requestNotify(this);
@@ -123,6 +126,11 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         if (savedInstanceState == null) change(0);
     }
 
+    /** 点播源配置加载完了，开屏页可以撤了（最少停留时间由开屏页自己把握） */
+    private void finishSplash() {
+        if (splash != null) splash.loaded();
+    }
+
     private void initConfig() {
         VodConfig.get().init().load(getCallback());
         LiveConfig.get().init().load();
@@ -133,11 +141,13 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         return new Callback() {
             @Override
             public void success() {
+                finishSplash();
                 checkAction(getIntent());
             }
 
             @Override
             public void error(String msg) {
+                finishSplash();
                 checkAction(getIntent());
                 StateEvent.empty();
                 Notify.show(msg);

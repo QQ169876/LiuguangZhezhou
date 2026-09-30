@@ -13,13 +13,17 @@ public class SyncRiskDialog {
 
     public static void show(Activity activity, int message, Runnable onAcknowledge) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
-        new MaterialAlertDialogBuilder(activity)
-                .setTitle(R.string.sync_risk_title)
-                .setMessage(message)
-                .setNegativeButton(R.string.dialog_negative, null)
-                .setPositiveButton(R.string.sync_risk_confirm, (dialog, which) -> {
-                    if (onAcknowledge != null) onAcknowledge.run();
-                })
-                .show();
+        try {
+            new MaterialAlertDialogBuilder(activity)
+                    .setTitle(R.string.sync_risk_title)
+                    .setMessage(message)
+                    .setNegativeButton(R.string.dialog_negative, null)
+                    .setPositiveButton(R.string.sync_risk_confirm, (dialog, which) -> {
+                        if (onAcknowledge != null) onAcknowledge.run();
+                    })
+                    .show();
+        } catch (Exception ignored) {
+            // 页面已经切走或正在重建，这次就不弹了
+        }
     }
 }

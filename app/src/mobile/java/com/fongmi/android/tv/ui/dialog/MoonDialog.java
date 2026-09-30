@@ -8,7 +8,7 @@ import android.text.format.DateFormat;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
+import android.widget.EditText;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -37,6 +37,7 @@ import java.util.Date;
 public class MoonDialog extends BaseBottomSheetDialog {
 
     private com.fongmi.android.tv.databinding.DialogMoontvBinding binding;
+    private boolean asked;
 
     public static MoonDialog create() {
         return new MoonDialog();
@@ -80,9 +81,11 @@ public class MoonDialog extends BaseBottomSheetDialog {
     }
 
     /** 输入框失焦就存一次，不用非得点按钮 */
-    private void watch(TextView... views) {
-        for (TextView view : views) view.setOnFocusChangeListener((v, focus) -> {
-            if (!focus) save(false);
+    /** 输入框失焦就存一次；拿到焦点时把光标挪到内容最右边 */
+    private void watch(EditText... views) {
+        for (EditText view : views) view.setOnFocusChangeListener((v, focus) -> {
+            if (focus) view.setSelection(view.getText().length());
+            else save(false);
         });
     }
 
@@ -91,6 +94,20 @@ public class MoonDialog extends BaseBottomSheetDialog {
     public void onDismiss(@NonNull DialogInterface dialog) {
         save(false);
         super.onDismiss(dialog);
+        askOnClose(R.string.sync_risk_moon, MoonSetting.isEnabled() && MoonSetting.isSyncable() && MoonSetting.isSwitch());
+    }
+
+    /**
+     * 改完同步参数直接关掉对话框时，如果同步是开着的、目标又变过，
+     * 直接问清楚以哪边为准，免得下一次自动同步闷头合并。
+     */
+    private void askOnClose(int message, boolean need) {
+        if (asked || !need) return;
+        if (!isAdded() || isRemoving()) return;
+        FragmentActivity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        asked = true;
+        SyncRiskDialog.show(activity, message, () -> SyncDirectionDialog.show(activity, direction -> onDirection(direction)));
     }
 
     private void setLastText() {
@@ -188,6 +205,7 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     /** 换过站点或账号：作废旧基线，并把当前目标标记为已确认 */
     private void checkSwitch() {
+        asked = true;
         if (!MoonSetting.isSwitch()) return;
         MoonSync.resetBase();
         MoonSetting.putConfirm();

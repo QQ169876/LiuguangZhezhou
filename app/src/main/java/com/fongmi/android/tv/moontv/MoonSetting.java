@@ -76,8 +76,14 @@ public class MoonSetting {
         return object.toString();
     }
 
+    /** 地址填了就算可用；有些影视站不要账号密码，不能因为没填就整条同步不干活 */
     public static boolean isValid() {
-        return getBase().startsWith("http") && !getUser().isEmpty() && !getPass().isEmpty();
+        return getBase().startsWith("http");
+    }
+
+    /** 有没有填账号密码 */
+    public static boolean hasAuth() {
+        return !getUser().isEmpty() || !getPass().isEmpty();
     }
 
     public static boolean isSyncable() {

@@ -4,7 +4,7 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.text.format.DateFormat;
 import android.view.View;
-import android.widget.TextView;
+import android.widget.EditText;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
@@ -74,9 +74,11 @@ public class MoonDialog extends BaseAlertDialog {
     }
 
     /** 输入框失焦就存一次，不用非得点按钮 */
-    private void watch(TextView... views) {
-        for (TextView view : views) view.setOnFocusChangeListener((v, focus) -> {
-            if (!focus) save();
+    /** 输入框失焦就存一次；拿到焦点时把光标挪到内容最右边 */
+    private void watch(EditText... views) {
+        for (EditText view : views) view.setOnFocusChangeListener((v, focus) -> {
+            if (focus) view.setSelection(view.getText().length());
+            else save();
         });
     }
 

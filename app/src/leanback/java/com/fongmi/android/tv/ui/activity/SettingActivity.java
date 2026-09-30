@@ -32,7 +32,6 @@ import com.fongmi.android.tv.ui.dialog.ConfigDialog;
 import com.fongmi.android.tv.ui.dialog.DohDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
-import com.fongmi.android.tv.ui.dialog.RestoreDialog;
 import com.fongmi.android.tv.ui.dialog.RouteDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
@@ -84,7 +83,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.vodUrl.setText(VodConfig.getDesc());
         mBinding.liveUrl.setText(LiveConfig.getDesc());
         mBinding.wallUrl.setText(WallConfig.getDesc());
-        mBinding.versionText.setText(BuildConfig.VERSION_NAME);
+        mBinding.versionText.setText(com.fongmi.android.tv.utils.Version.summary());
         setCacheText();
         setOtherText();
     }
@@ -127,14 +126,12 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.wall.setOnClickListener(this::onWall);
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.cache.setOnClickListener(this::onCache);
-        mBinding.backup.setOnClickListener(this::onBackup);
         mBinding.player.setOnClickListener(this::onPlayer);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.webdav.setOnClickListener(this::onWebDav);
         mBinding.moontv.setOnClickListener(this::onMoonTV);
         mBinding.route.setOnClickListener(this::onRoute);
         mBinding.lanPush.setOnClickListener(this::onPush);
-        mBinding.restore.setOnClickListener(this::onRestore);
         mBinding.version.setOnClickListener(this::onVersion);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
         mBinding.vodRefresh.setOnClickListener(this::onVodRefresh);
@@ -343,36 +340,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
                 setCacheText();
             }
         });
-    }
-
-    private void onBackup(View view) {
-        PermissionUtil.requestFile(this, allGranted -> AppDatabase.backup(new Callback() {
-            @Override
-            public void success() {
-                Notify.show(R.string.backup_success);
-            }
-
-            @Override
-            public void error() {
-                Notify.show(R.string.backup_fail);
-            }
-        }));
-    }
-
-    private void onRestore(View view) {
-        PermissionUtil.requestFile(this, allGranted -> RestoreDialog.create().callback(new Callback() {
-            @Override
-            public void success() {
-                Notify.show(R.string.restore_success);
-                setOtherText();
-                initConfig();
-            }
-
-            @Override
-            public void error() {
-                Notify.show(R.string.restore_fail);
-            }
-        }).show(this));
     }
 
     private void initConfig() {

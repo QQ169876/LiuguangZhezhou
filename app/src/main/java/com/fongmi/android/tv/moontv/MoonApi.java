@@ -78,8 +78,9 @@ public class MoonApi {
     private static Request.Builder auth(String path, boolean bust) throws IOException {
         String url = api(path);
         if (bust) url = url.concat(url.contains("?") ? "&" : "?").concat("_t=").concat(String.valueOf(System.currentTimeMillis()));
-        return new Request.Builder().url(url)
-                .addHeader("Cookie", "user_auth=" + cookie)
+        Request.Builder builder = new Request.Builder().url(url);
+        if (!cookie.isEmpty()) builder.addHeader("Cookie", "user_auth=" + cookie);
+        return builder
                 .addHeader("Accept", "application/json")
                 .addHeader("Cache-Control", "no-cache, no-store, max-age=0")
                 .addHeader("Pragma", "no-cache");
@@ -95,9 +96,14 @@ public class MoonApi {
         }
     }
 
+    /** 填了账号密码才去登录拿 cookie；没填的站点当它不要鉴权，直接请求 */
+    private static void ensure() throws Exception {
+        if (cookie.isEmpty() && MoonSetting.hasAuth()) login();
+    }
+
     private static JSONObject get(String path) throws Exception {
         for (int i = 0; i < 2; i++) {
-            if (cookie.isEmpty()) login();
+            ensure();
             JSONObject result = call(auth(path, true).get());
             if (result != null) return result;
             cookie = "";
@@ -107,7 +113,7 @@ public class MoonApi {
 
     private static void post(String path, JSONObject object) throws Exception {
         for (int i = 0; i < 2; i++) {
-            if (cookie.isEmpty()) login();
+            ensure();
             JSONObject result = call(auth(path).post(RequestBody.create(object.toString(), JSON)));
             if (result != null) return;
             cookie = "";
@@ -117,7 +123,7 @@ public class MoonApi {
 
     private static void del(String path) throws Exception {
         for (int i = 0; i < 2; i++) {
-            if (cookie.isEmpty()) login();
+            ensure();
             JSONObject result = call(auth(path).delete());
             if (result != null) return;
             cookie = "";
@@ -170,7 +176,8 @@ public class MoonApi {
 
     public static boolean test() {
         try {
-            login();
+            cookie = "";
+            ensure();
             favorites();
             playRecords();
             return true;

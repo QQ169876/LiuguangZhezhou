@@ -25,6 +25,7 @@ import com.fongmi.android.tv.databinding.ViewWallBinding;
 import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.Contrast;
 import com.fongmi.android.tv.utils.FileUtil;
 
 import org.greenrobot.eventbus.EventBus;
@@ -70,6 +71,17 @@ public class CustomWallView extends FrameLayout implements DefaultLifecycleObser
         stop();
         load();
         theme();
+        scrim();
+    }
+
+    /**
+     * 自定义壁纸可能很亮，界面上的白字就糊了：
+     * 按 WCAG 的口径算一下差多少，该压暗就压暗一层，保证字看得清。
+     */
+    private void scrim() {
+        if (binding == null) return;
+        float alpha = Contrast.scrim(getWallColor());
+        binding.image.setImageAlpha(Math.round(255 * (1f - alpha)));
     }
 
     private void stop() {

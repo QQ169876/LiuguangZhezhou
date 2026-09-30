@@ -29,7 +29,10 @@ public class WebDav {
     }
 
     private static Request.Builder prepare(String url) {
-        return new Request.Builder().url(url).addHeader("Authorization", auth()).addHeader("Accept", "*/*");
+        Request.Builder builder = new Request.Builder().url(url).addHeader("Accept", "*/*");
+        // 有些 WebDAV 根本不要账号密码，这时候空账号也要带上 Authorization 反而会被拒，干脆不带
+        if (WebDavSetting.hasAuth()) builder.addHeader("Authorization", auth());
+        return builder;
     }
 
     /**

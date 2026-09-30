@@ -24,12 +24,18 @@ public class SyncDirectionDialog {
     }
 
     public static void show(FragmentActivity activity, Listener listener) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         DialogSyncDirectionBinding binding = DialogSyncDirectionBinding.inflate(LayoutInflater.from(activity));
-        AlertDialog dialog = new MaterialAlertDialogBuilder(activity)
+        AlertDialog dialog;
+        try {
+            dialog = new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.sync_direction_title)
                 .setView(binding.getRoot())
-                .setNegativeButton(R.string.dialog_negative, null)
-                .show();
+                    .setNegativeButton(R.string.dialog_negative, null)
+                    .show();
+        } catch (Exception ignored) {
+            return;
+        }
         binding.cloud.setOnClickListener(view -> {
             dialog.dismiss();
             listener.onDirection(CLOUD);

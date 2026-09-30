@@ -79,7 +79,7 @@ public class RouteDialog {
     }
 
     /**
-     * IPv6：勾上之后 App 里所有请求都走 IPv6。默认关，要连点三下才真勾上，中间不给任何提示。
+     * IPv6：勾上之后 App 里所有请求都走 IPv6。默认关，要连点七下才真勾上，中间不给任何提示。
      */
     private void onIPv6(android.widget.CheckBox box) {
         if (!box.isChecked()) {
@@ -87,7 +87,7 @@ public class RouteDialog {
             apply(false);
             return;
         }
-        if (++taps < 3) {
+        if (++taps < 7) {
             box.setChecked(false);
             return;
         }

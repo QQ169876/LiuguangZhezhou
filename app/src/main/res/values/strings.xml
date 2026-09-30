@@ -304,6 +304,9 @@
     <string name="webdav_last">Last: %s</string>
     <string name="webdav_success">Sync successful</string>
     <string name="webdav_fail">Sync failed</string>
+    <string name="webdav_remote_title">That folder already has data</string>
+    <string name="webdav_remote_exists">The sync folder you just set already exists on the server, so it may belong to another device or account. Keep using it and the watch history and favorites from both sides will get mixed together. Continue?</string>
+    <string name="webdav_auto_stop">Three failed attempts in a row. Auto sync is off now — check the address and account, then turn it back on yourself.</string>
     <string name="webdav_busy">Sync is busy</string>
     <string name="webdav_empty">WebDAV address is empty</string>
     <string name="webdav_saved">Settings saved</string>
@@ -319,6 +322,7 @@
     <string name="push_info_row">Empty = no target device yet. Fill by scanning or typing, then choose what to push.</string>
     <string name="push_webdav">Push sync config</string>
     <string name="push_config">Push vod config</string>
+    <string name="push_item_data">Config data (vod / live / settings / history / favorites)</string>
     <string name="push_file">Push file / APK</string>
     <string name="push_done">Pushed</string>
     <string name="push_fail">Push failed</string>
@@ -367,6 +371,7 @@
     <string name="moontv_last">Last: %s</string>
     <string name="moontv_success">Sync successful</string>
     <string name="moontv_fail">Sync failed</string>
+    <string name="moontv_auto_stop">Three failed attempts in a row. Auto sync is off now — check the site and account, then turn it back on yourself.</string>
     <string name="moontv_busy">Sync is busy</string>
 
     <string name="sync_direction_title">Choose which side wins</string>
