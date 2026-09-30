@@ -163,7 +163,7 @@ public class LiveConfig extends BaseConfig {
 
     private void parseText(Config config, String text) {
         Live live = new Live(UrlUtil.getName(config.getUrl()), config.getUrl()).sync();
-        lives = new ArrayList<>(List.of(live));
+        lives = new ArrayList<>(Collections.singletonList(live));
         LiveParser.text(live, text);
         setHome(config, live, false);
     }

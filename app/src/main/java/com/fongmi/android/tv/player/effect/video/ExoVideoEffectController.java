@@ -1,4 +1,7 @@
 package com.fongmi.android.tv.player.effect.video;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import androidx.media3.common.Effect;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -15,7 +18,7 @@ public final class ExoVideoEffectController {
     public ExoVideoEffectController() {
         this.colorTone = new ColorToneAdjustEffect();
         this.detail = new DetailAdjustEffect();
-        this.effects = List.of(colorTone, detail);
+        this.effects = new ArrayList<>(Arrays.asList(colorTone, detail));
     }
 
     public void apply(ExoPlayer player, VideoEffectProfile profile) {
@@ -28,7 +31,7 @@ public final class ExoVideoEffectController {
 
     public void clear(ExoPlayer player) {
         if (!configured) return;
-        player.setVideoEffects(List.of());
+        player.setVideoEffects(Collections.emptyList());
         configured = false;
     }
 }

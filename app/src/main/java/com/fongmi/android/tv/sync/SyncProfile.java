@@ -3,8 +3,10 @@ package com.fongmi.android.tv.sync;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.ui.dialog.SyncRiskDialog;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Prefers;
 
@@ -70,6 +72,8 @@ public class SyncProfile {
         WebDavSetting.putEnabled(false);
         Prefers.put("moontv_confirm", ""); // 换源之后第一次双向同步要重新选方向
         Prefers.put("webdav_confirm", "");
+        MoonSync.resetBase(); // 旧的基线/墓碑是上一个源的，留着会拿旧数据去判断新源
+        SyncManager.resetBase();
         App.post(() -> {
             Notify.show(known ? R.string.sync_profile_switch : R.string.sync_profile_new);
             SyncRiskDialog.show(App.activity(), R.string.sync_risk_vod, null);

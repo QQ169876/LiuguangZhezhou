@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.setting;
+import android.text.TextUtils;
 
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -157,7 +158,7 @@ public class Setting {
     }
 
     private static void putRouteCustoms(List<String> list) {
-        Prefers.put("route_customs", String.join("|", list));
+        Prefers.put("route_customs", TextUtils.join("|", list));
     }
 
     public static void addRouteCustom(String socks) {

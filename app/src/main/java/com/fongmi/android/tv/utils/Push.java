@@ -1,4 +1,6 @@
 package com.fongmi.android.tv.utils;
+import java.util.Arrays;
+import java.util.Collections;
 
 import android.text.TextUtils;
 
@@ -42,7 +44,7 @@ public class Push {
     public static final String APK = "apk";
     public static final String FILE = "file";
 
-    private static final List<String> DATA = List.of(VOD, LIVE, PREF, HISTORY, KEEP);
+    private static final List<String> DATA = new ArrayList<>(Arrays.asList(VOD, LIVE, PREF, HISTORY, KEEP));
     private static final long TIMEOUT = Constant.TIMEOUT_VOD;
     private static final long TIMEOUT_FILE = Constant.TIMEOUT_VOD * 20;
     private static final int MAX_SIZE = 2 * 1024 * 1024;

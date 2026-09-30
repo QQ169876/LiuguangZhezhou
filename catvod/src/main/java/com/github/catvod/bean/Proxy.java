@@ -1,4 +1,5 @@
 package com.github.catvod.bean;
+import java.util.stream.Collectors;
 
 import android.net.Uri;
 import android.text.TextUtils;
@@ -39,8 +40,8 @@ public class Proxy implements Comparable<Proxy> {
 
     public void init() {
         wildcard = getHosts().stream().anyMatch(host -> host.contains("*"));
-        uris = getUrls().stream().map(Uri::parse).filter(this::isValid).toList();
-        proxies = uris.stream().map(this::create).filter(Objects::nonNull).toList();
+        uris = getUrls().stream().map(Uri::parse).filter(this::isValid).collect(Collectors.toList());
+        proxies = uris.stream().map(this::create).filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     public String getName() {

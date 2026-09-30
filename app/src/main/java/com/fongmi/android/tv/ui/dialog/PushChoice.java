@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.ui.dialog;
+import java.util.Collections;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.FragmentActivity;
@@ -24,7 +25,7 @@ public class PushChoice {
     public static void show(FragmentActivity activity, String title, boolean tv, Sender sender) {
         String[] menu = {activity.getString(R.string.push_item_data), activity.getString(R.string.push_file)};
         new MaterialAlertDialogBuilder(activity).setTitle(title).setItems(menu, (dialog, which) -> {
-            if (which == 1) sender.send(List.of(tv ? Push.APK : Push.FILE));
+            if (which == 1) sender.send(Collections.singletonList(tv ? Push.APK : Push.FILE));
             else showChoice(activity, title, tv, sender);
         }).setNegativeButton(R.string.dialog_negative, null).show();
     }

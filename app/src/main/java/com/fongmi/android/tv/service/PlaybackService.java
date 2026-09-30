@@ -1,4 +1,6 @@
 package com.fongmi.android.tv.service;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 import android.app.PendingIntent;
 import android.content.Intent;
@@ -580,7 +582,7 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
     public ListenableFuture<MediaSession.MediaItemsWithStartPosition> onSetMediaItems(@NonNull MediaSession session, @NonNull MediaSession.ControllerInfo controller, @NonNull List<MediaItem> mediaItems, int startIndex, long startPositionMs) {
         saveProgress();
         return Task.executor().submit(() -> {
-            List<MediaItem> resolved = mediaItems.stream().map(BrowseTree::resolveOrKeep).toList();
+            List<MediaItem> resolved = mediaItems.stream().map(BrowseTree::resolveOrKeep).collect(Collectors.toList());
             int index = resolved.isEmpty() ? 0 : Math.clamp(startIndex, 0, resolved.size() - 1);
             long resumePositionMs = BrowseTree.consumeResumePosition();
             long positionMs = startPositionMs != C.TIME_UNSET ? startPositionMs : resumePositionMs;

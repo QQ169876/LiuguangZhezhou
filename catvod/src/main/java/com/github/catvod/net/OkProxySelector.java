@@ -1,4 +1,6 @@
 package com.github.catvod.net;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import com.github.catvod.bean.Proxy;
 import com.github.catvod.utils.Util;
@@ -53,7 +55,7 @@ public class OkProxySelector extends ProxySelector {
     }
 
     private List<java.net.Proxy> fallback(URI uri) {
-        return system != null ? system.select(uri) : List.of(java.net.Proxy.NO_PROXY);
+        return system != null ? system.select(uri) : Collections.singletonList(java.net.Proxy.NO_PROXY);
     }
 
     @Override

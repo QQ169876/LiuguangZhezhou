@@ -1,4 +1,7 @@
 package com.fongmi.android.tv.utils;
+import java.util.HashSet;
+import java.util.Arrays;
+import java.util.Collections;
 
 import android.content.pm.PackageManager;
 import android.webkit.CookieManager;
@@ -11,13 +14,11 @@ public class WebViewUtil {
 
     private static final String SYSTEM_SETTINGS_PACKAGE = "com.android.settings";
 
-    private static final Set<String> BROWSER_PACKAGES = Set.of(
-            "com.android.chrome",
+    private static final Set<String> BROWSER_PACKAGES = new HashSet<>(Arrays.asList("com.android.chrome",
             "com.mi.globalbrowser",
             "com.huawei.browser",
             "com.heytap.browser",
-            "com.vivo.browser"
-    );
+            "com.vivo.browser"));
 
     private static boolean installed(PackageManager pm, String pkg) {
         try {

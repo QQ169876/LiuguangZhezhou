@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.bean;
+import java.util.stream.Collectors;
 
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -318,7 +319,7 @@ public class Site implements Parcelable {
     public Site trans() {
         if (Trans.pass()) return this;
         this.name = Trans.s2t(name);
-        setCategories(getCategories().stream().map(Trans::s2t).toList());
+        setCategories(getCategories().stream().map(Trans::s2t).collect(Collectors.toList()));
         return this;
     }
 

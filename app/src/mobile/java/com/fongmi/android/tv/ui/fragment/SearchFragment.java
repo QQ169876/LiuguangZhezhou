@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.ui.fragment;
+import java.util.Collections;
 
 import static androidx.fragment.app.FragmentTransaction.TRANSIT_FRAGMENT_OPEN;
 
@@ -157,7 +158,7 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     private void getHot() {
         mBinding.word.setText(R.string.search_hot);
         mWordAdapter.setItems(Word.objectFrom(Setting.getHot()).getData());
-        OkHttp.newCall("https://api.web.360kan.com/v1/rank?cat=1", Map.of(HttpHeaders.REFERER, "https://www.360kan.com/rank/general")).enqueue(getCallback(true));
+        OkHttp.newCall("https://api.web.360kan.com/v1/rank?cat=1", Collections.singletonMap(HttpHeaders.REFERER, "https://www.360kan.com/rank/general")).enqueue(getCallback(true));
     }
 
     private void getSuggest(String text) {

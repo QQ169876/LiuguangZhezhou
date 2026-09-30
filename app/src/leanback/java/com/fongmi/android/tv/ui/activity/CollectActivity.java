@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.ui.activity;
 
+import java.util.stream.Collectors;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
@@ -123,7 +124,7 @@ public class CollectActivity extends BaseActivity {
     }
 
     private void setSites() {
-        mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).toList();
+        mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).collect(Collectors.toList());
     }
 
     private void setPager() {

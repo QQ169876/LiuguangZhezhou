@@ -15,7 +15,20 @@ public class MoonSetting {
     }
 
     public static void putUrl(String url) {
+        String old = getScope();
         Prefers.put("moontv_url", url == null ? "" : url.trim());
+        onTargetChanged(old);
+    }
+
+    /**
+     * 站点网址或账号换了 = 换了一份数据源：上次同步留下的基线和墓碑全部作废，
+     * 并且把「以哪边为准」的确认清掉，下次同步重新问一次。
+     * 不然会拿旧账号的记录去比对新账号，把两边的数据糊到一起。
+     */
+    private static void onTargetChanged(String oldScope) {
+        if (oldScope.equals(getScope())) return;
+        Prefers.put("moontv_confirm", "");
+        MoonSync.resetBase();
     }
 
     public static String getUser() {
@@ -23,7 +36,9 @@ public class MoonSetting {
     }
 
     public static void putUser(String user) {
+        String old = getScope();
         Prefers.put("moontv_user", user == null ? "" : user.trim());
+        onTargetChanged(old);
     }
 
     public static String getPass() {

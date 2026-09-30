@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.dlna;
+import java.util.Collections;
 
 import android.content.ComponentName;
 import android.content.Context;
@@ -82,7 +83,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
     }
 
     public List<Device> getRegistered() {
-        if (upnpService == null) return List.of();
+        if (upnpService == null) return Collections.emptyList();
         return upnpService.getRegistry().getDevices(RENDERER_TYPE).stream().map(d -> Device.get((RemoteDevice) d)).collect(Collectors.toList());
     }
 

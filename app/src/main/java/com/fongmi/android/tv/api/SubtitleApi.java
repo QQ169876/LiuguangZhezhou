@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.api;
 
+import java.util.stream.Collectors;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.R;
@@ -97,12 +98,12 @@ public class SubtitleApi {
 
     private static SubtitleSearchPage parseSearch(String text) throws IOException {
         List<AssrtResponse.Subtitle> subtitles = parse(text).getSubtitles();
-        List<SubtitleSearchItem> items = subtitles.stream().map(SubtitleApi::mapSearchItem).filter(Objects::nonNull).toList();
+        List<SubtitleSearchItem> items = subtitles.stream().map(SubtitleApi::mapSearchItem).filter(Objects::nonNull).collect(Collectors.toList());
         return SubtitleSearchPage.from(items, subtitles.size());
     }
 
     private static List<SubtitleSearchItem> parseDetail(String text) throws IOException {
-        List<SubtitleSearchItem> items = parse(text).getSubtitles().stream().flatMap(subtitle -> mapDetailItems(subtitle).stream()).toList();
+        List<SubtitleSearchItem> items = parse(text).getSubtitles().stream().flatMap(subtitle -> mapDetailItems(subtitle).stream()).collect(Collectors.toList());
         if (items.isEmpty()) throw new IOException(ResUtil.getString(R.string.error_empty));
         return items;
     }

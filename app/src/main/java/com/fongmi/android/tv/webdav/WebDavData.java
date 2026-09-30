@@ -46,7 +46,7 @@ public class WebDavData {
 
     public static WebDavData from(String json) {
         try {
-            if (json == null || json.isBlank()) return null;
+            if (json == null || json.trim().isEmpty()) return null;
             GsonBuilder builder = new GsonBuilder().setObjectToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER);
             WebDavData item = builder.create().fromJson(json, WebDavData.class);
             if (item == null || item.getData() == null) return null;

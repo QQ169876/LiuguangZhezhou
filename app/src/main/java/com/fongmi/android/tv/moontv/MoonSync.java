@@ -242,7 +242,7 @@ public class MoonSync {
         applyTomb(records, favorites);
         Map<String, long[]> skip = skipSnapshot();
         AppDatabase.get().getHistoryDao().delete(cid);
-        AppDatabase.get().getKeepDao().delete();
+        AppDatabase.get().getKeepDao().delete(cid); // 只清当前源的收藏，别的源不受影响
         int[] gotRecords = pullRecords(records, cid, skip);
         int[] gotFavorites = pullFavorites(favorites, cid);
         saveBase(records, favorites, null, null);
@@ -263,12 +263,12 @@ public class MoonSync {
         applyTomb(records, favorites);
         Set<String> localRecords = localRecordKeys();
         Set<String> localFavorites = localKeepKeys();
-        int delRecords = deleteRemote(diff(keysOf(records), localRecords), false);
-        int delFavorites = deleteRemote(diff(keysOf(favorites), localFavorites), true);
+        int delRecords = deleteRemote(diff(scopedRemote(records, localRecords), localRecords), false);
+        int delFavorites = deleteRemote(diff(scopedRemote(favorites, localFavorites), localFavorites), true);
         int[] upRecords = pushRecords(records);
         int[] upFavorites = pushFavorites(favorites);
         saveBase(records, favorites, localRecords, localFavorites);
-        clearTomb(); // 站点已经和本机一致了，墓碑没有再留着的必要
+        // 墓碑留着：删过的东西不能再被别的设备补回来（站点条目时间比删除时刻新才会复活）
         MoonSetting.putLast(System.currentTimeMillis());
         refresh();
         return ResUtil.getString(R.string.moontv_summary_push, upRecords[0] + upRecords[1], upFavorites[0] + upFavorites[1], delRecords + delFavorites);
@@ -446,6 +446,60 @@ public class MoonSync {
         flushTomb(siteKey, favorite);
     }
 
+    /**
+     * 整批清空（清观看记录与收藏、清除数据）前先记墓碑并通知站点删除。
+     * 以前这种批量删除不写墓碑，站点上的旧记录原封不动，下一次同步就又被拉回来了。
+     * 必须在真正删库之前调用，否则就取不到要删哪些了。
+     */
+    public static void tombstoneLocal() {
+        if (!MoonSetting.isSyncable()) return;
+        int cid = VodConfig.getCid();
+        List<String> recordKeys = new ArrayList<>();
+        List<String> keepKeys = new ArrayList<>();
+        for (History item : AppDatabase.get().getHistoryDao().findByCid(cid)) {
+            if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
+            recordKeys.add(siteKey(item));
+        }
+        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(cid)) {
+            if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
+            keepKeys.add(siteKey(item));
+        }
+        if (recordKeys.isEmpty() && keepKeys.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        writeTomb(TOMB_RECORD, recordKeys, now);
+        writeTomb(TOMB_FAVORITE, keepKeys, now);
+        Task.execute(() -> {
+            int count = 0;
+            for (String key : recordKeys) {
+                if (count++ >= 300) break;
+                try {
+                    deleteOne(key, false);
+                } catch (Throwable ignored) {
+                }
+            }
+            count = 0;
+            for (String key : keepKeys) {
+                if (count++ >= 300) break;
+                try {
+                    deleteOne(key, true);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+    }
+
+    private static void writeTomb(String pref, List<String> keys, long time) {
+        if (keys.isEmpty()) return;
+        JSONObject tomb = loadTomb(pref);
+        for (String key : keys) {
+            try {
+                tomb.put(key, time);
+            } catch (Exception ignored) {
+            }
+        }
+        saveTomb(pref, tomb);
+    }
+
     private static void flushTomb(String siteKey, boolean favorite) {
         if (!MoonSetting.isSyncable()) return;
         Task.execute(() -> {
@@ -565,7 +619,7 @@ public class MoonSync {
         return dead > 0 && time > dead;
     }
 
-    /** 墓碑留 30 天够用了：别的设备早就同步到删除了，太久的丢掉免得一直攒着 */
+    /** 墓碑留 90 天：删过的记录得压得住，别的设备才补不回来 */
     private static void pruneTomb() {
         pruneTomb(TOMB_RECORD);
         pruneTomb(TOMB_FAVORITE);
@@ -574,7 +628,7 @@ public class MoonSync {
     private static void pruneTomb(String pref) {
         JSONObject tomb = loadTomb(pref);
         if (tomb.length() == 0) return;
-        long expire = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30);
+        long expire = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(90);
         JSONObject next = new JSONObject();
         for (String name : keyList(tomb)) {
             long dead = tomb.optLong(name, 0);
@@ -648,8 +702,7 @@ public class MoonSync {
     private static int deleteLocalKeep(Set<String> siteKeys) {
         if (siteKeys.isEmpty()) return 0;
         int count = 0;
-        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
-            if (item.getType() != 0) continue;
+        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
             if (!siteKeys.contains(siteKey(item))) continue;
             AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
             ++count;
@@ -684,8 +737,12 @@ public class MoonSync {
     }
 
     private static Set<String> localRecordKeys() {
+        return localRecordKeys(VodConfig.getCid());
+    }
+
+    private static Set<String> localRecordKeys(int cid) {
         Set<String> set = new HashSet<>();
-        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+        for (History item : AppDatabase.get().getHistoryDao().findByCid(cid)) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
             set.add(siteKey(item));
         }
@@ -693,11 +750,34 @@ public class MoonSync {
     }
 
     private static Set<String> localKeepKeys() {
+        return localKeepKeys(VodConfig.getCid());
+    }
+
+    private static Set<String> localKeepKeys(int cid) {
         Set<String> set = new HashSet<>();
-        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
-            if (item.getType() != 0) continue;
+        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(cid)) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
             set.add(siteKey(item));
+        }
+        return set;
+    }
+
+    /**
+     * 站点上「属于本次同步范围」的条目：只看本机当前源里出现过的那些站点 key。
+     * 别的源 / 别的账号留下的记录不在这个范围里，同步不碰它们，免得被当成多余数据删掉。
+     */
+    private static Set<String> scopedRemote(JSONObject remote, Set<String> local) {
+        Set<String> sources = new HashSet<>();
+        for (String key : local) {
+            String[] pair = split(key);
+            if (pair != null) sources.add(pair[0]);
+        }
+        Set<String> set = new HashSet<>();
+        for (String key : keysOf(remote)) {
+            String[] pair = split(key);
+            if (pair == null) continue;
+            if (!sources.contains(pair[0])) continue;
+            set.add(key);
         }
         return set;
     }
@@ -771,11 +851,10 @@ public class MoonSync {
 
     private static int dedupeKeep() {
         Map<String, List<Keep>> groups = new LinkedHashMap<>();
-        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
-            if (item.getType() != 0) continue;
+        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
             String name = norm(item.getVodName());
             if (name.isEmpty()) continue;
-            groups.computeIfAbsent(name, key -> new ArrayList<>()).add(item);
+            groups.computeIfAbsent(item.getCid() + "|" + name, key -> new ArrayList<>()).add(item);
         }
         int removed = 0;
         for (List<Keep> group : groups.values()) {
@@ -796,7 +875,7 @@ public class MoonSync {
      */
     private static Map<String, long[]> skipSnapshot() {
         Map<String, long[]> result = new HashMap<>();
-        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+        for (History item : AppDatabase.get().getHistoryDao().findByCid(VodConfig.getCid())) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
@@ -813,7 +892,7 @@ public class MoonSync {
     private static int[] pushRecords(JSONObject remote) {
         int add = 0, update = 0;
         JSONObject tomb = loadTomb(TOMB_RECORD);
-        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+        for (History item : AppDatabase.get().getHistoryDao().findByCid(VodConfig.getCid())) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
@@ -848,7 +927,7 @@ public class MoonSync {
     private static int[] pushFavorites(JSONObject remote) {
         int add = 0, update = 0;
         JSONObject tomb = loadTomb(TOMB_FAVORITE);
-        for (Keep item : AppDatabase.get().getKeepDao().getVod()) {
+        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;

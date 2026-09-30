@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.utils;
+import java.util.stream.Collectors;
 
 import android.text.TextUtils;
 
@@ -48,7 +49,7 @@ public final class SubtitleArchive {
 
     private static List<File> findSubtitles(File dir) {
         try (var paths = Files.walk(dir.toPath())) {
-            return paths.map(java.nio.file.Path::toFile).filter(File::isFile).filter(SubtitleArchive::isSubtitle).toList();
+            return paths.map(java.nio.file.Path::toFile).filter(File::isFile).filter(SubtitleArchive::isSubtitle).collect(Collectors.toList());
         } catch (Exception e) {
             return Collections.emptyList();
         }

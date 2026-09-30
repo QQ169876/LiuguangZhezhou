@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.ui.adapter;
+import java.util.stream.Collectors;
 
 import android.view.ViewGroup;
 
@@ -80,7 +81,7 @@ public abstract class BaseDiffAdapter<T extends Diffable<T>, VH extends Recycler
     }
 
     public void sort(T item, Runnable runnable) {
-        List<T> current = Stream.concat(getItems().stream(), Stream.of(item)).distinct().sorted().toList();
+        List<T> current = Stream.concat(getItems().stream(), Stream.of(item)).distinct().sorted().collect(Collectors.toList());
         setItems(current, runnable);
     }
 
@@ -89,7 +90,7 @@ public abstract class BaseDiffAdapter<T extends Diffable<T>, VH extends Recycler
     }
 
     public void sort(List<T> items, Runnable runnable) {
-        List<T> current = Stream.concat(getItems().stream(), items.stream()).distinct().sorted().toList();
+        List<T> current = Stream.concat(getItems().stream(), items.stream()).distinct().sorted().collect(Collectors.toList());
         setItems(current, runnable);
     }
 

@@ -16,6 +16,10 @@ public abstract class KeepDao extends BaseDao<Keep> {
     @Query("SELECT * FROM Keep WHERE type = 0 ORDER BY createTime DESC")
     public abstract List<Keep> getVod();
 
+    /** 只取某个点播源下的收藏：同步按源隔离 */
+    @Query("SELECT * FROM Keep WHERE type = 0 AND cid = :cid ORDER BY createTime DESC")
+    public abstract List<Keep> getVodByCid(int cid);
+
     @Query("SELECT * FROM Keep WHERE type = 1 ORDER BY createTime DESC")
     public abstract List<Keep> getLive();
 

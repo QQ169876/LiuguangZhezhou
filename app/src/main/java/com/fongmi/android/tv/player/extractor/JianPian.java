@@ -1,4 +1,7 @@
 package com.fongmi.android.tv.player.extractor;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import android.net.Uri;
 
@@ -18,7 +21,7 @@ public class JianPian implements Source.Extractor {
 
     @Override
     public boolean match(Uri uri) {
-        return List.of("tvbox-xg", "jianpian", "ftp").contains(UrlUtil.scheme(uri));
+        return new ArrayList<>(Arrays.asList("tvbox-xg", "jianpian", "ftp")).contains(UrlUtil.scheme(uri));
     }
 
     private void init() {

@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.bean;
+import java.util.stream.Collectors;
 
 import android.text.TextUtils;
 import android.view.View;
@@ -354,7 +355,7 @@ public class History implements Diffable<History> {
     }
 
     private History mergeFrom(List<History> items, boolean force) {
-        List<History> matches = items.stream().filter(item -> item.shouldMerge(this, force)).toList();
+        List<History> matches = items.stream().filter(item -> item.shouldMerge(this, force)).collect(Collectors.toList());
         if (matches.isEmpty()) return this;
         matches.get(0).copyTo(this);
         matches.forEach(History::delete);

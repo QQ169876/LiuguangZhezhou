@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.ui.custom;
 
+import java.util.stream.Collectors;
 import android.content.Context;
 import android.graphics.Rect;
 import android.util.AttributeSet;
@@ -85,7 +86,7 @@ public class CustomTitleView extends MaterialTextView {
     }
 
     private List<Site> getSites() {
-        return VodConfig.get().getSites().stream().filter(site -> !site.isHide()).toList();
+        return VodConfig.get().getSites().stream().filter(site -> !site.isHide()).collect(Collectors.toList());
     }
 
     public interface Listener extends SiteListener {

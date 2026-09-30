@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.ui.activity;
+import java.util.Collections;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -43,7 +44,7 @@ public class ScanActivity extends BaseActivity implements BarcodeCallback {
     @Override
     protected void initView(Bundle savedInstanceState) {
         mCapture = new CaptureManager(this, mBinding.scanner);
-        mBinding.scanner.getBarcodeView().setDecoderFactory(new DefaultDecoderFactory(List.of(BarcodeFormat.QR_CODE)));
+        mBinding.scanner.getBarcodeView().setDecoderFactory(new DefaultDecoderFactory(Collections.singletonList(BarcodeFormat.QR_CODE)));
     }
 
     @Override

@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.player.track;
+import java.util.Collections;
 
 import android.text.TextUtils;
 
@@ -86,7 +87,7 @@ public class TrackUtil {
         TrackSelectionParameters.Builder builder = player.getTrackSelectionParameters().buildUpon();
         mediaGroupMapByType.forEach((type, mediaGroup) -> {
             Integer selectedIndex = selectedIndexMapByType.get(type);
-            List<Integer> indices = selectedIndex != null ? List.of(selectedIndex) : List.of();
+            List<Integer> indices = selectedIndex != null ? Collections.singletonList(selectedIndex) : Collections.emptyList();
             builder.setOverrideForType(new TrackSelectionOverride(mediaGroup, indices));
         });
         player.setTrackSelectionParameters(builder.build());

@@ -9,6 +9,7 @@ import android.content.Intent;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.moontv.MoonSync;
 import com.github.catvod.utils.Path;
 
 import java.io.File;
@@ -25,6 +26,7 @@ public class Clear {
     /** 只清播放历史和收藏（toast 提示按沿用调用方处理） */
     public static void history(Callback callback) {
         Task.execute(() -> {
+            MoonSync.tombstoneLocal(); // 先记墓碑 + 通知站点删除，不然下次同步又拉回来
             AppDatabase.get().getHistoryDao().delete();
             AppDatabase.get().getKeepDao().delete();
             App.post(callback::success);
@@ -34,6 +36,7 @@ public class Clear {
     /** 清全部：点播源 / 直播源 / 收藏 / 历史 / 轨道 / 设备 + 所有配置 + 缓存 */
     public static void all(Callback callback) {
         Task.execute(() -> {
+            MoonSync.tombstoneLocal(); // 同上：清库之前先把站点上的对应条目删掉
             AppDatabase.get().getKeepDao().delete();
             AppDatabase.get().getHistoryDao().delete();
             AppDatabase.get().getTrackDao().delete();

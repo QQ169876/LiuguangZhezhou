@@ -1,4 +1,7 @@
 package com.fongmi.android.tv.ui.fragment;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -106,7 +109,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     private void setSites() {
-        mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).toList();
+        mSites = VodConfig.get().getSites().stream().filter(Site::isSearchable).collect(Collectors.toList());
     }
 
     private void setWidth() {
@@ -124,7 +127,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     private void search() {
         if (mSites.isEmpty()) return;
-        mCollectAdapter.setItems(List.of(Collect.all()), () -> mViewModel.searchContent(mSites, getKeyword(), false));
+        mCollectAdapter.setItems(new ArrayList<>(Collections.singletonList(Collect.all())), () -> mViewModel.searchContent(mSites, getKeyword(), false));
     }
 
     private int getCount() {

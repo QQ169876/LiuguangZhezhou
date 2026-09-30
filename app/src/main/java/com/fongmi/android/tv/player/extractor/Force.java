@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.player.extractor;
+import java.util.Collections;
 
 import android.content.ComponentName;
 import android.content.Context;
@@ -40,7 +41,7 @@ public class Force implements Source.Extractor, ServiceConnection {
         int port = Util.port(scheme);
         String id = uri.getLastPathSegment();
         String cmd = "http://127.0.0.1:" + port + "/cmd.xml?cmd=switch_chan&server=" + uri.getHost() + ":" + uri.getPort() + "&id=" + id;
-        OkHttp.string(cmd, Map.of(HttpHeaders.USER_AGENT, "MTV"));
+        OkHttp.string(cmd, Collections.singletonMap(HttpHeaders.USER_AGENT, "MTV"));
         return "http://127.0.0.1:" + port + "/" + id;
     }
 

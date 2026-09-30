@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.api;
 
+import java.util.stream.Collectors;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -242,7 +243,7 @@ public class SiteApi {
         if (site.getCategories().isEmpty()) return;
         Map<String, Class> typeByName = new HashMap<>();
         result.getTypes().forEach(type -> typeByName.put(type.getTypeName(), type));
-        List<Class> types = site.getCategories().stream().map(typeByName::get).filter(Objects::nonNull).toList();
+        List<Class> types = site.getCategories().stream().map(typeByName::get).filter(Objects::nonNull).collect(Collectors.toList());
         if (!types.isEmpty()) result.setTypes(types);
     }
 }

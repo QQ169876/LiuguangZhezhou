@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.utils;
+import java.util.Collections;
 
 import com.fongmi.android.tv.setting.Setting;
 import com.github.catvod.net.OkHttp;
@@ -199,8 +200,8 @@ public class GhRoute {
         }
         if (!validSocks(socks)) return null;
         com.github.catvod.bean.Proxy proxy = new com.github.catvod.bean.Proxy();
-        proxy.setHosts(List.of("*"));
-        proxy.setUrls(List.of("socks://" + socks));
+        proxy.setHosts(Collections.singletonList("*"));
+        proxy.setUrls(Collections.singletonList("socks://" + socks));
         return proxy;
     }
 

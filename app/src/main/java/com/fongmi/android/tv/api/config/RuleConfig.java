@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.api.config;
+import java.util.Collections;
 
 import com.fongmi.android.tv.bean.Rule;
 
@@ -7,8 +8,8 @@ import java.util.List;
 
 public class RuleConfig {
 
-    private List<String> ads = List.of();
-    private List<Rule> rules = List.of();
+    private List<String> ads = Collections.emptyList();
+    private List<Rule> rules = Collections.emptyList();
     private boolean dirty;
 
     public static RuleConfig get() {

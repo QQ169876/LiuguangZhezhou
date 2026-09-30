@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.bean;
 
+import java.util.stream.Collectors;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -38,7 +39,7 @@ public class Cache {
     public static List<Filter> copy(String typeId) {
         List<Filter> filters = get().cache.get(typeId);
         if (filters == null) return Collections.emptyList();
-        return filters.stream().map(Filter::copy).toList();
+        return filters.stream().map(Filter::copy).collect(Collectors.toList());
     }
 
     public static Cache clear() {

@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.player;
+import java.util.Collections;
 
 import android.net.Uri;
 import android.text.TextUtils;
@@ -135,7 +136,7 @@ public class PlayerManager implements ParseCallback {
     }
 
     public List<Danmaku> getDanmakus() {
-        return spec != null ? spec.getDanmakus() : List.of();
+        return spec != null ? spec.getDanmakus() : Collections.emptyList();
     }
 
     private void notifyDanmakuSourceChanged() {

@@ -1,4 +1,5 @@
 package com.github.catvod.utils;
+import android.text.TextUtils;
 
 import android.util.Base64;
 
@@ -62,7 +63,7 @@ public class Auth {
         if (hasQop) fields.add("qop=" + qop);
         fields.add("response=\"" + response + "\"");
         if (opaque != null) fields.add("opaque=\"" + opaque + "\"");
-        return "Digest " + String.join(", ", fields);
+        return "Digest " + TextUtils.join(", ", fields);
     }
 
     private static String newCnonce() {

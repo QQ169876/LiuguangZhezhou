@@ -1,4 +1,5 @@
 package com.fongmi.android.tv.ui.dialog;
+import java.util.Collections;
 
 import android.content.Context;
 import android.content.Intent;
@@ -306,7 +307,7 @@ final class SubtitleSettingPanel {
 
     private SecondaryState getSecondaryState() {
         boolean supported = isMpvEngine();
-        List<SecondaryTrack> tracks = supported ? getSecondaryTracks() : List.of();
+        List<SecondaryTrack> tracks = supported ? getSecondaryTracks() : Collections.emptyList();
         int trackId = supported ? getAvailableSecondarySubtitleTrackId(tracks) : SubtitleSetting.SECONDARY_SUBTITLE_OFF;
         if (supported && trackId != SubtitleSetting.getSecondaryTrackId()) SubtitleSetting.putSecondaryTrackId(trackId);
         return new SecondaryState(supported, trackId, tracks);

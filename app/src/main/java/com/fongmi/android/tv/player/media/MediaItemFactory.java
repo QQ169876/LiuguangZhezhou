@@ -1,4 +1,6 @@
 package com.fongmi.android.tv.player.media;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 import android.net.Uri;
 import android.os.Bundle;
@@ -67,11 +69,11 @@ public final class MediaItemFactory {
     }
 
     private static List<MediaItem.SubtitleConfiguration> buildSubtitleConfigs(List<Sub> subs) {
-        if (subs == null) return List.of();
-        List<Sub> valid = subs.stream().filter(sub -> sub != null && !sub.isEmpty()).toList();
-        if (valid.isEmpty()) return List.of();
+        if (subs == null) return Collections.emptyList();
+        List<Sub> valid = subs.stream().filter(sub -> sub != null && !sub.isEmpty()).collect(Collectors.toList());
+        if (valid.isEmpty()) return Collections.emptyList();
         SubtitleFlags flags = SubtitleFlags.create(valid);
-        return IntStream.range(0, valid.size()).mapToObj(i -> buildSubConfig(valid.get(i), flags.get(valid.get(i), i))).toList();
+        return IntStream.range(0, valid.size()).mapToObj(i -> buildSubConfig(valid.get(i), flags.get(valid.get(i), i))).collect(Collectors.toList());
     }
 
     public static MediaItem.SubtitleConfiguration buildSubConfig(Sub sub) {
