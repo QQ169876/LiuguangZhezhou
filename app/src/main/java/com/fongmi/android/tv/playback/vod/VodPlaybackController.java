@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.playback.PlaybackResult;
+import com.fongmi.android.tv.webdav.SyncManager;
 
 import java.util.Collections;
 import java.util.List;
@@ -330,6 +331,7 @@ public class VodPlaybackController {
     public void onTimeChanged(long time, long position, long duration) {
         History history = currentHistory();
         historyPolicy.updateProgress(history, time, position, duration);
+        if (duration > 0 && !host.isLivePlayback()) SyncManager.playback();
         if (history != null && history.getEnding() > 0 && history.getEnding() + position >= duration) nextEpisode(false);
     }
 

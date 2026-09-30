@@ -40,6 +40,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -49,10 +50,16 @@ public class SyncManager {
     private static final String BASELINE = "webdav-baseline.json";
     private static final int MAX_SIZE = 6 * 1024 * 1024;
 
+    private static final int PLAY_PERIOD = 30;
+    private static final long PLAY_IDLE = 60 * 1000L;
+
     private static final AtomicBoolean busy = new AtomicBoolean(false);
+    private static final AtomicBoolean dirty = new AtomicBoolean(false);
     private static final AtomicInteger failures = new AtomicInteger();
+    private static final AtomicLong playMark = new AtomicLong();
     private static final int MAX_FAIL = 3;
     private static ScheduledFuture<?> future;
+    private static ScheduledFuture<?> playTask;
 
     public interface Listener {
         void done(boolean success, String message);
@@ -68,16 +75,51 @@ public class SyncManager {
 
     public static void touch() {
         if (MoonSync.isWriting()) return; // 站点同步写库时不反向触发
+        dirty.set(true);
         post(20);
+    }
+
+    /**
+     * 播放器每秒调一次：说明还在看着，就开一个 30 秒一轮的后台同步，
+     * 让播放进度跟着往前走，别的设备接着看能从这儿续上。
+     * 一分钟没再跳时间就当是看完了，自己收摊。
+     */
+    public static synchronized void playback() {
+        if (!playable()) return;
+        playMark.set(System.currentTimeMillis());
+        if (playTask != null && !playTask.isDone()) return;
+        playTask = Task.scheduler().scheduleAtFixedRate(SyncManager::playTick, PLAY_PERIOD, PLAY_PERIOD, TimeUnit.SECONDS);
+    }
+
+    private static void playTick() {
+        if (!playable()) {
+            stopPlayback();
+            return;
+        }
+        if (System.currentTimeMillis() - playMark.get() > PLAY_IDLE) {
+            stopPlayback();
+            return;
+        }
+        if (!dirty.get()) return; // 这半分钟没动静就别白跑一趟
+        silent();
+    }
+
+    private static synchronized void stopPlayback() {
+        if (playTask != null) playTask.cancel(false);
+        playTask = null;
     }
 
     public static boolean isBusy() {
         return busy.get();
     }
 
+    private static boolean playable() {
+        if (!WebDavSetting.isSyncable() || !WebDavSetting.isAuto()) return false;
+        return !WebDavSetting.isSwitch(); // 目标换过还没选方向，先不动数据
+    }
+
     private static synchronized void post(long delaySeconds) {
-        if (!WebDavSetting.isSyncable() || !WebDavSetting.isAuto()) return;
-        if (WebDavSetting.isSwitch()) return; // 目标换过还没选方向，先不动数据
+        if (!playable()) return;
         cancel();
         future = Task.scheduler().schedule(SyncManager::silent, delaySeconds, TimeUnit.SECONDS);
     }
@@ -92,6 +134,7 @@ public class SyncManager {
         try {
             doSync();
             failures.set(0);
+            dirty.set(false);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
             onFail();
@@ -110,6 +153,7 @@ public class SyncManager {
         if (!WebDavSetting.isAuto()) return;
         WebDavSetting.putAuto(false);
         cancel();
+        stopPlayback();
         App.post(() -> Notify.show(R.string.webdav_auto_stop));
     }
 
@@ -152,6 +196,7 @@ public class SyncManager {
             busy.set(false);
         }
         failures.set(0);
+        dirty.set(false);
         String result = message;
         App.post(() -> listener.done(true, result));
     }
