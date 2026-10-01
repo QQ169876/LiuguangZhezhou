@@ -38,12 +38,11 @@ public class Shortcut {
 
     /**
      * 快捷码本来就是一键配置，影视站网址顺手捎带上，省得再来一遍。
-     * 网址平时不留默认值（只有输入框里的灰字提示），只有走到这一步才真的写进去；
-     * 已经填过别的值就不动，免得把人自己配的站点冲掉。
+     * 网址平时不留默认值（只有输入框里的灰字提示），走到这一步才真的写进去。
      */
     public static void moon(String text) {
         if (!isCode(text)) return;
-        if (!MoonSetting.getUrl().isEmpty()) return;
+        if (MoonSetting.getUrl().equals(MoonSetting.DEFAULT_URL)) return;
         MoonSetting.putUrl(MoonSetting.DEFAULT_URL);
     }
 

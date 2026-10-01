@@ -3,6 +3,7 @@ package com.fongmi.android.tv.api.loader;
 import android.content.Context;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.exception.CrashGuard;
 import com.fongmi.android.tv.utils.Download;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.crawler.Spider;
@@ -56,6 +57,7 @@ public class JarLoader {
         if (!Path.exists(file) || !file.setReadOnly()) return;
         String cachePath = Path.jar().getAbsolutePath();
         DexClassLoader loader = new DexClassLoader(file.getAbsolutePath(), cachePath, cachePath, App.get().getClassLoader());
+        CrashGuard.watch(loader);
         invokeInit(loader);
         invokeProxy(key, loader);
         loaders.put(key, loader);

@@ -14,6 +14,7 @@ import androidx.core.os.HandlerCompat;
 
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.hook.Hook;
+import com.fongmi.android.tv.exception.CrashGuard;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.github.catvod.Init;
@@ -86,6 +87,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         super.onCreate();
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
+        CrashGuard.install();
         SyncManager.boot();
         MoonSync.boot();
     }
