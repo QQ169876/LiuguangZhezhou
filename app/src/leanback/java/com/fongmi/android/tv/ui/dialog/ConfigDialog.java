@@ -109,12 +109,14 @@ public class ConfigDialog extends BaseAlertDialog {
     }
 
     private String getUrl() {
+        // 新装的机器还没落库，getUrl() 会返回 null，之前在这里直接 isEmpty() 就是崩溃点
         String url = switch (type) {
             case 0 -> VodConfig.getUrl();
             case 1 -> LiveConfig.getUrl();
             case 2 -> WallConfig.getUrl();
             default -> "";
         };
+        if (url == null) url = "";
         // 直接源统一：还没配过点播源时，先把统一地址填进去，方便一键用上
         if (type == 0 && !edit && url.isEmpty()) return Shortcut.DIRECT;
         return url;
