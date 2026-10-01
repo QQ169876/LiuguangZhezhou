@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.view.View;
@@ -393,8 +394,13 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         onServiceConnected();
     }
 
+    /** Activity.isInPictureInPictureMode() 是 API 24 才有的，Android 6 上直接调会 NoSuchMethodError */
+    private boolean inPipMode() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode();
+    }
+
     private void closePiP() {
-        if (!isInPictureInPictureMode()) return;
+        if (!inPipMode()) return;
         detach();
         finish();
     }
@@ -607,7 +613,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     protected void onStop() {
         super.onStop();
         if (isOwner() && (isFinishing() || PlayerSetting.isBackgroundOff())) pausePlayback();
-        if (!isInPictureInPictureMode()) detachPlayerView();
+        if (!inPipMode()) detachPlayerView();
     }
 
     @Override

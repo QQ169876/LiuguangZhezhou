@@ -29,26 +29,36 @@ public class CrashGuard {
 
     private static final List<WeakReference<ClassLoader>> LOADERS = new ArrayList<>();
     private static volatile Thread.UncaughtExceptionHandler backup;
+    private static final Thread.UncaughtExceptionHandler HANDLER = new Thread.UncaughtExceptionHandler() {
+        @Override
+        public void uncaughtException(Thread thread, Throwable e) {
+            boolean main = thread == Looper.getMainLooper().getThread();
+            if (!thirdParty(e)) {
+                escape(thread, e, "no-foreign-frame");
+                return;
+            }
+            report(main ? "main" : "thread", e);
+            if (main) loop(); // 主线程不能没人转消息，补一个循环接着干
+        }
+    };
 
     public static synchronized void watch(ClassLoader loader) {
         if (loader == null) return;
         LOADERS.add(new WeakReference<ClassLoader>(loader));
+        reassert();
+    }
+
+    /**
+     * 加固壳在 Init.init() 里可能偷偷把系统默认兜底换成它自己的，崩溃就绕过我们的吞逻辑、
+     * 直接落到更早装上的错误屏。jar 每加载完、每个页面恢复时都查一遍，被换走就抢回来。
+     */
+    public static synchronized void reassert() {
+        if (Thread.getDefaultUncaughtExceptionHandler() != HANDLER) Thread.setDefaultUncaughtExceptionHandler(HANDLER);
     }
 
     public static void install() {
         backup = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-            @Override
-            public void uncaughtException(Thread thread, Throwable e) {
-                boolean main = thread == Looper.getMainLooper().getThread();
-                if (!thirdParty(e)) {
-                    escape(thread, e);
-                    return;
-                }
-                report(main ? "main" : "thread", e);
-                if (main) loop(); // 主线程不能没人转消息，补一个循环接着干
-            }
-        });
+        Thread.setDefaultUncaughtExceptionHandler(HANDLER);
     }
 
     /**
@@ -63,7 +73,7 @@ public class CrashGuard {
                 return; // 队列收了就正常退出，别空转
             } catch (Throwable e) {
                 if (!thirdParty(e)) {
-                    escape(Thread.currentThread(), e);
+                    escape(Thread.currentThread(), e, "no-foreign-frame");
                     return;
                 }
                 report("main", e);
@@ -71,8 +81,16 @@ public class CrashGuard {
         }
     }
 
-    /** App 自己的锅，走原来的路，该崩崩 */
-    private static void escape(Thread thread, Throwable e) {
+    /** App 自己的锅，走原来的路，该崩崩。reason 写进堆栈里，错误屏上能看到为什么放行。 */
+    private static void escape(Thread thread, Throwable e, String reason) {
+        try {
+            StackTraceElement[] old = e.getStackTrace();
+            StackTraceElement[] neo = new StackTraceElement[old.length + 1];
+            neo[0] = new StackTraceElement("CrashGuard", "escaped:" + reason, "CrashGuard.java", 0);
+            System.arraycopy(old, 0, neo, 1, old.length);
+            e.setStackTrace(neo);
+        } catch (Throwable ignored) {
+        }
         Thread.UncaughtExceptionHandler handler = backup;
         if (handler != null) handler.uncaughtException(thread, e);
         else Process.killProcess(Process.myPid());
@@ -86,10 +104,10 @@ public class CrashGuard {
     /** 堆栈里有没有 spider jar 塞进来的类 */
     private static synchronized boolean thirdParty(Throwable e) {
         int depth = 0;
-        for (Throwable cause = e; cause != null && depth < 4; cause = cause.getCause(), depth++) {
+        for (Throwable cause = e; cause != null && depth < 6; cause = cause.getCause(), depth++) {
             StackTraceElement[] stack = cause.getStackTrace();
             if (stack == null) continue;
-            int max = Math.min(stack.length, 16);
+            int max = Math.min(stack.length, 32);
             for (int i = 0; i < max; i++) {
                 String name = stack[i].getClassName();
                 if (ours(name)) continue;

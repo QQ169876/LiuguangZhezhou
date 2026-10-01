@@ -60,6 +60,7 @@ public class JarLoader {
         CrashGuard.watch(loader);
         invokeInit(loader);
         invokeProxy(key, loader);
+        CrashGuard.reassert(); // 加固壳在 Init.init() 里可能抢走默认兜底，jar 装完立刻抢回来
         loaders.put(key, loader);
     }
 

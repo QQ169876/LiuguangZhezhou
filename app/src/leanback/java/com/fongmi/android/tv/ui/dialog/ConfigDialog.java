@@ -150,7 +150,19 @@ public class ConfigDialog extends BaseAlertDialog {
         if (text.isEmpty()) Config.delete(url, type);
         if (name.isEmpty()) ((ConfigListener) requireActivity()).setConfig(Config.find(text, type));
         else ((ConfigListener) requireActivity()).setConfig(Config.find(text, name, type));
+        carryLive(raw);
         dismiss();
+    }
+
+    /**
+     * 快捷码本来是「一键把这台机器配好」用的：影视站网址捎带上了，直播源也捎带成直接源。
+     * 源列表里旧的那份还在，随时能切回去，所以这里一律覆盖，不看直播源原来是空的还是有别的。
+     */
+    private void carryLive(String raw) {
+        if (type == 1 || !Shortcut.isCode(raw)) return;
+        FragmentActivity activity = requireActivity();
+        if (activity == null || activity.isFinishing()) return;
+        ((ConfigListener) activity).setConfig(Config.find(Shortcut.DIRECT, 1));
     }
 
     private void onNegative(View view) {

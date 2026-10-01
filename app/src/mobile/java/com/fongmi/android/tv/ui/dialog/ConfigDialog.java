@@ -143,7 +143,19 @@ public class ConfigDialog extends BaseAlertDialog {
         if (edit) Config.find(ori, type).url(url).name(name).update();
         if (url.isEmpty()) Config.delete(ori, type);
         ((ConfigListener) requireParentFragment()).setConfig(Config.find(url, type));
+        carryLive(raw);
         dismiss();
+    }
+
+    /**
+     * 快捷码本来是「一键把这台机器配好」用的：影视站网址捎带上了，直播源也捎带成直接源。
+     * 源列表里旧的那份还在，随时能切回去，所以这里一律覆盖，不看直播源原来是空的还是有别的。
+     */
+    private void carryLive(String raw) {
+        if (type == 1 || !Shortcut.isCode(raw)) return;
+        Fragment parent = getParentFragment();
+        if (!(parent instanceof ConfigListener) || !parent.isAdded()) return;
+        ((ConfigListener) parent).setConfig(Config.find(Shortcut.DIRECT, 1));
     }
 
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {

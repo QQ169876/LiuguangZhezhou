@@ -242,7 +242,9 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
     }
 
     private void removeForeground() {
-        stopForeground(STOP_FOREGROUND_REMOVE);
+        // stopForeground(int) 是 Android 7 才有的重载，老盒子（Android 6）会 NoSuchMethodError
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
+        else stopForeground(true);
     }
 
     private void saveProgress() {
