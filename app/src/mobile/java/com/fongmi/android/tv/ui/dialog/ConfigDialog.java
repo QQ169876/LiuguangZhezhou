@@ -137,8 +137,10 @@ public class ConfigDialog extends BaseAlertDialog {
     }
 
     private void onPositive(DialogInterface dialog, int which) {
-        String url = shortcut(binding.url.getText().toString().trim());
+        String raw = binding.url.getText().toString().trim();
+        String url = shortcut(raw);
         String name = binding.name.getText().toString().trim();
+        Shortcut.moon(raw); // 快捷码顺带把影视站网址带上
         if (edit) Config.find(ori, type).url(url).name(name).update();
         if (url.isEmpty()) Config.delete(ori, type);
         ((ConfigListener) requireParentFragment()).setConfig(Config.find(url, type));

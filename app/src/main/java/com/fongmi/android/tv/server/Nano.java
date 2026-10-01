@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.server;
 
+import android.net.Uri;
+
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.moontv.MoonSetting;
@@ -30,6 +32,8 @@ public class Nano extends NanoHTTPD {
 
     public Nano(int port) {
         super(port);
+        // 推送文件时要在接收端显示进度：得从写临时文件那一刻起数收到的字节
+        setTempFileManagerFactory(UploadProgress.factory(getTempFileManagerFactory()));
         addProcess();
     }
 
@@ -64,7 +68,36 @@ public class Nano extends NanoHTTPD {
     public Response serve(IHTTPSession session) {
         String url = session.getUri().trim();
         Map<String, String> files = new HashMap<>();
-        if (session.getMethod() == Method.POST) parse(session, files);
+        boolean upload = session.getMethod() == Method.POST && url.startsWith("/upload");
+        if (upload) UploadProgress.begin(name(url), size(session));
+        try {
+            if (session.getMethod() == Method.POST) parse(session, files);
+            return reply(session, url, files);
+        } finally {
+            if (upload) UploadProgress.end();
+        }
+    }
+
+    /** 有别于 /action 那些小请求：/upload 传的是文件，接收端要把进度显示出来 */
+    private long size(IHTTPSession session) {
+        try {
+            return Long.parseLong(session.getHeaders().get("content-length"));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** 发送端会把文件名放在网址后面（?name=xxx.apk），收不到就由对话框显示通用文案 */
+    private String name(String url) {
+        try {
+            String value = Uri.parse(url).getQueryParameter("name");
+            return value == null ? "" : value.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private Response reply(IHTTPSession session, String url, Map<String, String> files) {
         if (url.startsWith("/tvbus")) return ok(LiveConfig.getResp());
         if (url.startsWith("/device")) return ok(Device.get().toString());
         if (url.startsWith("/webdav")) return ok(WebDavSetting.toJson());

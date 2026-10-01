@@ -16,6 +16,7 @@ import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Prefers;
 
 import java.io.File;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -195,11 +196,15 @@ public class Push {
         return result;
     }
 
+    /**
+     * 推文件：把文件名挂在网址后面，对面收到请求就能直接显示「正在接收 xxx」，
+     * 不用等到请求体解析完才知道是谁。
+     */
     public static void file(String host, File file) throws Exception {
         MultipartBody.Builder builder = new MultipartBody.Builder().setType(MultipartBody.FORM);
         builder.addFormDataPart("path", "");
         builder.addFormDataPart("push", file.getName(), RequestBody.create(file, MediaType.parse("application/octet-stream")));
-        execute(fix(host).concat("/upload"), builder.build(), TIMEOUT_FILE);
+        execute(fix(host).concat("/upload?name=").concat(URLEncoder.encode(file.getName(), "UTF-8")), builder.build(), TIMEOUT_FILE);
     }
 
     private static void post(String host, String action, RequestBody body) throws Exception {

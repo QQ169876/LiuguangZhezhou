@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.utils;
 
+import com.fongmi.android.tv.moontv.MoonSetting;
+
 /**
  * 点播源快捷输入：填个数字就能配好常用的源，省得在小屏幕上敲一长串网址。
  * 直接源统一成一个地址，新增订阅只要在这里加一行。
@@ -23,6 +25,26 @@ public class Shortcut {
             case "6669" -> SUB_PG18;
             default -> value;
         };
+    }
+
+    /** 认得出来的才叫快捷码，随便一个网址不算 */
+    public static boolean isCode(String text) {
+        String value = text == null ? "" : text.trim();
+        return switch (value) {
+            case "520", "521", "6669" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * 快捷码本来就是一键配置，影视站网址顺手捎带上，省得再来一遍。
+     * 网址平时不留默认值（只有输入框里的灰字提示），只有走到这一步才真的写进去；
+     * 已经填过别的值就不动，免得把人自己配的站点冲掉。
+     */
+    public static void moon(String text) {
+        if (!isCode(text)) return;
+        if (!MoonSetting.getUrl().isEmpty()) return;
+        MoonSetting.putUrl(MoonSetting.DEFAULT_URL);
     }
 
     /**

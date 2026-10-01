@@ -328,6 +328,8 @@
     <string name="push_fail">推送失敗</string>
     <string name="push_empty">設備位址為空</string>
     <string name="push_received">已收到檔案</string>
+    <string name="upload_receiving">正在接收檔案</string>
+    <string name="upload_size">%1$d%%  %2$s / %3$s</string>
     <string name="push_all">推送全部設定</string>
     <string name="push_moon">推送影視站設定</string>
     <string name="push_apk">推送本機安裝包</string>
