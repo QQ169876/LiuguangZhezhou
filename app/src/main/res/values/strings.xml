@@ -486,6 +486,8 @@
     <string name="update_check">Checking for updates…</string>
     <string name="update_confirm">Update</string>
     <string name="update_latest">Already up to date</string>
+    <string name="update_install_fail">Can\'t open the installer. Please install it manually.</string>
+    <string name="update_bad_package">The downloaded package is incomplete. Please update again.</string>
     <string name="setting_route">Update route</string>
     <string name="route_auto">Auto (direct first)</string>
     <string name="route_direct">Direct GitHub</string>

@@ -41,6 +41,7 @@ public abstract class BaseAlertDialog extends DialogFragment {
     @Override
     public void show(@NonNull FragmentManager manager, @Nullable String tag) {
         if (manager.isDestroyed()) return;
+        if (isAdded() || isRemoving()) return; // 已经挂上了就别再加，否则会抛 Fragment already added 直接崩
         FragmentTransaction transaction = manager.beginTransaction();
         transaction.add(this, tag);
         transaction.commitAllowingStateLoss();

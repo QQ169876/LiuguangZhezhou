@@ -1,5 +1,9 @@
 package com.fongmi.android.tv;
 
+import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.net.Uri;
+import android.os.Build;
 import android.view.View;
 
 import androidx.fragment.app.FragmentActivity;
@@ -37,6 +41,7 @@ import okhttp3.Response;
  */
 public class Updater implements Download.Callback, UpdateListener {
 
+    private static final String APK_MIME = "application/vnd.android.package-archive";
     private static final int PROBE_TIMEOUT = 6000;
     private static final int SPEED_TIMEOUT = 8000;
     private static final int SPEED_BYTES = 384 * 1024;
@@ -151,7 +156,8 @@ public class Updater implements Download.Callback, UpdateListener {
         if (size <= 0) size = Prefers.getLong("update_size");
         if (size <= 0) size = probeSize(route);
         if (size > 0) Prefers.put("update_size", size);
-        return Download.create(GhRoute.wrap(route, apk), getFile()).client(GhRoute.stream(route)).expect(size);
+        // 校验：装之前确认这是个真 APK（>20MB 且 zip 头），别把代理的报错页丢给安装器
+        return Download.create(GhRoute.wrap(route, apk), getFile()).client(GhRoute.stream(route)).expect(size).verify(20L * 1024 * 1024);
     }
 
     /**
@@ -325,6 +331,8 @@ public class Updater implements Download.Callback, UpdateListener {
         if (backup.isEmpty() || apk == null || apk.isEmpty()) return false;
         Probe item = backup.remove(0);
         route = item;
+        size = 0; // 换线路重新量一次大小：记住的那个可能是上一条线路瞎报的
+        Prefers.put("update_size", 0L);
         download = createDownload(item.route);
         download.start(this);
         return true;
@@ -344,8 +352,53 @@ public class Updater implements Download.Callback, UpdateListener {
 
     @Override
     public void success(File file) {
-        FileUtil.openFile(file);
+        install(file);
         dismiss();
+    }
+
+    /**
+     * 拉起安装器。老机器（Android 6 那台投影）有的系统安装器不认 content://，
+     * 直接抛 ActivityNotFoundException / SecurityException 会把 App 带崩，
+     * 所以这里一层层退：content 地址 → file 地址 → 给个提示让你手动装。
+     */
+    private void install(File file) {
+        if (!isInstallable(file)) {
+            Path.clear(file); // 坏包留着下次续传会接着错，直接删掉重下
+            Notify.show(R.string.update_bad_package);
+            return;
+        }
+        try {
+            FileUtil.openFile(file);
+        } catch (Exception e) {
+            if (!installByPath(file)) Notify.show(R.string.update_install_fail);
+        }
+    }
+
+    /**
+     * 交给安装器之前，先用系统把包解析一遍：下到一半的、被代理替换过的、压根不是 APK 的，
+     * 这里就会返回空。以前什么都不查直接开装，才会出现「安装包是空的」。
+     */
+    private boolean isInstallable(File file) {
+        if (file == null || !file.exists() || file.length() <= 0) return false;
+        try {
+            PackageInfo info = App.get().getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), 0);
+            return info != null && info.packageName != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean installByPath(File file) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) return false; // 7.0 以后 file:// 一律不给过
+        try {
+            Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.setDataAndType(Uri.fromFile(file), APK_MIME);
+            App.get().startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static class Probe {

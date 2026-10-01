@@ -23,6 +23,16 @@ public abstract class BaseSideSheetDialog extends AppCompatDialogFragment {
 
     protected abstract int getWidth();
 
+    /** 同 BaseBottomSheetDialog：避免状态保存后崩溃，也避免连点两次重复添加 */
+    @Override
+    public void show(@NonNull androidx.fragment.app.FragmentManager manager, @Nullable String tag) {
+        if (manager.isDestroyed()) return;
+        if (isAdded() || isRemoving()) return;
+        androidx.fragment.app.FragmentTransaction transaction = manager.beginTransaction();
+        transaction.add(this, tag);
+        transaction.commitAllowingStateLoss();
+    }
+
     @NonNull
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {

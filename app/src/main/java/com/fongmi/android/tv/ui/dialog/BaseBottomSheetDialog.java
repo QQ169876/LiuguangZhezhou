@@ -31,6 +31,20 @@ public abstract class BaseBottomSheetDialog extends BottomSheetDialogFragment {
 
     protected abstract ViewBinding getBinding(@NonNull LayoutInflater inflater, @Nullable ViewGroup container);
 
+    /**
+     * 用 commitAllowingStateLoss 代替默认的 commit，并且已经挂上就不再加：
+     * 异步回调（比如更新探测完成）可能落在页面已经切走、状态已保存之后，
+     * 默认实现会抛 Can not perform this action 崩溃；连点两次又会抛 Fragment already added。
+     */
+    @Override
+    public void show(@NonNull androidx.fragment.app.FragmentManager manager, @Nullable String tag) {
+        if (manager.isDestroyed()) return;
+        if (isAdded() || isRemoving()) return;
+        androidx.fragment.app.FragmentTransaction transaction = manager.beginTransaction();
+        transaction.add(this, tag);
+        transaction.commitAllowingStateLoss();
+    }
+
     @NonNull
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {
