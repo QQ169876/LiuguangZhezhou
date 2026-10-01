@@ -18,8 +18,12 @@ import java.util.List;
  *    队列继续转，App 不倒；App 自己的崩溃照旧交给系统 handler 处理。
  * 2) 子线程：认到是蜘蛛 jar 的锅就放行（那个线程死掉，进程活着），否则原路交给系统。
  *
- * 认人的办法：JarLoader 每造一个 DexClassLoader 都在这儿报个到（弱引用），
- * 崩溃时用它们 loadClass 试着认领堆栈里的类名，认得出来才放行。
+ * 认人的办法（两道）：
+ * ① JarLoader 每造一个 DexClassLoader 都在这儿报个到（弱引用），崩溃时用它们 loadClass
+ *    试着认领堆栈里的类名，认得出来算第三方；
+ * ② 兜底：宿主 APK 自己都加载不到的类名，只可能是运行时动态塞进来的代码 —— 也算第三方。
+ *    这道兜底治两个漏网场景：加固壳 jar 在内部另起 ClassLoader 解密类（我们只登记了最外层），
+ *    以及源重载后旧 loader 被 GC、还挂在队列里的老任务没人认领。
  */
 public class CrashGuard {
 
@@ -90,6 +94,8 @@ public class CrashGuard {
                 String name = stack[i].getClassName();
                 if (ours(name)) continue;
                 if (claim(name)) return true;
+                // 宿主 APK 里根本没有这个类 → 只能是动态加载的第三方代码
+                if (!hostable(name)) return true;
             }
         }
         return false;
@@ -125,5 +131,15 @@ public class CrashGuard {
             }
         }
         return false;
+    }
+
+    /** 宿主 APK 自己能不能加载这个类：能 → 是自己人（混淆短名也算）；不能 → 是动态塞进来的第三方 */
+    private static boolean hostable(String name) {
+        try {
+            Class.forName(name, false, CrashGuard.class.getClassLoader());
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
     }
 }
