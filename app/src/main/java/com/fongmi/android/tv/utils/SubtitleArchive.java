@@ -7,7 +7,7 @@ import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Util;
 
 import java.io.File;
-import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -48,10 +48,25 @@ public final class SubtitleArchive {
     }
 
     private static List<File> findSubtitles(File dir) {
-        try (var paths = Files.walk(dir.toPath())) {
-            return paths.map(java.nio.file.Path::toFile).filter(File::isFile).filter(SubtitleArchive::isSubtitle).collect(Collectors.toList());
-        } catch (Exception e) {
+        // 原来用 java.nio.file.Files.walk()，那是 API 26 才有的类，Android 6 上会抛
+        // NoClassDefFoundError（属于 Error，原来的 catch (Exception) 根本抓不住，直接崩）。
+        // 改成普通 File 递归，等价且全版本可用；限制层级避免异常目录结构拖死。
+        try {
+            List<File> result = new ArrayList<>();
+            collectSubtitles(dir, result, 0);
+            return result;
+        } catch (Throwable e) {
             return Collections.emptyList();
+        }
+    }
+
+    private static void collectSubtitles(File dir, List<File> out, int depth) {
+        if (dir == null || depth > 6 || !dir.isDirectory()) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) collectSubtitles(file, out, depth + 1);
+            else if (isSubtitle(file)) out.add(file);
         }
     }
 

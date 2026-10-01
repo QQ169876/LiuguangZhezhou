@@ -15,7 +15,8 @@ import com.fongmi.android.tv.service.PlaybackService;
 import com.google.gson.JsonObject;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
@@ -31,10 +32,12 @@ public class Media implements Process {
     public Response doResponse(IHTTPSession session, String url, Map<String, String> files) {
         PlaybackService service = Server.get().getService();
         if (service == null) return Nano.ok("{}");
-        CompletableFuture<String> future = new CompletableFuture<>();
-        App.post(() -> future.complete(build(service.player()).toString()));
+        // CompletableFuture 是 Android 7（API 24）才有的类，老盒子上会 NoClassDefFoundError。
+        // 换 FutureTask（Java 1.5 起就有），同样是「丢到主线程执行并取回结果」。
+        FutureTask<String> task = new FutureTask<>(() -> build(service.player()).toString());
+        App.post(task);
         try {
-            return Nano.ok(future.get());
+            return Nano.ok(task.get(3, TimeUnit.SECONDS));
         } catch (Exception ignored) {
             return Nano.ok("{}");
         }

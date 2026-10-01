@@ -537,6 +537,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void startPlayback(Result result, boolean useParse, long startPositionMs, MediaMetadata metadata) {
+        dismissEmpty(); // 兜底：真要开播了，绝不能还有全屏空态压在上面
         startPlayer(getHistoryKey(), result, useParse, getSite().getTimeout(), startPositionMs, metadata);
     }
 
@@ -676,6 +677,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void onDetailFallbackScheduled() {
         switching = true;
+        Notify.show(R.string.detail_switching); // 一行提示就够，别盖全屏
         App.post(mR4, 10000);
     }
 
@@ -694,13 +696,15 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     public void onSearchResult() {
         switching = false;
         App.removeCallbacks(mR4);
+        dismissEmpty();
     }
 
     @Override
     public void onSourceExhausted() {
         switching = false;
         App.removeCallbacks(mR4);
-        mBinding.progressLayout.showEmpty(null, R.string.detail_all_failed);
+        hideError();
+        Notify.show(R.string.detail_all_failed);
     }
 
     @Override
@@ -748,7 +752,15 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void showEmpty() {
-        mBinding.progressLayout.showEmpty(switching ? getString(R.string.detail_switching) : null);
+        // 还在自动换源：开头那行提示已经给过了。这里一旦切全屏空态，
+        // 内容和播放器会一起被盖住——换源成功后声音出来了页面还挡在前面，手动换源也没法点。
+        if (switching) return;
+        mBinding.progressLayout.showEmpty();
+    }
+
+    /** 换源有结果／要开播了：把可能残留的全屏空态收掉 */
+    private void dismissEmpty() {
+        if (mBinding.progressLayout.isEmpty()) mBinding.progressLayout.showContent();
     }
 
     private void setText(Vod item) {

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.NetworkRequest;
 
 import androidx.annotation.NonNull;
 
@@ -24,7 +25,14 @@ public class BootReceiver extends BroadcastReceiver {
     }
 
     private void registerCallback() {
-        ((ConnectivityManager) App.get().getSystemService(Context.CONNECTIVITY_SERVICE)).registerDefaultNetworkCallback(new Callback());
+        // registerDefaultNetworkCallback() 是 Android 7（API 24）才有的，老盒子（Android 6）会 NoSuchMethodError。
+        // 换成 API 21 就支持的 registerNetworkCallback()，效果一样：等网络可用后再拉直播配置。
+        ConnectivityManager manager = (ConnectivityManager) App.get().getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkRequest request = new NetworkRequest.Builder().build();
+        try {
+            manager.registerNetworkCallback(request, new Callback());
+        } catch (Throwable ignored) {
+        }
     }
 
     static class Callback extends ConnectivityManager.NetworkCallback {

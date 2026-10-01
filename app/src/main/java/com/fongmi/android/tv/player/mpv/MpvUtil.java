@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.player.mpv;
 
 import android.content.pm.PackageManager;
+import android.os.Build;
 
 import androidx.media3.common.Player;
 import androidx.media3.common.util.Util;
@@ -37,7 +38,14 @@ public final class MpvUtil {
     }
 
     public static boolean isVulkanSupported() {
-        return App.get().getPackageManager().hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, VULKAN_1_2);
+        // hasSystemFeature(String, int) 是 Android 7（API 24）才有的重载，Android 6 上直接调会 NoSuchMethodError。
+        // 这段代码在播放设置页 setVisible() 里被调用，一旦选中 MPV 引擎就会走到，老盒子必崩。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false;
+        try {
+            return App.get().getPackageManager().hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, VULKAN_1_2);
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     public static MpvPlayer buildPlayer(int decode, Player.Listener listener) {

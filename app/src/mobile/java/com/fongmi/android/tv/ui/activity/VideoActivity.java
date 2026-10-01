@@ -135,6 +135,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private Runnable mR3;
     private Runnable mR4;
     private boolean switching;
+    private boolean sourceExhausted;
     private History mHistory;
     private boolean fullscreen;
     private boolean useParse;
@@ -334,6 +335,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.title.setOnLongClickListener(view -> onChange());
         mBinding.control.right.lock.setOnClickListener(view -> onLock());
         mBinding.control.right.rotate.setOnClickListener(view -> onRotate());
+        mBinding.control.right.fullscreen.setOnClickListener(view -> onFullscreen());
         mBinding.control.danmaku.setOnClickListener(view -> onDanmakuShow());
         mBinding.control.action.text.setOnClickListener(this::onTrack);
         mBinding.control.action.audio.setOnClickListener(this::onTrack);
@@ -582,6 +584,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void startPlayback(Result result, boolean useParse, long startPositionMs, MediaMetadata metadata) {
+        dismissEmpty(); // 兜底：真要开播了，绝不能还有全屏空态压在上面
         startPlayer(getHistoryKey(), result, useParse, getSite().getTimeout(), startPositionMs, metadata);
     }
 
@@ -607,6 +610,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.progressLayout.showContent();
         mBinding.name.setText(item.getName());
         switching = false;
+        sourceExhausted = false;
         App.removeCallbacks(mR4);
         setArtwork(item.getPic());
         checkKeepImg();
@@ -720,6 +724,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void onDetailFallbackScheduled() {
         switching = true;
+        Notify.show(R.string.detail_switching); // 一行提示就够，别盖全屏
         App.post(mR4, 10000);
     }
 
@@ -737,13 +742,16 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     public void onSearchResult() {
         switching = false;
         App.removeCallbacks(mR4);
+        dismissEmpty();
     }
 
     @Override
     public void onSourceExhausted() {
         switching = false;
+        sourceExhausted = true;
         App.removeCallbacks(mR4);
-        mBinding.progressLayout.showEmpty(null, R.string.detail_all_failed);
+        hideError();
+        Notify.show(R.string.detail_all_failed);
     }
 
     @Override
@@ -790,9 +798,16 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void showEmpty() {
-        showError(getString(R.string.error_detail));
         mBinding.swipeLayout.setEnabled(true);
-        mBinding.progressLayout.showEmpty(switching ? getString(R.string.detail_switching) : null);
+        // 还在自动换源：开头那行提示已经给过了，别切全屏空态盖住画面和手动换源
+        if (switching) return;
+        showError(getString(R.string.error_detail));
+        mBinding.progressLayout.showEmpty();
+    }
+
+    /** 换源有结果／要开播了：把可能残留的全屏空态收掉 */
+    private void dismissEmpty() {
+        if (mBinding.progressLayout.isEmpty()) mBinding.progressLayout.showContent();
     }
 
     private void setText(Vod item) {
@@ -970,6 +985,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setRequestedOrientation(PlaybackOrientation.getRotateOrientation(this));
     }
 
+    /** 竖屏/全屏都能点：未全屏点一下进全屏，全屏里点一下退回小窗 */
+    private void onFullscreen() {
+        if (isLock()) return;
+        if (isFullscreen()) exitFullscreen();
+        else enterFullscreen();
+    }
+
     private void onTrack(View view) {
         TrackDialog.create().type(Integer.parseInt(view.getTag().toString())).player(player()).view(mBinding.player.getSubtitleView()).show(this);
         hideControl();
@@ -1099,8 +1121,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void onSwipeRefresh() {
-        if (mBinding.progressLayout.isEmpty()) mVod.requestDetail();
-        else mVod.refresh();
+        // 源耗尽不再切全屏空态了，这里补上：没内容可刷时下拉就是重新找源
+        if (mBinding.progressLayout.isEmpty() || sourceExhausted) {
+            sourceExhausted = false;
+            mVod.requestDetail();
+        } else {
+            mVod.refresh();
+        }
     }
 
     private boolean shouldEnterFullscreen(Episode item) {
@@ -1184,6 +1211,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.danmaku.setVisibility(isLock() || !player().haveDanmaku() ? View.GONE : View.VISIBLE);
         mBinding.control.setting.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
         mBinding.control.right.rotate.setVisibility(isFullscreen() && !isLock() ? View.VISIBLE : View.GONE);
+        mBinding.control.right.fullscreen.setVisibility(isLock() ? View.GONE : View.VISIBLE);
+        mBinding.control.right.fullscreen.setImageResource(isFullscreen() ? R.drawable.ic_control_fullscreen_exit : R.drawable.ic_control_fullscreen);
         mBinding.control.keep.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
         mBinding.control.action.getRoot().setVisibility(isFullscreen() ? View.VISIBLE : View.GONE);
         mBinding.control.right.lock.setVisibility(isFullscreen() ? View.VISIBLE : View.GONE);
