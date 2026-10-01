@@ -12,6 +12,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.NotificationChannelCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.databinding.ViewProgressBinding;
@@ -58,6 +60,17 @@ public class Notify {
     public static void progress(Context context) {
         dismiss();
         get().create(context);
+    }
+
+    /**
+     * Fragment 版：异步回调、二级对话框的点击都常常落在 Fragment 已经分离之后，
+     * 这时候 requireActivity() 自己就会抛异常把 App 带崩，所以这里先看还挂不挂得上。
+     */
+    public static void progress(Fragment fragment) {
+        if (fragment == null || !fragment.isAdded()) return;
+        FragmentActivity activity = fragment.getActivity();
+        if (activity == null) return;
+        progress(activity);
     }
 
     public static void dismiss() {

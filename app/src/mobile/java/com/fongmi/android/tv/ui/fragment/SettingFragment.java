@@ -193,7 +193,8 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         return new Callback() {
             @Override
             public void start() {
-                Notify.progress(requireActivity());
+                // 加载是异步的，等回调回来人可能已经离开设置页了
+                Notify.progress(SettingFragment.this);
             }
 
             @Override

@@ -201,7 +201,7 @@ public class WebDavDialog extends BaseBottomSheetDialog {
 
     private void onTest(View view) {
         save(false);
-        Notify.progress(requireActivity());
+        Notify.progress(this);
         Task.execute(() -> {
             boolean ok = WebDav.test();
             App.post(() -> {
@@ -215,9 +215,11 @@ public class WebDavDialog extends BaseBottomSheetDialog {
         save(false);
         if (WebDavSetting.isSwitch()) {
             // 目标变过：先讲风险，确认后再选 合并/本机/云端
-            SyncRiskDialog.show(requireActivity(), R.string.sync_risk_dav, () -> SyncDirectionDialog.show(requireActivity(), this::onDirection));
+            FragmentActivity activity = requireActivity();
+            // 确认风险的回调是延迟执行的，那时候 Fragment 可能已经分离，先把 Activity 抓在手上
+            SyncRiskDialog.show(activity, R.string.sync_risk_dav, () -> SyncDirectionDialog.show(activity, this::onDirection));
         } else {
-            Notify.progress(requireActivity());
+            Notify.progress(this);
             SyncManager.sync(getListener());
         }
     }
@@ -233,7 +235,7 @@ public class WebDavDialog extends BaseBottomSheetDialog {
     private void onDirection(int direction) {
         checkSwitch();
         // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，requireActivity() 会直接崩
-        if (isAdded()) Notify.progress(requireActivity());
+        if (isAdded()) Notify.progress(this);
         if (direction == SyncDirectionDialog.CLOUD) SyncManager.pull(getListener());
         else if (direction == SyncDirectionDialog.LOCAL) SyncManager.push(getListener());
         else SyncManager.sync(getListener());
@@ -242,14 +244,14 @@ public class WebDavDialog extends BaseBottomSheetDialog {
     private void onPush(View view) {
         save(false);
         checkSwitch();
-        Notify.progress(requireActivity());
+        Notify.progress(this);
         SyncManager.push(getListener());
     }
 
     private void onPull(View view) {
         save(false);
         checkSwitch();
-        Notify.progress(requireActivity());
+        Notify.progress(this);
         SyncManager.pull(getListener());
     }
 

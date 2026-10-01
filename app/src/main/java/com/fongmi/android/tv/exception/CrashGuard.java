@@ -1,6 +1,5 @@
 package com.fongmi.android.tv.exception;
 
-import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
 
@@ -37,30 +36,35 @@ public class CrashGuard {
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             @Override
             public void uncaughtException(Thread thread, Throwable e) {
-                if (thirdParty(e)) {
-                    report("thread", e);
+                boolean main = thread == Looper.getMainLooper().getThread();
+                if (!thirdParty(e)) {
+                    escape(thread, e);
                     return;
                 }
-                escape(thread, e);
+                report(main ? "main" : "thread", e);
+                if (main) loop(); // 主线程不能没人转消息，补一个循环接着干
             }
         });
-        new Handler(Looper.getMainLooper()).post(new Runnable() {
-            @Override
-            public void run() {
-                while (true) {
-                    try {
-                        Looper.loop();
-                    } catch (Throwable e) {
-                        if (thirdParty(e)) {
-                            report("main", e);
-                        } else {
-                            escape(Thread.currentThread(), e);
-                            return;
-                        }
-                    }
+    }
+
+    /**
+     * 只有真的替蜘蛛 jar 兜了一次之后才跑在这里。
+     * 之前是在 App 一启动就把整个主线程套进这个循环，等于常态改写了 main 的消息处理，
+     * 老盒子（小米盒子这类）上环境更复杂，没把握，所以改成「出事才接管」。
+     */
+    private static void loop() {
+        while (true) {
+            try {
+                Looper.loop();
+                return; // 队列收了就正常退出，别空转
+            } catch (Throwable e) {
+                if (!thirdParty(e)) {
+                    escape(Thread.currentThread(), e);
+                    return;
                 }
+                report("main", e);
             }
-        });
+        }
     }
 
     /** App 自己的锅，走原来的路，该崩崩 */

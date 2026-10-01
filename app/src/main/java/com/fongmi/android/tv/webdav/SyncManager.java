@@ -195,7 +195,7 @@ public class SyncManager {
 
     private static void notify(Listener listener, Action action) {
         if (!busy.compareAndSet(false, true)) {
-            App.post(() -> listener.done(false, ResUtil.getString(R.string.webdav_busy)));
+            done(listener, false, ResUtil.getString(R.string.webdav_busy));
             return;
         }
         String message;
@@ -205,7 +205,7 @@ public class SyncManager {
             Log.w(TAG, "WebDAV action failed", e);
             String error = ResUtil.getString(R.string.webdav_fail) + " " + describe(e);
             onFail();
-            App.post(() -> listener.done(false, error));
+            done(listener, false, error);
             return;
         } finally {
             busy.set(false);
@@ -213,7 +213,14 @@ public class SyncManager {
         failures.set(0);
         dirty.set(false);
         String result = message;
-        App.post(() -> listener.done(true, result));
+        done(listener, true, result);
+    }
+
+
+    /** 回调兜一层：拿到结果的那一刻监听器可能已经随页面没了，别让这里把整个 App 带崩 */
+    private static void done(Listener listener, boolean success, String message) {
+        if (listener == null) return;
+        App.post(() -> listener.done(success, message));
     }
 
     private interface Action {

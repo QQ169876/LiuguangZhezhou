@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.dialog;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.text.TextUtils;
@@ -63,7 +64,10 @@ public class MpvConfDialog extends BaseAlertDialog {
 
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) return;
-        MpvConfigFile.importFrom(requireContext(), result.getData().getData());
+        // 选完文件回来的回调，Fragment 可能已经分离，requireContext() 会直接崩
+        Context context = getContext();
+        if (context == null) return;
+        MpvConfigFile.importFrom(context, result.getData().getData());
         Notify.show(R.string.player_mpv_conf_import_success);
         setText(MpvConfigFile.read());
     });

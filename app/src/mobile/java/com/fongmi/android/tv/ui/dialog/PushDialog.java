@@ -126,7 +126,7 @@ public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Call
     }
 
     private void run(Action action, Runnable next) {
-        Notify.progress(requireActivity());
+        Notify.progress(this);
         Task.execute(() -> {
             try {
                 action.run();
