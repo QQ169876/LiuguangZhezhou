@@ -221,7 +221,12 @@ public class WebDavDialog extends BaseAlertDialog {
     }
 
     private void onDirection(int direction) {
-        onDirection(requireActivity(), direction);
+        checkSwitch();
+        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，requireActivity() 会直接崩
+        Notify.progress(isAdded() ? requireActivity() : null);
+        if (direction == SyncDirectionDialog.CLOUD) SyncManager.pull(getListener());
+        else if (direction == SyncDirectionDialog.LOCAL) SyncManager.push(getListener());
+        else SyncManager.sync(getListener());
     }
 
     private void onDirection(FragmentActivity activity, int direction) {

@@ -111,8 +111,6 @@ public class ConfigDialog extends BaseAlertDialog {
     private String getUrl() {
         String url = getConfig() == null ? "" : getConfig().getUrl();
         if (url == null) url = ""; // 新装的机器还没落库，url 是 null，别把它显示成 "null"
-        // 直接源统一：还没配过点播源时，先把统一地址填进去，方便一键用上
-        if (type == 0 && !edit && url.isEmpty()) return Shortcut.DIRECT;
         return url;
     }
 

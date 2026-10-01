@@ -117,8 +117,6 @@ public class ConfigDialog extends BaseAlertDialog {
             default -> "";
         };
         if (url == null) url = "";
-        // 直接源统一：还没配过点播源时，先把统一地址填进去，方便一键用上
-        if (type == 0 && !edit && url.isEmpty()) return Shortcut.DIRECT;
         return url;
     }
 

@@ -214,7 +214,8 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     private void onDirection(int direction) {
         checkSwitch();
-        Notify.progress(requireActivity());
+        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，requireActivity() 会直接崩
+        if (isAdded()) Notify.progress(requireActivity());
         if (direction == SyncDirectionDialog.CLOUD) MoonSync.pull(getListener());
         else if (direction == SyncDirectionDialog.LOCAL) MoonSync.push(getListener());
         else MoonSync.sync(getListener());
