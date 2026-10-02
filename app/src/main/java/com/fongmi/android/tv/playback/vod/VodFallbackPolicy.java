@@ -59,6 +59,7 @@ class VodFallbackPolicy {
     }
 
     private void fallbackToNextLineOrSource() {
+        if (host.isHostFinishing()) return; // 播放页都退了就别再换
         if (!host.isSiteChangeable()) return;
         if (fallbackToNextLine()) return;
         fallbackToNextSource(false);
@@ -79,6 +80,7 @@ class VodFallbackPolicy {
     }
 
     private void nextSource() {
+        if (host.isHostFinishing()) return;
         if (!state.hasSources()) return;
         Vod item = state.removeFirstSource();
         host.renderSources(state.getSources());

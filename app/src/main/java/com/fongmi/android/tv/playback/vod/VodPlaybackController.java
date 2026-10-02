@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.playback.PlaybackResult;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.webdav.SyncManager;
 
 import java.util.Collections;
@@ -61,6 +62,7 @@ public class VodPlaybackController {
     }
 
     public void onDetailResult(VodDetailResult detail) {
+        if (late()) return; // 播放页都退了，迟到的详情不许再起播
         if (detail == null || !detail.matches(host.getVodKey(), host.getVodId())) return;
         Result result = detail.result();
         if (result.getList().isEmpty()) detailEmpty(result.hasMsg());
@@ -102,6 +104,7 @@ public class VodPlaybackController {
     }
 
     public void onPlaybackResult(PlaybackResult<VodPlayRequest> playback) {
+        if (late()) return;
         if (playback == null || cannotApply(playback)) return;
         applyPlaybackResult(playback.result(), playback.request());
     }
@@ -146,6 +149,7 @@ public class VodPlaybackController {
     }
 
     public void onSearchResult(Result result) {
+        if (late()) return; // 退出后才回来的搜索结果，不许再自动换源
         fallbackPolicy.onSearchResult(result);
     }
 
@@ -240,12 +244,14 @@ public class VodPlaybackController {
     }
 
     public void playbackError(String msg) {
+        if (late()) return; // 页面已退，播放器后续的报错一律不理
         clearPreload();
         host.resetPlaybackForError(msg);
         fallbackPolicy.playbackError();
     }
 
     public void playbackEnded() {
+        if (late()) return; // 退了就别再自动跳下一集
         nextEpisode(true);
     }
 
@@ -573,6 +579,13 @@ public class VodPlaybackController {
     private Flag findFlag(Flag item) {
         if (item != null) for (Flag flag : state.getFlags()) if (flag.equals(item)) return flag;
         return null;
+    }
+
+    /** 播放页是不是已经退了：迟到的网络回调（详情/搜索/播放结果）一律作废，别在首页偷偷换源起播 */
+    private boolean late() {
+        boolean gone = host.isHostFinishing();
+        if (gone) DebugLog.d("Vod", "页面已退出，丢弃迟到的回调");
+        return gone;
     }
 
     private boolean cannotApply(PlaybackResult<VodPlayRequest> playback) {
