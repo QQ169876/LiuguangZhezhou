@@ -29,11 +29,18 @@ public class GhRoute {
     /** 本地 SOCKS5 前缀 */
     public static final String SOCKS5 = "socks5://";
 
-    // 只保留实测能用的（能取到 raw 文件且能对 Release 做断点续传），挂掉的不再占位
+    // 只保留实测能用的（能取到 raw 版本文件 + 能对 Release APK 做 Range 断点续传）。
+    // 自动模式会并发探测全部线路并测速，通得快就走谁，列表里多几台不影响体验，挂掉的会被自动跳过。
+    // 2026-10-02 实测：上面 6 台全通；gh.llkk.cc / ghproxy.cc / ghps.cc / mirror.ghproxy.com /
+    // hub.gitmirror.com / ghp.ci / gh.monster / gh.flyinbug.top 等已挂，不再占位。
     private static final String[] ACCEL = {
             "https://p.169876.us.kg/proxy/",
             "https://gh-proxy.com/",
             "https://ghproxy.net/",
+            "https://gh.idayer.com/",
+            "https://ghfast.top/",
+            "https://gh.zwy.one/",
+            "https://gh.qninq.cn/",
             "https://gh-proxy.org/",
     };
 

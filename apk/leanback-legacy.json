@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.53-legacy",
+  "name": "流光褶皱TV v5.6.54-legacy",
   "desc": "修复 Android 6 老盒子进播放设置崩溃等 4 处高版本 API 问题；换源时不再弹全屏空态。",
-  "code": 613,
-  "tag": "v5.6.53-legacy"
+  "code": 614,
+  "tag": "v5.6.54-legacy"
 }

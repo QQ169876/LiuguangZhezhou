@@ -29,12 +29,16 @@ import java.util.concurrent.TimeUnit;
 public class CrashReporter {
 
     // App 专用的错误日志 WebDAV（只收日志，跟归档网盘分开）
-    private static final String DAV = "https://www.12356.cool/dav";
+    // https 在前；老设备（Android 6）信任库里没有 GTS 根，SSL 握手会失败，退到 http 继续传
+    private static final String[] DAVS = {"https://www.12356.cool/dav", "http://www.12356.cool/dav"};
     private static final String USER = "error";
     private static final String PASS = "errorcode";
     private static final String FOLDER = "/错误日志收集/";
     private static final int MAX_FILES = 5;      // 一次最多补传 5 份，防积压时拖慢启动
     private static final int TIMEOUT = 15000;
+    private static final long COOLDOWN = 10 * 60 * 1000L; // 页面恢复触发的冷却，别每次切页面都传
+
+    private static long last;
 
     private CrashReporter() {
     }
@@ -44,24 +48,42 @@ public class CrashReporter {
         Task.schedule(() -> uploadPending(context.getApplicationContext()), 20, TimeUnit.SECONDS);
     }
 
+    /** 任意页面恢复时补一次：有些崩溃不会重启进程，只有这一趟能把它传出去 */
+    public static synchronized void tick(Context context) {
+        long now = System.currentTimeMillis();
+        if (now - last < COOLDOWN) return;
+        last = now;
+        Context app = context.getApplicationContext();
+        Task.execute(() -> uploadPending(app));
+    }
+
     private static void uploadPending(Context context) {
         try {
             File[] files = list(context);
             if (files == null || files.length == 0) return;
             Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
-            mkdirs();
+            for (String dav : DAVS) {
+                if (tryBase(dav, context, files)) return; // 这条线通了就收工
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 返回 true 表示这条线路可用，且已把能传的都传完 */
+    private static boolean tryBase(String dav, Context context, File[] files) {
+        try {
+            if (mkdirs(dav) < 0) return false;
             int count = 0;
             for (File f : files) {
                 if (count >= MAX_FILES) break;
-                if (upload(f, remoteName(context, f))) {
-                    //noinspection ResultOfMethodCallIgnored
-                    f.delete();
-                    count++;
-                } else {
-                    break; // 网络不通就整体收工，下次启动再试
-                }
+                if (!upload(dav, f, remoteName(context, f))) return count > 0;
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+                count++;
             }
-        } catch (Throwable ignored) {
+            return true;
+        } catch (Throwable e) {
+            return false;
         }
     }
 
@@ -89,16 +111,16 @@ public class CrashReporter {
         return "crash_" + version + "_" + model + "_" + time + ".txt";
     }
 
-    private static void mkdirs() throws IOException {
-        // 已存在会返回 405，无所谓，只为确保目录在；中文目录名要百分号编码
-        request("MKCOL", DAV + UriEncoder.encode(FOLDER), null);
+    /** 建目录：已有会返回 405，也算通；-1 表示这条线不可用 */
+    private static int mkdirs(String dav) throws IOException {
+        return request("MKCOL", dav + UriEncoder.encode(FOLDER), null);
     }
 
-    private static boolean upload(File file, String name) {
+    private static boolean upload(String dav, File file, String name) {
         try {
             byte[] data = read(file);
             if (data == null || data.length == 0) return true; // 空文件直接算传完，好删掉
-            int code = request("PUT", DAV + UriEncoder.encode(FOLDER + name), data);
+            int code = request("PUT", dav + UriEncoder.encode(FOLDER + name), data);
             return code >= 200 && code < 300;
         } catch (Throwable e) {
             return false;

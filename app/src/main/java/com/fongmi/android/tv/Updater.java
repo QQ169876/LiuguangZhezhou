@@ -43,6 +43,8 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private static final String APK_MIME = "application/vnd.android.package-archive";
     private static final int PROBE_TIMEOUT = 6000;
+    /** 测速线路上限：多了既费流量又拖慢老设备 */
+    private static final int SPEED_LIMIT = 3;
     private static final int SPEED_TIMEOUT = 8000;
     private static final int SPEED_BYTES = 384 * 1024;
 
@@ -245,6 +247,8 @@ public class Updater implements Download.Callback, UpdateListener {
      */
     private void measure(List<Probe> probes, String apk) {
         if (probes.isEmpty()) return;
+        // 线路多了就只给探测最快的几条做测速，别让老盒子为十几条线路各下 384KB
+        while (probes.size() > SPEED_LIMIT) probes.remove(probes.size() - 1);
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(probes.size(), 6));
         List<Future<?>> futures = new ArrayList<>();
         for (Probe item : probes) futures.add(pool.submit(() -> item.speed = speed(item.route, apk)));

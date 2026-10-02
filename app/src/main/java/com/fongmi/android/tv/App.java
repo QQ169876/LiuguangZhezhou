@@ -107,6 +107,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
     @Override
     public void onActivityResumed(@NonNull Activity activity) {
         CrashGuard.reassert(); // 加固壳可能在任意时刻抢走默认兜底，见 CrashGuard.reassert 注释
+        CrashReporter.tick(this); // 有些崩溃不重启进程，借页面恢复把日志补传出去
         if (activity != activity()) this.activity = activity;
     }
 
