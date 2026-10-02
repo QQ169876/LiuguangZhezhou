@@ -39,6 +39,7 @@ import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.PreloadSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
 import com.fongmi.android.tv.utils.DebugLog;
+import com.fongmi.android.tv.utils.DecodeGuard;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -67,10 +68,11 @@ public class PlayerManager implements ParseCallback {
     private boolean initTrack;
     private int retry;
     private int decode;
+    private long lastStop; // 上次停播时间：换源/切线后的下一次起播要和它拉开距离
 
     public PlayerManager(Callback callback) {
         this.callback = callback;
-        this.decode = PlayerEngine.HARD;
+        this.decode = DecodeGuard.softForced() ? PlayerEngine.SOFT : PlayerEngine.HARD; // 这台机器硬解撞翻过就默认软解，别再反复撞
         this.runnable = this::onPlayTimeout;
         this.pendingStartPositionMs = C.TIME_UNSET;
         this.engine = PlayerEngineFactory.create(decode, listener);
@@ -398,6 +400,7 @@ public class PlayerManager implements ParseCallback {
     public void stop() {
         App.removeCallbacks(runnable); // 起播超时必须一起取消，否则退出后计时一到照样报「播放超时」去自动换源
         // 这里不能撤看门狗标记：换线路/换源都会走 stop，撤了就认不出「播着播着没了」
+        lastStop = System.currentTimeMillis();
         engine.stop();
         stopParse();
     }
@@ -466,7 +469,9 @@ public class PlayerManager implements ParseCallback {
     }
 
     public void toggleDecode() {
-        setDecode(isHard() ? PlayerEngine.SOFT : PlayerEngine.HARD);
+        int next = isHard() ? PlayerEngine.SOFT : PlayerEngine.HARD;
+        if (next == PlayerEngine.HARD) DecodeGuard.unforce(); // 用户手动选回硬解 = 解除强制
+        setDecode(next);
     }
 
     private void handleDecodeError(PlaybackException e) {
@@ -489,6 +494,51 @@ public class PlayerManager implements ParseCallback {
 
     private boolean isHard() {
         return decode == PlayerEngine.HARD;
+    }
+
+    /**
+     * 把播放异常里的解码器信息挖出来：哪个 codec、什么格式、OMX 诊断码。
+     * 老盒子（MStar 这类）的 OMX 崩起来不看这个就是在猜。
+     */
+    private static String codecDiag(PlaybackException e) {
+        StringBuilder sb = new StringBuilder(e.getErrorCodeName());
+        try {
+            Throwable t = e;
+            while (t != null) {
+                if ("MediaCodecRendererException".equals(t.getClass().getSimpleName())) {
+                    sb.append(" codec=").append(field(t, "codecInfo")); // 包私有类，只能反射挖
+                    sb.append(" mime=").append(field(t, "mimeType"));
+                    sb.append(" diag=").append(field(t, "diagnosticInfo"));
+                } else if (t instanceof android.media.MediaCodec.CodecException ce) {
+                    sb.append(" codecErr=0x").append(Integer.toHexString(ce.getErrorCode()));
+                    if (ce.getDiagnosticInfo() != null) sb.append(" diag=").append(ce.getDiagnosticInfo());
+                }
+                t = t.getCause();
+            }
+        } catch (Throwable ignored) {
+        }
+        return sb.toString();
+    }
+
+    /** 反射读字段：codecInfo 再往里挖一层 name，别的直接 toString */
+    private static Object field(Object o, String name) {
+        try {
+            java.lang.reflect.Field f = o.getClass().getDeclaredField(name);
+            f.setAccessible(true);
+            Object v = f.get(o);
+            if (v == null) return "?";
+            if ("codecInfo".equals(name)) {
+                try {
+                    java.lang.reflect.Field nf = v.getClass().getDeclaredField("name");
+                    nf.setAccessible(true);
+                    return nf.get(v);
+                } catch (Throwable ignored) {
+                }
+            }
+            return v;
+        } catch (Throwable e) {
+            return "?";
+        }
     }
 
     private void onPlayTimeout() {
@@ -541,6 +591,12 @@ public class PlayerManager implements ParseCallback {
 
     private void setMediaItem(long timeout, long startPositionMs) {
         if (spec == null || spec.getUrl() == null) return;
+        long delta = System.currentTimeMillis() - lastStop;
+        if (delta < 400) { // 刚停过：老 codec 的 release 还在路上，缓一缓再压下一个
+            DebugLog.d("Player", "距上次停播 " + delta + "ms，缓到 400ms 再起播");
+            App.post(() -> setMediaItem(timeout, startPositionMs), 400 - delta);
+            return;
+        }
         ensureEngine(spec.checkUa());
         pendingPreload = null;
         initTrack = false;
@@ -655,7 +711,10 @@ public class PlayerManager implements ParseCallback {
         @Override
         public void onPlaybackStateChanged(int state) {
             if (state == Player.STATE_READY || state == Player.STATE_ENDED) App.removeCallbacks(runnable);
-            if (state == Player.STATE_READY) startPreloadIfReady();
+            if (state == Player.STATE_READY) {
+                startPreloadIfReady();
+                DecodeGuard.noteReady(); // 能播起来，说明之前的硬解失败是片源的事，不是机器的事
+            }
         }
 
         @Override
@@ -684,6 +743,8 @@ public class PlayerManager implements ParseCallback {
         @Override
         public void onPlayerError(@NonNull PlaybackException e) {
             if (spec == null) return;
+            DebugLog.d("Player", "播放异常 " + codecDiag(e));
+            if (e.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED || e.errorCode == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED) DecodeGuard.noteInitFail();
             PlayerEngine.ErrorAction action = engine.handleError(e);
             if (action != PlayerEngine.ErrorAction.RECOVERED) App.removeCallbacks(runnable);
             switch (action) {

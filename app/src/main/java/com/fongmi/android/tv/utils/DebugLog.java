@@ -4,7 +4,6 @@ import android.content.Context;
 import android.os.Build;
 
 import com.fongmi.android.tv.App;
-import com.github.catvod.utils.Prefers;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -24,6 +23,7 @@ import java.util.Locale;
  *
  * 每条都立刻 flush：进程随时可能被干掉，攒在缓冲区里等于白记。
  * 文件超过 2MB 滚一份旧的（debug_old.log），不占满存储。
+ * 本地只留 3 天：启动时 prune() 把超龄的旧文件清掉。
  */
 public final class DebugLog {
 
@@ -31,6 +31,7 @@ public final class DebugLog {
     private static final String NAME = "debug.log";
     private static final String OLD = "debug_old.log";
     private static final long MAX = 2 * 1024 * 1024L;
+    private static final long KEEP = 3 * 24 * 60 * 60 * 1000L; // 本地日志只留 3 天
     private static final SimpleDateFormat FMT = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US);
 
     private static PrintWriter writer;
@@ -40,14 +41,8 @@ public final class DebugLog {
     }
 
     public static synchronized boolean isEnabled() {
-        // 诊断期默认开：老盒子一进设置就崩，没机会手动开，先把流水账记上，崩了好知道死在哪儿
-        return Prefers.getBoolean("debug_trace", true);
-    }
-
-    public static synchronized void setEnabled(boolean on) {
-        Prefers.put("debug_trace", on);
-        if (on) d("Debug", "---- 调试日志已开启 ----");
-        else close();
+        // 常开：不再提供开关（设置页菜单已撤），崩在任何设备上都有流水账可查
+        return true;
     }
 
     public static synchronized void d(String tag, String msg) {
@@ -91,6 +86,22 @@ public final class DebugLog {
         try {
             File f = file();
             if (f != null && f.exists()) f.delete();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 本地只留 3 天：超龄的滚动旧档直接删；主文件 3 天没新写入（很久没开过）也重起一份 */
+    public static synchronized void prune() {
+        try {
+            File f = file();
+            if (f == null) return;
+            long now = System.currentTimeMillis();
+            File old = new File(f.getParentFile(), OLD);
+            if (old.exists() && now - old.lastModified() > KEEP) old.delete();
+            if (f.exists() && now - f.lastModified() > KEEP) {
+                close();
+                f.delete();
+            }
         } catch (Throwable ignored) {
         }
     }

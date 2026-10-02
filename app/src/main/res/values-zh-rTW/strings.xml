@@ -271,6 +271,7 @@
     <string name="debug_uploading">正在上傳…</string>
     <string name="debug_on">除錯日誌已開啟</string>
     <string name="debug_off">除錯日誌已關閉</string>
+    <string name="decode_soft_forced">這台裝置硬解不穩定，已切換為軟解優先</string>
     <string name="setting_theme_color">主題色彩</string>
     <string name="setting_auto">自動</string>
     <string name="setting_custom">自訂</string>

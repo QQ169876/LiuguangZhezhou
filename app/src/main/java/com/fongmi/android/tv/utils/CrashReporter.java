@@ -3,9 +3,12 @@ package com.fongmi.android.tv.utils;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.os.Build;
+import android.view.Gravity;
+import android.widget.Toast;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
+import com.github.catvod.utils.Prefers;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -16,11 +19,16 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 崩溃日志自动回传：App 启动后（延迟一小会儿，避开启动高峰）在后台线程把
@@ -40,6 +48,7 @@ public class CrashReporter {
     private static final int MAX_FILES = 5;      // 一次最多补传 5 份，防积压时拖慢启动
     private static final int TIMEOUT = 15000;
     private static final long COOLDOWN = 10 * 60 * 1000L; // 页面恢复触发的冷却，别每次切页面都传
+    private static final long RETENTION = 3 * 24 * 60 * 60 * 1000L; // 本地和云端日志都只留 3 天，超龄直接删
 
     // MKCOL 走 okhttp：HttpURLConnection 只认 8 个标准方法，MKCOL 会直接抛
     // "Expected one of [OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, PATCH] but was MKCOL"
@@ -54,12 +63,16 @@ public class CrashReporter {
     private CrashReporter() {
     }
 
-    /** 启动后调用：延迟 5 秒、后台线程执行；有积压没传完就 30 秒后再补一趟 */
+    /** 启动后调用：延迟 5 秒、后台线程执行；清超龄日志、传积压、传流水账、云端也只留 3 天 */
     public static void schedule(Context context) {
         Context app = context.getApplicationContext();
         Task.schedule(() -> {
+            DebugLog.prune();   // 本地流水账只留 3 天
+            pruneLocal(app);    // 本地崩溃日志只留 3 天
             uploadPending(app);
+            uploadDebugAuto(app);
             ping(app); // 自检：证明这条上传链路是通的
+            pruneCloud(); // 云端只留 3 天
             if (pending(app) > 0) Task.schedule(() -> uploadPending(app), 30, TimeUnit.SECONDS);
         }, 5, TimeUnit.SECONDS);
     }
@@ -173,6 +186,125 @@ public class CrashReporter {
         }
     }
 
+    /**
+     * 流水账自动回传：调试模式常开，日志有新内容（长度变了）才传，免得每次切页面都重传一遍。
+     * 传成功在右下角亮一个小小的「R」，自家人知道日志上去了就行，不打扰用户。
+     */
+    private static void uploadDebugAuto(Context context) {
+        try {
+            File f = DebugLog.file();
+            if (f == null || !f.exists() || f.length() == 0) return;
+            if (f.length() == Prefers.getLong("debug_up_len", 0)) return; // 没新内容
+            for (String dav : DAVS) {
+                try {
+                    if (mkdirs(dav) < 0) continue;
+                    if (uploadDebug(context, dav) > 0) {
+                        Prefers.put("debug_up_len", f.length());
+                        hintR();
+                        return;
+                    }
+                } catch (Throwable e) {
+                    // 这条线不通，换下一条
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 右下角一闪而过的小「R」：日志已上传的内部暗号，不给用户任何说明 */
+    private static void hintR() {
+        try {
+            App.post(() -> {
+                try {
+                    Toast toast = Toast.makeText(App.get(), "R", Toast.LENGTH_SHORT);
+                    toast.setGravity(Gravity.BOTTOM | Gravity.END, 64, 64);
+                    toast.show();
+                } catch (Throwable ignored) {
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 本地崩溃日志只留 3 天：传不出去的也别无限攒 */
+    private static void pruneLocal(Context context) {
+        try {
+            File[] files = list(context);
+            if (files == null) return;
+            long now = System.currentTimeMillis();
+            for (File f : files) if (now - f.lastModified() > RETENTION) f.delete();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 云端只留 3 天：PROPFIND 列出「错误日志收集」目录，按 getlastmodified 把超龄的 DELETE 掉。
+     * PROPFIND 不在 HttpURLConnection 的方法白名单里（跟 MKCOL 一样会被拦），走 okhttp。
+     * 任何一步失败都静默——清不动就下次启动再清，绝不能因为这个崩。
+     */
+    private static void pruneCloud() {
+        for (String dav : DAVS) {
+            try {
+                if (pruneCloud(dav)) return; // 这条线通了就收工
+            } catch (Throwable e) {
+                // 这条线不通，换下一条
+            }
+        }
+    }
+
+    private static boolean pruneCloud(String dav) throws IOException {
+        byte[] body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><propfind xmlns=\"DAV:\"><prop><getlastmodified/></prop></propfind>".getBytes(StandardCharsets.UTF_8);
+        okhttp3.Request req = new okhttp3.Request.Builder()
+                .url(dav + UriEncoder.encode(FOLDER))
+                .method("PROPFIND", okhttp3.RequestBody.create(null, body))
+                .header("Authorization", basic())
+                .header("Depth", "1")
+                .header("Content-Type", "text/xml; charset=utf-8")
+                .build();
+        String xml;
+        try (okhttp3.Response resp = CLIENT.newCall(req).execute()) {
+            if (resp.code() < 200 || resp.code() >= 300 || resp.body() == null) return false;
+            xml = resp.body().string();
+        }
+        List<String> hrefs = matchAll(xml, "<[^>]*:?href[^>]*>([^<]+)<");
+        List<String> dates = matchAll(xml, "<[^>]*:?getlastmodified[^>]*>([^<]+)<");
+        long now = System.currentTimeMillis();
+        String origin = dav.substring(0, dav.indexOf('/', "https://".length())); // https://host
+        for (int i = 0; i < hrefs.size() && i < dates.size(); i++) {
+            try {
+                String href = hrefs.get(i);
+                if (!href.endsWith(".txt")) continue; // 只动日志文件，目录本身跳过
+                Long modified = parseHttpDate(dates.get(i));
+                if (modified == null || now - modified <= RETENTION) continue; // 没超龄或认不出日期的不动
+                request("DELETE", origin + href, null);
+            } catch (Throwable ignored) {
+                // 删不动单个文件就跳过，别影响其他的
+            }
+        }
+        return true;
+    }
+
+    private static List<String> matchAll(String xml, String regex) {
+        List<String> out = new ArrayList<>();
+        Matcher m = Pattern.compile(regex).matcher(xml);
+        while (m.find()) out.add(m.group(1).trim());
+        return out;
+    }
+
+    /** WebDAV 的 getlastmodified 一般是 RFC1123（Wed, 01 Oct 2026 13:00:00 GMT），个别服务器给 ISO8601，两种都认 */
+    private static Long parseHttpDate(String text) {
+        String[] patterns = {"EEE, dd MMM yyyy HH:mm:ss z", "yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"};
+        for (String p : patterns) {
+            try {
+                SimpleDateFormat fmt = new SimpleDateFormat(p, Locale.US);
+                fmt.setTimeZone(TimeZone.getTimeZone("GMT"));
+                return fmt.parse(text).getTime();
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
     private static int uploadCrash(Context context, String dav) {
         File[] files = list(context);
         if (files == null || files.length == 0) return 0;
@@ -206,7 +338,11 @@ public class CrashReporter {
     /** 崩溃刚被兜住、进程还活着时立刻传一次：不等下次启动，重启了可能就被卸/重装冲掉 */
     public static void flush() {
         try {
-            Task.execute(() -> uploadPending(com.fongmi.android.tv.App.get()));
+            Context app = com.fongmi.android.tv.App.get();
+            Task.execute(() -> {
+                uploadPending(app);
+                uploadDebugAuto(app);
+            });
         } catch (Throwable ignored) {
         }
     }
@@ -217,7 +353,10 @@ public class CrashReporter {
         if (now - last < COOLDOWN) return;
         last = now;
         Context app = context.getApplicationContext();
-        Task.execute(() -> uploadPending(app));
+        Task.execute(() -> {
+            uploadPending(app);
+            uploadDebugAuto(app); // 流水账也搭这趟车，有新内容才传
+        });
     }
 
     private static void uploadPending(Context context) {
@@ -226,7 +365,10 @@ public class CrashReporter {
             if (files == null || files.length == 0) return;
             Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
             for (String dav : DAVS) {
-                if (tryBase(dav, context, files)) return; // 这条线通了就收工
+                if (tryBase(dav, context, files)) {
+                    hintR(); // 有日志传出去了，右下角亮个「R」
+                    return; // 这条线通了就收工
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -244,7 +386,6 @@ public class CrashReporter {
                 f.delete();
                 count++;
             }
-            uploadDebug(context, dav); // 开了调试模式就顺带把流水账传上去，崩之前干了什么一目了然
             return true;
         } catch (Throwable e) {
             return false;

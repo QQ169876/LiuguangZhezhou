@@ -272,6 +272,7 @@
     <string name="debug_uploading">Uploading…</string>
     <string name="debug_on">Debug log on</string>
     <string name="debug_off">Debug log off</string>
+    <string name="decode_soft_forced">Hardware decoding is unstable on this device, switched to software decoding</string>
     <string name="setting_theme_color">Theme color</string>
     <string name="setting_auto">Auto</string>
     <string name="setting_custom">Custom</string>

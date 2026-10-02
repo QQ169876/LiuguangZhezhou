@@ -221,10 +221,12 @@ public class MoonSync {
     }
 
     public static void pull(Listener listener) {
+        DebugLog.d("Sync", "影视站手动拉取(云端覆盖本机)");
         Task.execute(() -> notify(listener, MoonSync::doPullOverwrite));
     }
 
     public static void push(Listener listener) {
+        DebugLog.d("Sync", "影视站手动上传(本机覆盖云端)");
         Task.execute(() -> notify(listener, MoonSync::doPushOverwrite));
     }
 
@@ -245,6 +247,7 @@ public class MoonSync {
     }
 
     public static void sync(Listener listener) {
+        DebugLog.d("Sync", "影视站手动同步(双向合并)");
         Task.execute(() -> notify(listener, MoonSync::doSync));
     }
 
@@ -320,6 +323,7 @@ public class MoonSync {
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         JSONObject ownerRecord = ownerRecord();
         JSONObject ownerFavorite = ownerFavorite();
         pruneTomb();
@@ -330,6 +334,7 @@ public class MoonSync {
         AppDatabase.get().getKeepDao().delete(cid); // 只清当前源的收藏，别的源不受影响
         int[] gotRecords = pullRecords(records, cid, skip, ownerRecord);
         int[] gotFavorites = pullFavorites(favorites, cid, ownerFavorite);
+        DebugLog.d("Sync", "影视站本地库写入完成");
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 拉下来的都归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         saveBase(records, favorites, null, null);
@@ -346,6 +351,7 @@ public class MoonSync {
         Owner.touch();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         dedupe();
         dropAlive();
         applyTomb(records, favorites);
@@ -356,6 +362,7 @@ public class MoonSync {
         // 手动「上传」= 明确要求把本机这份搬到当前账号上，所以不看原来的归属，搬完统一归当前账号
         int[] upRecords = pushRecords(records, true);
         int[] upFavorites = pushFavorites(favorites, true);
+        DebugLog.d("Sync", "影视站上传写库完成");
         saveBase(records, favorites, localRecords, localFavorites);
         // 墓碑留着：删过的东西不能再被别的设备补回来（站点条目时间比删除时刻新才会复活）
         MoonSetting.putLast(System.currentTimeMillis());
@@ -495,6 +502,7 @@ public class MoonSync {
         Owner.touch();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         int cid = VodConfig.getCid();
         JSONObject ownerRecord = ownerRecord();
         JSONObject ownerFavorite = ownerFavorite();
@@ -511,6 +519,7 @@ public class MoonSync {
         removedUp += tombed[0] + tombed[1];
         int[] down = pullRecords(records, cid, ownerRecord);
         int[] keepDown = pullFavorites(favorites, cid, ownerFavorite);
+        DebugLog.d("Sync", "影视站下拉写库完成");
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 站点拉下来的归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         int[] clean = dedupe();
@@ -519,6 +528,7 @@ public class MoonSync {
         Set<String> localFavorites = mineOnly(localKeepKeys(), ownerFavorite);
         int[] up = pushRecords(records, false);
         int[] keepUp = pushFavorites(favorites, false);
+        DebugLog.d("Sync", "影视站上传完成");
         saveBase(records, favorites, localRecords, localFavorites);
         pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
