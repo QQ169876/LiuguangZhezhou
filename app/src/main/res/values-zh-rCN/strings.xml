@@ -271,6 +271,7 @@
     <string name="debug_uploading">正在上传…</string>
     <string name="debug_on">调试日志已开启</string>
     <string name="debug_off">调试日志已关闭</string>
+    <string name="debug_crash_hint">检测到应用上次异常退出，建议在设置中开启调试模式以便排查</string>
     <string name="decode_soft_forced">这台设备硬解不稳定，已切换为软解优先</string>
     <string name="setting_theme_color">主题色彩</string>
     <string name="setting_auto">自动</string>

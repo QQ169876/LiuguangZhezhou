@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Build;
 
 import com.fongmi.android.tv.App;
+import com.github.catvod.utils.Prefers;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -41,8 +42,14 @@ public final class DebugLog {
     }
 
     public static synchronized boolean isEnabled() {
-        // 常开：不再提供开关（设置页菜单已撤），崩在任何设备上都有流水账可查
-        return true;
+        // 默认关：平常不记，崩过了（启动时会提示）再打开，省得老设备天天白写文件
+        return Prefers.getBoolean("debug_trace", false);
+    }
+
+    public static synchronized void setEnabled(boolean on) {
+        Prefers.put("debug_trace", on);
+        if (on) d("Debug", "---- 调试日志已开启 ----");
+        else close();
     }
 
     public static synchronized void d(String tag, String msg) {

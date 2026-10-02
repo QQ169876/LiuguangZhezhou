@@ -7,7 +7,6 @@ import android.view.View;
 
 import androidx.viewbinding.ViewBinding;
 
-import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.BuildConfig;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.Updater;
@@ -39,7 +38,6 @@ import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
 import com.fongmi.android.tv.ui.dialog.MoonDialog;
-import com.fongmi.android.tv.utils.CrashReporter;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Notify;
@@ -96,7 +94,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.dohText.setText(getDohList()[getDohIndex()]);
         mBinding.incognitoText.setText(Setting.getSwitch(Setting.isIncognito()));
         mBinding.debugText.setText(Setting.getSwitch(DebugLog.isEnabled()));
-        mBinding.uploadLogText.setText(DebugLog.size() / 1024 + " KB");
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
         mBinding.webdavText.setText(getWebDavText());
         mBinding.moontvText.setText(getMoonTVText());
@@ -148,7 +145,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.wall.setOnLongClickListener(this::onWallEdit);
         mBinding.incognito.setOnClickListener(this::setIncognito);
         mBinding.debug.setOnClickListener(this::setDebug);
-        mBinding.uploadLog.setOnClickListener(this::onUploadLog);
         mBinding.vodHistory.setOnClickListener(this::onVodHistory);
         mBinding.liveHistory.setOnClickListener(this::onLiveHistory);
         mBinding.wallDefault.setOnClickListener(this::setWallDefault);
@@ -317,13 +313,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         DebugLog.setEnabled(!DebugLog.isEnabled());
         mBinding.debugText.setText(Setting.getSwitch(DebugLog.isEnabled()));
         Notify.show(DebugLog.isEnabled() ? R.string.debug_on : R.string.debug_off);
-    }
-
-    private void onUploadLog(View view) {
-        Notify.show(R.string.debug_uploading);
-        mBinding.uploadLogText.setText("…");
-        CrashReporter.manual(this);
-        App.post(() -> mBinding.uploadLogText.setText(DebugLog.size() / 1024 + " KB"), 3000);
     }
 
     private void setSize(View view) {

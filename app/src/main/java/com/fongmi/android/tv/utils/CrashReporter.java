@@ -67,6 +67,7 @@ public class CrashReporter {
     public static void schedule(Context context) {
         Context app = context.getApplicationContext();
         Task.schedule(() -> {
+            boolean crashed = hasRealCrash(app); // 上传前先记：传完文件就删了
             DebugLog.prune();   // 本地流水账只留 3 天
             pruneLocal(app);    // 本地崩溃日志只留 3 天
             uploadPending(app);
@@ -74,7 +75,38 @@ public class CrashReporter {
             ping(app); // 自检：证明这条上传链路是通的
             pruneCloud(); // 云端只留 3 天
             if (pending(app) > 0) Task.schedule(() -> uploadPending(app), 30, TimeUnit.SECONDS);
+            if (crashed) hintDebug(app); // 崩过了：提醒一句开调试模式，下次崩才有流水账可查
         }, 5, TimeUnit.SECONDS);
+    }
+
+    /** 积压里有没有「真崩」的（escape 是 App 自己崩的；swallow 是蜘蛛 jar 被兜住，用户无感，不拿它打扰人） */
+    private static boolean hasRealCrash(Context context) {
+        try {
+            File[] files = list(context);
+            if (files == null) return false;
+            for (File f : files) {
+                byte[] head = readHead(f, 2048); // tag 行就在文件头
+                if (head != null && new String(head, StandardCharsets.UTF_8).contains("tag: escape")) return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static byte[] readHead(File f, int max) {
+        try (InputStream in = new FileInputStream(f)) {
+            byte[] data = new byte[max];
+            int n = in.read(data);
+            return n <= 0 ? null : (n == data.length ? data : Arrays.copyOf(data, n));
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** 崩过而调试模式没开：提示一声去设置里开，不然下次再崩还是两眼一抹黑 */
+    private static void hintDebug(Context context) {
+        if (DebugLog.isEnabled()) return;
+        App.post(() -> Notify.show(R.string.debug_crash_hint));
     }
 
     /**
