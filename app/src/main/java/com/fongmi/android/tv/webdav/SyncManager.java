@@ -18,6 +18,7 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.sync.Owner;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
@@ -148,13 +149,16 @@ public class SyncManager {
     private static void silent() {
         if (!busy.compareAndSet(false, true)) return;
         SyncStatus.begin(R.string.sync_status_webdav); // 让用户在右下角看见这一趟在跑
+        DebugLog.d("Sync", "WebDAV 同步开始");
         try {
             doSync();
             failures.set(0);
             dirty.set(false);
+            DebugLog.d("Sync", "WebDAV 同步完成");
             SyncStatus.finish(R.string.sync_status_webdav, true);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
+            DebugLog.d("Sync", "WebDAV 同步失败 " + e);
             onFail();
             SyncStatus.finish(R.string.sync_status_webdav, false);
         } finally {
@@ -796,7 +800,9 @@ public class SyncManager {
     }
 
     private static void reload() {
+        DebugLog.d("Sync", "同步改了配置，开始重载点播/直播/壁纸");
         App.post(() -> {
+            DebugLog.d("Sync", "重载执行中");
             VodConfig.get().init().load(new Callback() {
                 @Override
                 public void error(String msg) {

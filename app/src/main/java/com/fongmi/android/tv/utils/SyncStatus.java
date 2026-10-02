@@ -70,21 +70,25 @@ public class SyncStatus implements Application.ActivityLifecycleCallbacks {
     }
 
     private void attach(Activity act) {
-        if (skip(act)) return;
-        Activity old = host == null ? null : host.get();
-        if (old != null && old != act) {
-            if (view != null && view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
-            view = null;
+        try {
+            if (skip(act)) return;
+            Activity old = host == null ? null : host.get();
+            if (old != null && old != act) {
+                if (view != null && view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+                view = null;
+            }
+            host = new WeakReference<>(act);
+            if (view == null) view = create(act);
+            view.setText(text);
+            if (view.getParent() == null) {
+                ViewGroup root = act.findViewById(android.R.id.content);
+                if (root == null) return;
+                root.addView(view, params());
+            }
+            view.setVisibility(View.VISIBLE);
+        } catch (Throwable ignored) {
+            // 状态条只是提示，任何机器上加不上去都不许把 App 带崩
         }
-        host = new WeakReference<>(act);
-        if (view == null) view = create(act);
-        view.setText(text);
-        if (view.getParent() == null) {
-            ViewGroup root = act.findViewById(android.R.id.content);
-            if (root == null) return;
-            root.addView(view, params());
-        }
-        view.setVisibility(View.VISIBLE);
     }
 
     private void detach() {

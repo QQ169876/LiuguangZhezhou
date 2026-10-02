@@ -46,13 +46,14 @@ public class CrashReporter {
     private CrashReporter() {
     }
 
-    /** 启动后调用：延迟 20 秒、后台线程执行 */
+    /** 启动后调用：延迟 5 秒、后台线程执行；有积压没传完就 30 秒后再补一趟 */
     public static void schedule(Context context) {
         Context app = context.getApplicationContext();
         Task.schedule(() -> {
             uploadPending(app);
             ping(app); // 自检：证明这条上传链路是通的
-        }, 20, TimeUnit.SECONDS);
+            if (pending(app) > 0) Task.schedule(() -> uploadPending(app), 30, TimeUnit.SECONDS);
+        }, 5, TimeUnit.SECONDS);
     }
 
     /**

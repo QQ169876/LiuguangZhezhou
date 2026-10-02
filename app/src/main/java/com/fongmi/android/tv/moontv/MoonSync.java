@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.SyncStatus;
@@ -105,12 +106,15 @@ public class MoonSync {
             return;
         }
         SyncStatus.begin(R.string.sync_status_moontv); // 让用户在右下角看见这一趟在跑
+        DebugLog.d("Sync", "影视站同步开始");
         try {
             guarded(MoonSync::doSync);
             failures.set(0);
+            DebugLog.d("Sync", "影视站同步完成");
             SyncStatus.finish(R.string.sync_status_moontv, true);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
+            DebugLog.d("Sync", "影视站同步失败 " + e);
             onFail();
             SyncStatus.finish(R.string.sync_status_moontv, false);
         } finally {

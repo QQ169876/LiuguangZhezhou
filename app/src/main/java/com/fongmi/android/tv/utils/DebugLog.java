@@ -40,7 +40,8 @@ public final class DebugLog {
     }
 
     public static synchronized boolean isEnabled() {
-        return Prefers.getBoolean("debug_trace");
+        // 诊断期默认开：老盒子一进设置就崩，没机会手动开，先把流水账记上，崩了好知道死在哪儿
+        return Prefers.getBoolean("debug_trace", true);
     }
 
     public static synchronized void setEnabled(boolean on) {

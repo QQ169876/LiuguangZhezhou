@@ -84,6 +84,7 @@ public class CrashGuard {
     /** App 自己的锅，走原来的路，该崩崩。reason 写进堆栈里，错误屏上能看到为什么放行。 */
     private static void escape(Thread thread, Throwable e, String reason) {
         dump(thread, e, "escape:" + reason); // 落盘：老盒子没有 ADB，崩完靠文件定位
+        com.fongmi.android.tv.utils.CrashReporter.flush(); // 自家崩溃也当场传：重启循环的设备等不到下次启动的定时上传
         try {
             StackTraceElement[] old = e.getStackTrace();
             StackTraceElement[] neo = new StackTraceElement[old.length + 1];
