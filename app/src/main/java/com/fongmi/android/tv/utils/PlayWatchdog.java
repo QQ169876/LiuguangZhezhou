@@ -60,13 +60,34 @@ public final class PlayWatchdog {
         playing = true;
         active = true;
         write();
-        DebugLog.d("Watchdog", "起播留痕 engine=" + engine + " url=" + url);
+        DebugLog.d("Watchdog", "起播留痕 engine=" + engine + " " + mem() + " url=" + url);
         App.post(BEATER, BEAT);
     }
 
     /** 播放真的在走才刷时间戳，暂停/后台就让它变旧 */
     public static synchronized void setPlaying(boolean value) {
         playing = value;
+    }
+
+    /** 堆/系统内存快照：进程被系统杀（LMK）之前，内存曲线会先露馅 */
+    public static String mem() {
+        try {
+            Runtime rt = Runtime.getRuntime();
+            long free = rt.freeMemory() / 1048576L;
+            long total = rt.totalMemory() / 1048576L;
+            long max = rt.maxMemory() / 1048576L;
+            long sys = -1;
+            try {
+                android.app.ActivityManager am = (android.app.ActivityManager) App.get().getSystemService(Context.ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                sys = mi.availMem / 1048576L;
+            } catch (Throwable ignored) {
+            }
+            return "heap 空闲" + free + "/已用" + total + "MB 上限" + max + "MB 系统可用" + sys + "MB";
+        } catch (Throwable e) {
+            return "内存未知";
+        }
     }
 
     /** 正常离开播放页：删标记，别把自己记成崩溃 */
@@ -92,7 +113,9 @@ public final class PlayWatchdog {
             if (System.currentTimeMillis() - last > FRESH) return; // 太旧，说明不是播着播着没的
             String text = lines.length > 2 ? lines[2] : "";
             String where = lines.length > 3 ? lines[3] : "";
-            report(last, what, text, where);
+            String mem = lines.length > 4 ? lines[4] : "";
+            String state = lines.length > 5 ? lines[5] : "";
+            report(last, what, text, where, mem, state);
         } catch (Throwable ignored) {
         }
     }
@@ -101,7 +124,9 @@ public final class PlayWatchdog {
         try {
             synchronized (PlayWatchdog.class) {
                 if (!active) return;
-                if (playing) {
+                // 只要还在播放页（在播、暂停、缓冲都算）就刷时间戳：
+                // 「播放中没了」和「停在某集上没了」对我们都是线索
+                if (playing || onPlayPage()) {
                     seen = System.currentTimeMillis();
                     write();
                 }
@@ -112,7 +137,7 @@ public final class PlayWatchdog {
         }
     }
 
-    private static void report(long time, String what, String text, String where) {
+    private static void report(long time, String what, String text, String where, String mem, String state) {
         try {
             Context ctx = App.get();
             File base = ctx.getExternalFilesDir(null);
@@ -126,6 +151,8 @@ public final class PlayWatchdog {
             pw.println("engine: " + what);
             pw.println("url: " + text);
             pw.println("page: " + where);
+            pw.println("state: " + state);
+            pw.println("mem: " + mem);
             pw.println("device: " + Build.MANUFACTURER + " " + Build.MODEL + " api" + Build.VERSION.SDK_INT);
             pw.println("version: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")");
             pw.flush();
@@ -148,6 +175,8 @@ public final class PlayWatchdog {
             pw.println(engine);
             pw.println(url);
             pw.println(page);
+            pw.println(mem());
+            pw.println(playing ? "playing" : "paused");
             pw.flush();
             pw.close();
         } catch (Throwable ignored) {
@@ -175,6 +204,18 @@ public final class PlayWatchdog {
             return new File(base, NAME);
         } catch (Throwable e) {
             return null;
+        }
+    }
+
+    /** 当前是不是还停在播放页（切换线路/换源时页面不动，标记不能撤） */
+    private static boolean onPlayPage() {
+        try {
+            android.app.Activity act = App.activity();
+            if (act == null) return false;
+            String n = act.getClass().getSimpleName();
+            return n.contains("Video") || n.contains("Playback");
+        } catch (Throwable e) {
+            return false;
         }
     }
 

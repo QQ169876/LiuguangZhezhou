@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.59-legacy",
-  "desc": "修日志上传: MKCOL建目录原来走HttpURLConnection被JDK白名单拦死(只允许标准8方法), 上线以来一次都没传成功过——改走okhttp, https失败自动退http",
-  "code": 619,
-  "tag": "v5.6.59-legacy"
+  "name": "流光褶皱TV v5.6.60-legacy",
+  "desc": "诊断加强: 播放中进程没了能认出来并回传(看门狗标记不再被换源/切线路误撤); 心跳与崩溃报告带堆和系统内存快照; 系统回收内存时留痕, 用来区分内存不足被杀还是解码器native崩",
+  "code": 620,
+  "tag": "v5.6.60-legacy"
 }

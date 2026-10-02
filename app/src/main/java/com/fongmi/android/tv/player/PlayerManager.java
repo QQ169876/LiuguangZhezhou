@@ -397,7 +397,7 @@ public class PlayerManager implements ParseCallback {
 
     public void stop() {
         App.removeCallbacks(runnable); // 起播超时必须一起取消，否则退出后计时一到照样报「播放超时」去自动换源
-        PlayWatchdog.stop();
+        // 这里不能撤看门狗标记：换线路/换源都会走 stop，撤了就认不出「播着播着没了」
         engine.stop();
         stopParse();
     }

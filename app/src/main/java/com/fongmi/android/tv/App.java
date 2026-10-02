@@ -93,10 +93,33 @@ public class App extends Application implements Application.ActivityLifecycleCal
         registerActivityLifecycleCallbacks(this);
         SyncStatus.install(this); // 同步状态浮层要跟着页面走，先挂上生命周期
         CrashGuard.install();
+        watchMemory(); // 系统内存吃紧/回收时留一条带堆大小的记录，用来分辨是被系统杀还是 native 崩
         PlayWatchdog.check(); // 上次是不是「播着播着就没了」：是的话留一份日志并（MPV 时）自动降级
         CrashReporter.schedule(this); // 上次的崩溃日志后台回传归档网盘，传完即删
         SyncManager.boot();
         MoonSync.boot();
+    }
+
+    /**
+     * 内存体检：Android 6 这种小内存盒子，被系统杀（LMK）之前一定会先收到 trim/lowMemory。
+     * 记下来，就能把「内存不够被杀」和「解码器 native 崩」区分开——两者表现都是直接重启、没堆栈。
+     */
+    private void watchMemory() {
+        registerComponentCallbacks(new android.content.ComponentCallbacks2() {
+            @Override
+            public void onTrimMemory(int level) {
+                DebugLog.d("Mem", "系统要回收内存 level=" + level + " " + PlayWatchdog.mem());
+            }
+
+            @Override
+            public void onLowMemory() {
+                DebugLog.d("Mem", "系统内存告急 " + PlayWatchdog.mem());
+            }
+
+            @Override
+            public void onConfigurationChanged(android.content.res.Configuration config) {
+            }
+        });
     }
 
     @Override
