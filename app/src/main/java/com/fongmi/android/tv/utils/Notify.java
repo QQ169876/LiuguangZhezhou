@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.databinding.ViewProgressBinding;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -75,7 +76,11 @@ public class Notify {
 
     public static void dismiss() {
         try {
-            if (get().mDialog != null) get().mDialog.dismiss();
+            if (get().mDialog != null) {
+                DebugLog.d("Notify", "转圈框关闭");
+                get().mDialog.dismiss();
+                DebugLog.d("Notify", "转圈框已关");
+            }
         } catch (Exception ignored) {
         }
     }
@@ -108,6 +113,8 @@ public class Notify {
     private void makeText(String text) {
         if (mToast != null) mToast.cancel();
         mToast = Toast.makeText(App.get(), text, Toast.LENGTH_LONG);
+        DebugLog.d("Notify", "Toast 弹出 " + text);
         mToast.show();
+        DebugLog.d("Notify", "Toast 已弹");
     }
 }

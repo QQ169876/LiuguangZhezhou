@@ -257,6 +257,7 @@ public class MoonSync {
             return;
         }
         String message;
+        beat("任务启动"); // 埋点： projector 上每次手动同步都在写库后必崩，先记死前走到哪一步
         try {
             message = guarded(action);
         } catch (Throwable e) {
@@ -270,14 +271,47 @@ public class MoonSync {
         }
         failures.set(0);
         String result = message;
+        beat("结果已返回");
         done(listener, true, result);
+        beatOff();
+    }
+
+    /* ---------- 埋点心跳：定位「写库后必崩」到底死在哪一步 ---------- */
+
+    private static volatile String step = "";
+    private static final AtomicBoolean beating = new AtomicBoolean();
+
+    /** 同步期间每 300ms 记一行，进程若是被 native 崩掉，最后一行就是死前位置 */
+    private static void beat(String name) {
+        step = name;
+        if (beating.get()) return;
+        beating.set(true);
+        new Thread(() -> {
+            try {
+                while (beating.get()) {
+                    DebugLog.d("Sync", "心跳 step=" + step);
+                    Thread.sleep(300);
+                }
+            } catch (Throwable ignored) {
+            }
+        }, "moon-beat").start();
+    }
+
+    private static void beatOff() {
+        beating.set(false);
+        step = "";
     }
 
 
     /** 回调兜一层：拿到结果的那一刻监听器可能已经随页面没了，别让这里把整个 App 带崩 */
     private static void done(Listener listener, boolean success, String message) {
         if (listener == null) return;
-        App.post(() -> listener.done(success, message));
+        DebugLog.d("Sync", "结果回调 排队 success=" + success);
+        App.post(() -> {
+            DebugLog.d("Sync", "结果回调 开始执行");
+            listener.done(success, message);
+            DebugLog.d("Sync", "结果回调 执行完毕");
+        });
     }
 
     private interface Action {
@@ -338,8 +372,11 @@ public class MoonSync {
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 拉下来的都归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         saveBase(records, favorites, null, null);
+        beat("基线已保存");
         MoonSetting.putLast(System.currentTimeMillis());
+        beat("同步时间已写");
         refresh();
+        beat("刷新事件已排队");
         return ResUtil.getString(R.string.moontv_summary_pull, gotRecords[0] + gotRecords[1], gotFavorites[0] + gotFavorites[1]);
     }
 
@@ -364,9 +401,12 @@ public class MoonSync {
         int[] upFavorites = pushFavorites(favorites, true);
         DebugLog.d("Sync", "影视站上传写库完成");
         saveBase(records, favorites, localRecords, localFavorites);
+        beat("基线已保存");
         // 墓碑留着：删过的东西不能再被别的设备补回来（站点条目时间比删除时刻新才会复活）
         MoonSetting.putLast(System.currentTimeMillis());
+        beat("同步时间已写");
         refresh();
+        beat("刷新事件已排队");
         return ResUtil.getString(R.string.moontv_summary_push, upRecords[0] + upRecords[1], upFavorites[0] + upFavorites[1], delRecords + delFavorites);
     }
 
@@ -530,9 +570,12 @@ public class MoonSync {
         int[] keepUp = pushFavorites(favorites, false);
         DebugLog.d("Sync", "影视站上传完成");
         saveBase(records, favorites, localRecords, localFavorites);
+        beat("基线已保存");
         pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
+        beat("同步时间已写");
         refresh();
+        beat("刷新事件已排队");
         return join(down, keepDown, up, keepUp, clean, removed, removedUp);
     }
 
@@ -1170,8 +1213,11 @@ public class MoonSync {
 
     private static void refresh() {
         App.post(() -> {
+            DebugLog.d("Sync", "刷新事件 执行 history");
             RefreshEvent.history();
+            DebugLog.d("Sync", "刷新事件 执行 keep");
             RefreshEvent.keep();
+            DebugLog.d("Sync", "刷新事件 执行完毕");
         });
     }
 }

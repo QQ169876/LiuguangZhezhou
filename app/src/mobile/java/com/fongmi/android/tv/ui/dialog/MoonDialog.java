@@ -27,6 +27,7 @@ import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.activity.ScanActivity;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -224,9 +225,13 @@ public class MoonDialog extends BaseBottomSheetDialog {
 
     private MoonSync.Listener getListener() {
         return (success, message) -> {
+            DebugLog.d("Sync", "结果回调 关转圈框");
             Notify.dismiss();
+            DebugLog.d("Sync", "结果回调 弹提示 " + message);
             Notify.show(message);
+            DebugLog.d("Sync", "结果回调 提示已弹");
             setLastText();
+            DebugLog.d("Sync", "结果回调 收尾完成");
         };
     }
 
