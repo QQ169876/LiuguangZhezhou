@@ -134,6 +134,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private Runnable mR2;
     private Runnable mR3;
     private Runnable mR4;
+    private Runnable mR5;
     private boolean switching;
     private boolean sourceExhausted;
     private History mHistory;
@@ -303,6 +304,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mR2 = this::setTraffic;
         mR3 = this::setOrient;
         mR4 = this::showEmpty;
+        mR5 = this::showAllFailed;
         mPiP = new PiP();
         checkDanmakuImg();
         setRecyclerView();
@@ -584,6 +586,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void startPlayback(Result result, boolean useParse, long startPositionMs, MediaMetadata metadata) {
+        App.removeCallbacks(mR5); // 都要开播了，"找不到"的延迟提示必须作废
         dismissEmpty(); // 兜底：真要开播了，绝不能还有全屏空态压在上面
         startPlayer(getHistoryKey(), result, useParse, getSite().getTimeout(), startPositionMs, metadata);
     }
@@ -725,6 +728,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     public void onDetailFallbackScheduled() {
         switching = true;
         Notify.show(R.string.detail_switching); // 一行提示就够，别盖全屏
+        App.removeCallbacks(mR5);
         App.post(mR4, 10000);
     }
 
@@ -732,6 +736,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     public void onDetailFallbackCancelled() {
         switching = false;
         App.removeCallbacks(mR4);
+        App.removeCallbacks(mR5);
     }
 
     @Override
@@ -742,6 +747,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     public void onSearchResult() {
         switching = false;
         App.removeCallbacks(mR4);
+        App.removeCallbacks(mR5);
         dismissEmpty();
     }
 
@@ -750,6 +756,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         switching = false;
         sourceExhausted = true;
         App.removeCallbacks(mR4);
+        // 同一批搜索是逐站点返回的，空站点会反复走到这。
+        // 延迟 4 秒再提示：期间任何站点出了结果都会把它取消，只有真全部失败才弹。
+        App.removeCallbacks(mR5);
+        App.post(mR5, 4000);
+    }
+
+    private void showAllFailed() {
         hideError();
         Notify.show(R.string.detail_all_failed);
     }
@@ -1717,7 +1730,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         Timer.get().reset();
         DanmakuApi.cancel();
         RefreshEvent.keep();
-        App.removeCallbacks(mR1, mR2, mR3, mR4);
+        App.removeCallbacks(mR1, mR2, mR3, mR4, mR5);
         super.onDestroy();
     }
 }

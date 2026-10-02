@@ -100,13 +100,23 @@ public class WebDavData {
         return getData().getPrefers();
     }
 
+    /**
+     * 只属于你的设备的设置，永远不上云、也不从云上下发给别的设备：
+     * webdav_/moontv_ 是同步配置本身（干url、账号、同步标识），别的设备不能直接套用别人的账号；
+     * owner_ 是归属账本，「谁的数据」是本机自己的判断；
+     * route 系列（route/route_auto/route_socks/route_customs）是 GitHub 加速/代理，
+     * 跟本机网络环境强绑定——别的设备（尤其走不同网络的电视）套用了可能全网请求卡死。
+     */
+    public static boolean localOnly(String key) {
+        if (key == null) return true;
+        return key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_") || key.startsWith("route");
+    }
+
     public void setPrefers(Map<String, ?> prefers) {
         Map<String, Object> values = new HashMap<>();
         for (Map.Entry<String, ?> entry : prefers.entrySet()) {
             String key = entry.getKey();
-            // 同步配置文件本身就（干url、账号、同步标识）和归属账本（owner_*）不上云：
-            // 一个是别的设备不能直接套用别人的账号，一个是「谁的数据」是本机自己的判断
-            if (key == null || key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_")) continue;
+            if (localOnly(key)) continue;
             values.put(key, entry.getValue());
         }
         getData().setPrefers(values);

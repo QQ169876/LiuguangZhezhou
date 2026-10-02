@@ -83,6 +83,7 @@ public class CrashGuard {
 
     /** App 自己的锅，走原来的路，该崩崩。reason 写进堆栈里，错误屏上能看到为什么放行。 */
     private static void escape(Thread thread, Throwable e, String reason) {
+        dump(thread, e, "escape:" + reason); // 落盘：老盒子没有 ADB，崩完靠文件定位
         try {
             StackTraceElement[] old = e.getStackTrace();
             StackTraceElement[] neo = new StackTraceElement[old.length + 1];
@@ -99,6 +100,34 @@ public class CrashGuard {
     private static void report(String where, Throwable e) {
         e.printStackTrace();
         android.util.Log.w("CrashGuard", "Drop " + where + " crash from spider jar: " + e);
+        dump(Thread.currentThread(), e, "swallow:" + where); // 吞掉的也留一份，第三方 jar 的锅一样要看
+    }
+
+    /** 把崩溃堆栈写到私有目录（免存储权限），任何一步失败都静默，绝不影响原有崩溃流程。 */
+    private static void dump(Thread thread, Throwable e, String tag) {
+        try {
+            android.content.Context ctx = com.fongmi.android.tv.App.get();
+            java.io.File base = ctx.getExternalFilesDir(null);
+            if (base == null) base = ctx.getFilesDir();
+            java.io.File dir = new java.io.File(base, "crash");
+            if (!dir.exists() && !dir.mkdirs()) return;
+            // 最多留 10 份，别让目录无限长
+            java.io.File[] olds = dir.listFiles();
+            if (olds != null && olds.length >= 10) {
+                java.util.Arrays.sort(olds, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+                for (int i = 0; i < olds.length - 9; i++) olds[i].delete();
+            }
+            java.io.File f = new java.io.File(dir, "crash_" + System.currentTimeMillis() + ".txt");
+            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(f), "UTF-8"));
+            pw.println("time: " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(new java.util.Date()));
+            pw.println("tag: " + tag);
+            pw.println("thread: " + thread.getName());
+            pw.println("version: " + com.fongmi.android.tv.BuildConfig.VERSION_NAME + " (" + com.fongmi.android.tv.BuildConfig.VERSION_CODE + ")");
+            e.printStackTrace(pw);
+            pw.flush();
+            pw.close();
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 堆栈里有没有 spider jar 塞进来的类 */

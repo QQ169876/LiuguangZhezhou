@@ -558,9 +558,7 @@ public class SyncManager {
         keys.addAll(base.keySet());
         Map<String, Object> result = new LinkedHashMap<>();
         for (String name : keys) {
-            if (name.startsWith("webdav_")) continue;
-            if (name.startsWith("moontv_")) continue;
-            if (name.startsWith("owner_")) continue;
+            if (WebDavData.localOnly(name)) continue;
             Object b = base.get(name);
             Object l = local.get(name);
             Object r = remote.get(name);
@@ -768,7 +766,11 @@ public class SyncManager {
         AppDatabase.get().getConfigDao().insertOrUpdate(backup.getConfig());
         AppDatabase.get().getKeepDao().insertOrUpdate(backup.getKeep());
         AppDatabase.get().getHistoryDao().insertOrUpdate(backup.getHistory());
-        for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
+        for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) {
+            // 跟本机网络环境绑定的设置（route 系列等）不随云端落盘，见 WebDavData.localOnly
+            if (WebDavData.localOnly(entry.getKey())) continue;
+            Prefers.put(entry.getKey(), entry.getValue());
+        }
         CookieStore.apply(backup.getCookies());
     }
 
@@ -781,9 +783,7 @@ public class SyncManager {
         Map<String, Object> values = new HashMap<>();
         for (Map.Entry<String, ?> entry : target.entrySet()) {
             String name = entry.getKey();
-            if (name == null || name.startsWith("webdav_")) continue;
-            if (name.startsWith("moontv_")) continue;
-            if (name.startsWith("owner_")) continue;
+            if (WebDavData.localOnly(name)) continue;
             if (Objects.equals(current.get(name), entry.getValue())) continue;
             values.put(name, entry.getValue());
         }

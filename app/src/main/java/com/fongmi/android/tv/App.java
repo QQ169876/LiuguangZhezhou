@@ -12,6 +12,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
 
+import com.fongmi.android.tv.utils.CrashReporter;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.hook.Hook;
 import com.fongmi.android.tv.exception.CrashGuard;
@@ -88,6 +89,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
         CrashGuard.install();
+        CrashReporter.schedule(this); // 上次的崩溃日志后台回传归档网盘，传完即删
         SyncManager.boot();
         MoonSync.boot();
     }
