@@ -41,6 +41,14 @@ public class CrashReporter {
     private static final int TIMEOUT = 15000;
     private static final long COOLDOWN = 10 * 60 * 1000L; // 页面恢复触发的冷却，别每次切页面都传
 
+    // MKCOL 走 okhttp：HttpURLConnection 只认 8 个标准方法，MKCOL 会直接抛
+    // "Expected one of [OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, PATCH] but was MKCOL"
+    private static final okhttp3.OkHttpClient CLIENT = new okhttp3.OkHttpClient.Builder()
+            .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+            .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+            .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+            .build();
+
     private static long last;
 
     private CrashReporter() {
@@ -72,7 +80,11 @@ public class CrashReporter {
                     + "pending: " + pending(context) + " 份没传出去的日志\n";
             byte[] data = head.getBytes(StandardCharsets.UTF_8);
             for (String dav : DAVS) {
-                if (request("MKCOL", dav + UriEncoder.encode(FOLDER), null) < 0) continue;
+                try {
+                    if (mkdirs(dav) < 0) continue;
+                } catch (Throwable e) {
+                    continue; // 这条线不通（老设备 https 握手失败），换下一条
+                }
                 int code = request("PUT", dav + UriEncoder.encode(FOLDER + "ping_" + version(context) + "_" + model + ".txt"), data);
                 if (code >= 200 && code < 300) return;
             }
@@ -263,9 +275,16 @@ public class CrashReporter {
         return "crash_" + version + "_" + model + "_" + time + ".txt";
     }
 
-    /** 建目录：已有会返回 405，也算通；-1 表示这条线不可用 */
+    /** 建目录：已有会返回 405，也算通；抛异常表示这条线不可用（老设备 https 握手失败会在这里炸，交给外层换下一条） */
     private static int mkdirs(String dav) throws IOException {
-        return request("MKCOL", dav + UriEncoder.encode(FOLDER), null);
+        okhttp3.Request req = new okhttp3.Request.Builder()
+                .url(dav + UriEncoder.encode(FOLDER))
+                .method("MKCOL", null)
+                .header("Authorization", basic())
+                .build();
+        try (okhttp3.Response resp = CLIENT.newCall(req).execute()) {
+            return resp.code();
+        }
     }
 
     private static boolean upload(String dav, File file, String name) {
@@ -279,6 +298,10 @@ public class CrashReporter {
         }
     }
 
+    private static String basic() {
+        return "Basic " + android.util.Base64.encodeToString((USER + ":" + PASS).getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP);
+    }
+
     private static int request(String method, String url, byte[] body) throws IOException {
         HttpURLConnection conn = null;
         try {
@@ -286,8 +309,7 @@ public class CrashReporter {
             conn.setRequestMethod(method);
             conn.setConnectTimeout(TIMEOUT);
             conn.setReadTimeout(TIMEOUT);
-            String auth = android.util.Base64.encodeToString((USER + ":" + PASS).getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP);
-            conn.setRequestProperty("Authorization", "Basic " + auth);
+            conn.setRequestProperty("Authorization", basic());
             if (body != null) {
                 conn.setDoOutput(true);
                 conn.setFixedLengthStreamingMode(body.length);
