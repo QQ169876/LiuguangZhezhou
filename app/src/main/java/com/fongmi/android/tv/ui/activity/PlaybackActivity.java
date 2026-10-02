@@ -40,6 +40,8 @@ import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
+import com.fongmi.android.tv.utils.DebugLog;
+import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.net.OkHttp;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -63,6 +65,8 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     private boolean bound;
     private boolean stop;
     private boolean lock;
+    private boolean leaving;   // 页面正在退出：这之后的播放错误一律不当事故处理
+    private long uiBusyUntil;  // 刚动过播放器视图（进出全屏/卸载）的抖动窗口
 
     protected MediaController controller() {
         return mController;
@@ -128,6 +132,15 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     protected boolean isOwner() {
         String key = getPlaybackKey();
         return key == null || (mService != null && key.equals(player().getKey()));
+    }
+
+    /** 动过播放器视图之后 2 秒内：忽略播放器报的错，别把视图抖动当成播放失败去换源 */
+    protected void markUiBusy() {
+        uiBusyUntil = System.currentTimeMillis() + 2000;
+    }
+
+    protected boolean isUiBusy() {
+        return System.currentTimeMillis() < uiBusyUntil;
     }
 
     protected boolean isBindingOwner() {
@@ -260,6 +273,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     }
 
     private void startPlayerInternal(String key, Result result, boolean useParse, long timeout, long startPositionMs, MediaMetadata metadata) {
+        DebugLog.d("Play", "起播 key=" + key + " parse=" + (result.needParse() || useParse) + " url=" + result.getRealUrl());
         attachPlayerView();
         updateNavigationKey(key);
         if (result.needParse() || useParse) player().parse(key, result, useParse, metadata, startPositionMs);
@@ -410,6 +424,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     }
 
     private void detachPlayerView() {
+        markUiBusy(); // 卸载视图时播放器容易报一次错，那是卸它的动静，不是播放失败
         getPlayerView().setPlayer(null);
     }
 
@@ -515,7 +530,11 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
 
         @Override
         public void onError(String msg) {
-            if (isOwner()) PlaybackActivity.this.onError(msg);
+            DebugLog.d("Play", "播放错误 " + msg + "（leaving=" + leaving + " uiBusy=" + isUiBusy() + "）");
+            // 页面已经在退出（返回键）或者刚换过视图（退出全屏/卸载播放器），
+            // 这时候冒出来的「错误」多半是播放器被我们主动收掉时的抖动，
+            // 再交给业务层就会被当成播放失败去自动换源——返回一次换一次源就是这么来的。
+            if (isOwner() && !leaving && !isUiBusy()) PlaybackActivity.this.onError(msg);
         }
 
         @Override
@@ -560,6 +579,8 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     public void onIsPlayingChanged(boolean isPlaying) {
         if (!isOwner()) return;
+        DebugLog.d("Play", "播放状态 playing=" + isPlaying);
+        PlayWatchdog.setPlaying(isPlaying); // 只有真在播才刷看门狗时间戳
         if (isPlaying) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else if (!isBuffering()) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         onPlayingChanged(isPlaying);
@@ -567,7 +588,18 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
 
     @Override
     public void onPlaybackStateChanged(int state) {
+        DebugLog.d("Play", "状态 " + stateName(state));
         if (isOwner()) onStateChanged(state);
+    }
+
+    private static String stateName(int state) {
+        return switch (state) {
+            case Player.STATE_IDLE -> "IDLE";
+            case Player.STATE_BUFFERING -> "BUFFERING";
+            case Player.STATE_READY -> "READY";
+            case Player.STATE_ENDED -> "ENDED";
+            default -> String.valueOf(state);
+        };
     }
 
     @Override
@@ -591,6 +623,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     protected void onStart() {
         super.onStart();
+        leaving = false;
         activateService();
     }
 
@@ -612,6 +645,8 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     protected void onStop() {
         super.onStop();
+        leaving = isFinishing();
+        if (leaving) markUiBusy();
         if (isOwner() && (isFinishing() || PlayerSetting.isBackgroundOff())) pausePlayback();
         if (!inPipMode()) detachPlayerView();
     }
@@ -620,6 +655,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     protected void onDestroy() {
         clearObservers();
         detachPlayerView();
+        PlayWatchdog.stop(); // 正常离开播放页：撤掉看门狗标记，别把自己记成崩溃
         super.onDestroy();
         releasePlaybackService();
     }

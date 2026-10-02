@@ -61,6 +61,7 @@
     <string name="play_switch_flag">Switching flag to <xliff:g name="name">%s</xliff:g></string>
     <string name="play_switch_site">Switching site to <xliff:g name="name">%s</xliff:g></string>
     <string name="play_switch_parse">Switching parse to <xliff:g name="name">%s</xliff:g></string>
+    <string name="play_engine_fallback">Playback crashed on this device, engine switched back to Exo</string>
 
     <!-- Playback Setting -->
     <string name="setting_tab_offset">Offset</string>
@@ -264,6 +265,13 @@
     <string name="setting_player">Player setting</string>
     <string name="setting_danmaku">Danmaku setting</string>
     <string name="setting_incognito">Incognito mode</string>
+    <string name="setting_debug">Debug mode (log everything)</string>
+    <string name="setting_upload_log">Upload logs (test)</string>
+    <string name="debug_upload_ok">Uploaded via %1$s: %2$d file(s)</string>
+    <string name="debug_upload_fail">Upload failed: %1$s</string>
+    <string name="debug_uploading">Uploading…</string>
+    <string name="debug_on">Debug log on</string>
+    <string name="debug_off">Debug log off</string>
     <string name="setting_theme_color">Theme color</string>
     <string name="setting_auto">Auto</string>
     <string name="setting_custom">Custom</string>
@@ -592,4 +600,9 @@
     <string name="clear_done_all">All data cleared, restarting</string>
     <string name="detail_switching">Please wait, switching to another source…</string>
     <string name="detail_all_failed">Nothing found on any source. Try something else.</string>
+    <string name="sync_status_webdav">Site (webdav) </string>
+    <string name="sync_status_moontv">Site (moontv) </string>
+    <string name="sync_status_running">is syncing…</string>
+    <string name="sync_status_done">sync finished</string>
+    <string name="sync_status_fail">sync failed</string>
 </resources>

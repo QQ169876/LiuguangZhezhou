@@ -18,11 +18,16 @@ public class PlayerSetting {
     private static final int MAX_BACKGROUND = 2;
 
     public static int getEngine() {
+        // 这台设备被看门狗判过一次「播着播着就没了」（多半是 MPV 内核 native 崩），本机强制回 Exo。
+        // mpv_blocked 是设备本地标记，不参与同步，别的设备不会被连累。
+        if (Prefers.getBoolean("mpv_blocked")) return ENGINE_EXO;
         return Math.clamp(Prefers.getInt("player_engine", ENGINE_EXO), ENGINE_EXO, ENGINE_MPV);
     }
 
     public static void putEngine(int engine) {
-        Prefers.put("player_engine", Math.clamp(engine, ENGINE_EXO, ENGINE_MPV));
+        int value = Math.clamp(engine, ENGINE_EXO, ENGINE_MPV);
+        if (value == ENGINE_MPV) Prefers.put("mpv_blocked", false); // 用户手动选回 MPV = 解除封锁
+        Prefers.put("player_engine", value);
         if (isExo() && DecodeSetting.isTunnel()) putRender(RENDER_SURFACE);
     }
 

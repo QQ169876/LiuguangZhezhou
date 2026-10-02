@@ -61,6 +61,7 @@
     <string name="play_switch_flag">正在切換線路至「<xliff:g name="name">%s</xliff:g>」</string>
     <string name="play_switch_site">正在切換站源至「<xliff:g name="name">%s</xliff:g>」</string>
     <string name="play_switch_parse">正在切换解析至「<xliff:g name="name">%s</xliff:g>」</string>
+    <string name="play_engine_fallback">偵測到本機播放核心異常，已切回 Exo 核心（可在播放設定裡改回）</string>
 
     <!-- Playback Setting -->
     <string name="setting_tab_offset">偏移</string>
@@ -263,6 +264,13 @@
     <string name="setting_player">播放設定</string>
     <string name="setting_danmaku">彈幕設定</string>
     <string name="setting_incognito">無痕模式</string>
+    <string name="setting_debug">除錯模式（記錄操作日誌）</string>
+    <string name="setting_upload_log">上傳日誌（測試用）</string>
+    <string name="debug_upload_ok">上傳成功（%1$s）：%2$d 份</string>
+    <string name="debug_upload_fail">上傳失敗：%1$s</string>
+    <string name="debug_uploading">正在上傳…</string>
+    <string name="debug_on">除錯日誌已開啟</string>
+    <string name="debug_off">除錯日誌已關閉</string>
     <string name="setting_theme_color">主題色彩</string>
     <string name="setting_auto">自動</string>
     <string name="setting_custom">自訂</string>
@@ -582,4 +590,9 @@
     <string name="clear_done_all">已清除全部資料，正在重啟</string>
     <string name="detail_switching">請稍等，正在為您切換其他源。</string>
     <string name="detail_all_failed">真的什麼也找不到，返回看其他的吧</string>
+    <string name="sync_status_webdav">影視站(webdav)</string>
+    <string name="sync_status_moontv">影視站(moontv)</string>
+    <string name="sync_status_running">正在同步…</string>
+    <string name="sync_status_done">同步完成</string>
+    <string name="sync_status_fail">同步失敗</string>
 </resources>

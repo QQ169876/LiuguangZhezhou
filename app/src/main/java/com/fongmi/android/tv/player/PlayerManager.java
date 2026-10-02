@@ -38,7 +38,9 @@ import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.PreloadSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Util;
 import com.google.common.net.HttpHeaders;
@@ -80,6 +82,7 @@ public class PlayerManager implements ParseCallback {
 
     public void release() {
         App.removeCallbacks(runnable);
+        PlayWatchdog.stop();
         if (player != null) player.removeListener(listener);
         if (engine != null) engine.release();
         engine = null;
@@ -393,6 +396,8 @@ public class PlayerManager implements ParseCallback {
     }
 
     public void stop() {
+        App.removeCallbacks(runnable); // 起播超时必须一起取消，否则退出后计时一到照样报「播放超时」去自动换源
+        PlayWatchdog.stop();
         engine.stop();
         stopParse();
     }
@@ -487,6 +492,7 @@ public class PlayerManager implements ParseCallback {
     }
 
     private void onPlayTimeout() {
+        DebugLog.d("Player", "起播超时");
         callback.onError(ResUtil.getString(R.string.error_play_timeout));
         stop();
     }
@@ -540,6 +546,8 @@ public class PlayerManager implements ParseCallback {
         initTrack = false;
         engine.start(spec, startPositionMs);
         notifyDanmakuSourceChanged();
+        PlayWatchdog.start(engine.getType().name(), spec.getUrl()); // 播放留下痕迹，native 崩也能事后认出来
+        DebugLog.d("Player", "起播 engine=" + engine.getType().name() + " url=" + spec.getUrl());
         App.post(runnable, timeout);
         callback.onPrepare();
     }

@@ -15,6 +15,7 @@ import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.sync.Owner;
 import com.fongmi.android.tv.utils.Task;
@@ -103,12 +104,15 @@ public class MoonSync {
             post(30);
             return;
         }
+        SyncStatus.begin(R.string.sync_status_moontv); // 让用户在右下角看见这一趟在跑
         try {
             guarded(MoonSync::doSync);
             failures.set(0);
+            SyncStatus.finish(R.string.sync_status_moontv, true);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
             onFail();
+            SyncStatus.finish(R.string.sync_status_moontv, false);
         } finally {
             busy.set(false);
         }

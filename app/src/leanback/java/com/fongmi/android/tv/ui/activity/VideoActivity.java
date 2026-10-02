@@ -82,6 +82,7 @@ import com.fongmi.android.tv.ui.dialog.PlayerEngineDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Clock;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.KeyUtil;
@@ -679,6 +680,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void onDetailFallbackScheduled() {
+        DebugLog.d("Vod", "开始自动换源");
         switching = true;
         Notify.show(R.string.detail_switching); // 一行提示就够，别盖全屏
         App.removeCallbacks(mR5);
@@ -707,6 +709,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void onSourceExhausted() {
+        DebugLog.d("Vod", "这一批源全空");
         switching = false;
         App.removeCallbacks(mR4);
         // 同一批搜索是逐站点返回的，空站点会反复走到这。
@@ -728,11 +731,13 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void showSwitchLine(Flag flag) {
+        DebugLog.d("Vod", "切换线路 " + flag.getFlag());
         Notify.show(getString(R.string.play_switch_flag, flag.getFlag()));
     }
 
     @Override
     public void showSwitchSource(Vod item) {
+        DebugLog.d("Vod", "切换站源 " + item.getSiteName());
         Notify.show(getString(R.string.play_switch_site, item.getSiteName()));
     }
 
@@ -886,6 +891,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void enterFullscreen() {
+        markUiBusy(); // 播放视图要换尺寸了，接下来两秒里播放器报的错不算数
         mFocus1 = getCurrentFocus();
         mBinding.video.requestFocus();
         mBinding.video.setForeground(null);
@@ -897,6 +903,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void exitFullscreen() {
+        markUiBusy(); // 同上：退出全屏时画面被重排，别把这当播放失败去换源
         mBinding.video.setForeground(ResUtil.getDrawable(R.drawable.selector_video));
         mBinding.video.setLayoutParams(mFrameParams);
         getFocus1().requestFocus();
@@ -1256,6 +1263,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     protected void onError(String msg) {
+        if (isFinishing() || isDestroyed()) return; // 页面都在退了，别再去自动换源
         mVod.playbackError(msg);
     }
 

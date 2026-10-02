@@ -130,6 +130,8 @@ public class CrashGuard {
             e.printStackTrace(pw);
             pw.flush();
             pw.close();
+            // 调试日志里也留一份：崩溃前后的动作连着看，比孤零零一个堆栈好认
+            com.fongmi.android.tv.utils.DebugLog.d("Crash", tag + " " + android.util.Log.getStackTraceString(e));
         } catch (Throwable ignored) {
         }
     }

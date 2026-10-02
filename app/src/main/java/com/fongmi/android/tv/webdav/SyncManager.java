@@ -22,6 +22,7 @@ import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Prefers;
 
@@ -146,13 +147,16 @@ public class SyncManager {
 
     private static void silent() {
         if (!busy.compareAndSet(false, true)) return;
+        SyncStatus.begin(R.string.sync_status_webdav); // 让用户在右下角看见这一趟在跑
         try {
             doSync();
             failures.set(0);
             dirty.set(false);
+            SyncStatus.finish(R.string.sync_status_webdav, true);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
             onFail();
+            SyncStatus.finish(R.string.sync_status_webdav, false);
         } finally {
             busy.set(false);
         }

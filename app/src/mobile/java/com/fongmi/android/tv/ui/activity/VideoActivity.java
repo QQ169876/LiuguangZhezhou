@@ -99,6 +99,7 @@ import com.fongmi.android.tv.ui.dialog.ReceiveDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Clock;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.Notify;
@@ -726,6 +727,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void onDetailFallbackScheduled() {
+        DebugLog.d("Vod", "开始自动换源");
         switching = true;
         Notify.show(R.string.detail_switching); // 一行提示就够，别盖全屏
         App.removeCallbacks(mR5);
@@ -753,6 +755,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void onSourceExhausted() {
+        DebugLog.d("Vod", "这一批源全空");
         switching = false;
         sourceExhausted = true;
         App.removeCallbacks(mR4);
@@ -774,11 +777,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void showSwitchLine(Flag flag) {
+        DebugLog.d("Vod", "切换线路 " + flag.getFlag());
         Notify.show(getString(R.string.play_switch_flag, flag.getFlag()));
     }
 
     @Override
     public void showSwitchSource(Vod item) {
+        DebugLog.d("Vod", "切换站源 " + item.getSiteName());
         Notify.show(getString(R.string.play_switch_site, item.getSiteName()));
     }
 
@@ -1151,6 +1156,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void enterFullscreen() {
         if (isFullscreen()) return;
+        markUiBusy(); // 视图要重排，这两秒里播放器报的错不算数
         setFullscreen(true);
         if (isLand() && !player().isPortrait()) setTransition();
         mBinding.video.setLayoutParams(new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT));
@@ -1164,6 +1170,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void exitFullscreen() {
         if (!isFullscreen()) return;
+        markUiBusy(); // 同上：退出全屏的抖动别被当成播放失败去换源
         setFullscreen(false);
         if (isLand() && !player().isPortrait()) setTransition();
         setRequestedOrientation(PlaybackOrientation.getExitFullscreenOrientation(isPort()));
@@ -1389,6 +1396,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     protected void onError(String msg) {
+        if (isFinishing() || isDestroyed()) return; // 页面都在退了，别再去自动换源
         mVod.playbackError(msg);
     }
 

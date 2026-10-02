@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.os.Build;
 
+import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.R;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -45,7 +48,146 @@ public class CrashReporter {
 
     /** 启动后调用：延迟 20 秒、后台线程执行 */
     public static void schedule(Context context) {
-        Task.schedule(() -> uploadPending(context.getApplicationContext()), 20, TimeUnit.SECONDS);
+        Context app = context.getApplicationContext();
+        Task.schedule(() -> {
+            uploadPending(app);
+            ping(app); // 自检：证明这条上传链路是通的
+        }, 20, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 自检心跳：每次启动往同一个目录写一份 ping_ 文件（同名覆盖，不攒垃圾）。
+     * 用处是分辨两种「看不到日志」：
+     *   目录里有 ping 却没有 crash → 上传是通的，说明真没留下 Java 堆栈（多半是内核 native 崩或被系统杀）；
+     *   连 ping 都没有 → 上传链路本身不通（网络、证书、权限），先修这个。
+     */
+    private static void ping(Context context) {
+        try {
+            String model = (Build.MANUFACTURER + "_" + Build.MODEL).replaceAll("[^\\w\\-一-鿿]", "_");
+            String head = "self-check: 上传链路自检，不是崩溃日志\n"
+                    + "time: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()) + "\n"
+                    + "device: " + Build.MANUFACTURER + " " + Build.MODEL + " api" + Build.VERSION.SDK_INT + "\n"
+                    + "version: " + version(context) + "\n"
+                    + "pending: " + pending(context) + " 份没传出去的日志\n";
+            byte[] data = head.getBytes(StandardCharsets.UTF_8);
+            for (String dav : DAVS) {
+                if (request("MKCOL", dav + UriEncoder.encode(FOLDER), null) < 0) continue;
+                int code = request("PUT", dav + UriEncoder.encode(FOLDER + "ping_" + version(context) + "_" + model + ".txt"), data);
+                if (code >= 200 && code < 300) return;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String version(Context context) {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Throwable e) {
+            return "unknown";
+        }
+    }
+
+    private static int pending(Context context) {
+        File[] files = list(context);
+        return files == null ? 0 : files.length;
+    }
+
+    /**
+     * 设置页「上传日志」按钮：当场传一次，把结果（成功走的是 https 还是 http、传了几份）弹出来。
+     * 专门用来验证某台设备（尤其 Android 6 老盒子）这条上传链路到底通不通——
+     * 老设备信任库里没有 GTS 根，https 会静默失败，所以退到 http，结果里会写明走的哪条。
+     */
+    public static void manual(Context context) {
+        Task.execute(() -> {
+            String result = runManual(context.getApplicationContext());
+            App.post(() -> Notify.show(result));
+        });
+    }
+
+    private static String runManual(Context context) {
+        String error = "";
+        for (String dav : DAVS) {
+            try {
+                int code = mkdirs(dav);
+                if (code < 0) {
+                    error = "MKCOL " + code;
+                    continue;
+                }
+                int crash = uploadCrash(context, dav);
+                int debug = uploadDebug(context, dav);
+                int ping = putText(context, dav, "manual_" + version(context) + "_" + model() + ".txt", manualBody(context));
+                if (ping < 200 || ping >= 300) {
+                    error = "PUT " + ping;
+                    continue;
+                }
+                return ResUtil.getString(R.string.debug_upload_ok, scheme(dav), crash + debug);
+            } catch (Throwable e) {
+                error = String.valueOf(e.getMessage());
+            }
+        }
+        return ResUtil.getString(R.string.debug_upload_fail, error);
+    }
+
+    private static String scheme(String dav) {
+        return dav.startsWith("https") ? "https" : "http";
+    }
+
+    private static String model() {
+        return (Build.MANUFACTURER + "_" + Build.MODEL).replaceAll("[^\\w\\-一-鿿]", "_");
+    }
+
+    private static String manualBody(Context context) {
+        return "self-check: 手动上传测试，不是崩溃日志\n"
+                + "time: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()) + "\n"
+                + "device: " + Build.MANUFACTURER + " " + Build.MODEL + " api" + Build.VERSION.SDK_INT + " abi=" + Build.CPU_ABI + "\n"
+                + "version: " + version(context) + "\n"
+                + "debug_log: " + (DebugLog.isEnabled() ? DebugLog.size() + " 字节" : "未开启") + "\n"
+                + "pending: " + pending(context) + " 份没传出去的日志\n";
+    }
+
+    /** 传调试日志（开着调试模式才有），返回传了几份 */
+    private static int uploadDebug(Context context, String dav) {
+        try {
+            if (!DebugLog.isEnabled()) return 0;
+            File f = DebugLog.file();
+            if (f == null || !f.exists() || f.length() == 0) return 0;
+            byte[] data = readTail(f, 1024 * 1024); // 太大就只传最后 1MB，最新那段才有用
+            String name = "debug_" + version(context) + "_" + model() + "_" + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date()) + ".txt";
+            int code = request("PUT", dav + UriEncoder.encode(FOLDER + name), data);
+            return code >= 200 && code < 300 ? 1 : 0;
+        } catch (Throwable e) {
+            return 0;
+        }
+    }
+
+    private static int uploadCrash(Context context, String dav) {
+        File[] files = list(context);
+        if (files == null || files.length == 0) return 0;
+        int count = 0;
+        for (File f : files) {
+            if (count >= MAX_FILES) break;
+            if (!upload(dav, f, remoteName(context, f))) break;
+            f.delete();
+            count++;
+        }
+        return count;
+    }
+
+    private static int putText(Context context, String dav, String name, String body) throws IOException {
+        return request("PUT", dav + UriEncoder.encode(FOLDER + name), body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] readTail(File f, int max) {
+        try (InputStream in = new FileInputStream(f)) {
+            long skip = Math.max(0, f.length() - max);
+            if (skip > 0 && in.skip(skip) != skip) return null;
+            int len = (int) Math.min(f.length(), max);
+            byte[] data = new byte[len];
+            int n = in.read(data);
+            return n <= 0 ? null : (n == data.length ? data : Arrays.copyOf(data, n));
+        } catch (Throwable e) {
+            return null;
+        }
     }
 
     /** 崩溃刚被兜住、进程还活着时立刻传一次：不等下次启动，重启了可能就被卸/重装冲掉 */
@@ -89,6 +231,7 @@ public class CrashReporter {
                 f.delete();
                 count++;
             }
+            uploadDebug(context, dav); // 开了调试模式就顺带把流水账传上去，崩之前干了什么一目了然
             return true;
         } catch (Throwable e) {
             return false;

@@ -13,7 +13,10 @@ import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
 
 import com.fongmi.android.tv.utils.CrashReporter;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.PlayWatchdog;
+import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.hook.Hook;
 import com.fongmi.android.tv.exception.CrashGuard;
 import com.fongmi.android.tv.moontv.MoonSync;
@@ -88,7 +91,9 @@ public class App extends Application implements Application.ActivityLifecycleCal
         super.onCreate();
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
+        SyncStatus.install(this); // 同步状态浮层要跟着页面走，先挂上生命周期
         CrashGuard.install();
+        PlayWatchdog.check(); // 上次是不是「播着播着就没了」：是的话留一份日志并（MPV 时）自动降级
         CrashReporter.schedule(this); // 上次的崩溃日志后台回传归档网盘，传完即删
         SyncManager.boot();
         MoonSync.boot();
@@ -109,19 +114,23 @@ public class App extends Application implements Application.ActivityLifecycleCal
         CrashGuard.reassert(); // 加固壳可能在任意时刻抢走默认兜底，见 CrashGuard.reassert 注释
         CrashReporter.tick(this); // 有些崩溃不重启进程，借页面恢复把日志补传出去
         if (activity != activity()) this.activity = activity;
+        DebugLog.d("Lifecycle", name(activity) + " onResume");
     }
 
     @Override
     public void onActivityPaused(@NonNull Activity activity) {
         if (activity == activity()) this.activity = null;
+        DebugLog.d("Lifecycle", name(activity) + " onPause");
     }
 
     @Override
     public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+        DebugLog.d("Lifecycle", name(activity) + " onCreate");
     }
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
+        DebugLog.d("Lifecycle", name(activity) + " onDestroy");
     }
 
     @Override
@@ -131,11 +140,17 @@ public class App extends Application implements Application.ActivityLifecycleCal
     @Override
     public void onActivityStarted(@NonNull Activity activity) {
         ++foreground;
+        DebugLog.d("Lifecycle", name(activity) + " onStart");
     }
 
     @Override
     public void onActivityStopped(@NonNull Activity activity) {
+        DebugLog.d("Lifecycle", name(activity) + " onStop");
         if (--foreground > 0) return;
         MoonSync.exit(); // 退到后台时补一次同步
+    }
+
+    private static String name(Activity activity) {
+        return activity == null ? "null" : activity.getClass().getSimpleName();
     }
 }
