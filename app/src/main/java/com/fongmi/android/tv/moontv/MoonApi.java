@@ -38,6 +38,19 @@ public class MoonApi {
         cookie = "";
     }
 
+    /**
+     * 同步收工：把这次用的连接全部掐掉。
+     * 老设备（MStar 安卓6 32位）在影视站同步做完之后几秒，进程会毫无征兆地死掉——
+     * 没有 Java 堆栈、内存也不紧张，死前最后一步又全跑完了，只剩这批还挂在池子里保活的连接
+     * （默认存活 5 分钟）。收工就关掉，下次重连慢几十毫秒，换一个可能的活命机会。
+     */
+    public static void release() {
+        try {
+            client.connectionPool().evictAll();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static String api(String path) throws IOException {
         String base = MoonSetting.getBase();
         if (base.isEmpty()) throw new IOException("Address is empty");

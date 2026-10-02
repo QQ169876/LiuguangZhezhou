@@ -128,6 +128,12 @@ public class CustomWallView extends FrameLayout implements DefaultLifecycleObser
     }
 
     private void loadVideo(File file) {
+        // 视频壁纸用的是 TextureView，它必须靠硬件加速才画得出来；
+        // 页面改成软件渲染后（老盒子防渲染崩溃）强行播只会留一块黑，不如退回静态背景。
+        if (!isHardwareAccelerated()) {
+            loadImage();
+            return;
+        }
         ensurePlayer();
         ensureVideoView();
         video.setPlayer(player);

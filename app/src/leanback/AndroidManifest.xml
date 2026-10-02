@@ -26,10 +26,14 @@
             android:name="design_height_in_dp"
             android:value="540" />
 
+        <!-- 老盒子/投影（MStar api23 32位）上进程会毫无征兆地死掉：无 Java 堆栈、无内存警告，
+             死前最后一次动作都在非播放页（海报墙滚动、Toast、对话框）——指向 GPU 驱动的渲染崩溃。
+             这两个页面改用软件渲染绕开它；视频/直播/投屏画面走独立 surface，不受影响，仍走硬件加速。 -->
         <activity
             android:name=".ui.activity.HomeActivity"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:exported="true"
+            android:hardwareAccelerated="false"
             android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.Splash">
@@ -158,6 +162,7 @@
         <activity
             android:name=".ui.activity.SettingActivity"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:hardwareAccelerated="false"
             android:screenOrientation="sensorLandscape" />
 
         <activity

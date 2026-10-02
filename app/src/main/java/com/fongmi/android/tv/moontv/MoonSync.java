@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.utils.AliveBeat;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -268,12 +269,16 @@ public class MoonSync {
             return;
         } finally {
             busy.set(false);
+            beatOff(); // 失败路径原来没停，心跳线程会一直转下去，日志被它刷满
+            // 同步收工：把这次用的连接全部掐掉。老设备上「同步做完几秒后进程无声死亡」
+            // 死前活儿全干完了，只剩这批保活连接还没散，收工就先关掉。
+            MoonApi.release();
+            AliveBeat.fast(); // 死亡都发生在收尾后的几秒里，这段时间日志打细一点
         }
         failures.set(0);
         String result = message;
         beat("结果已返回");
         done(listener, true, result);
-        beatOff();
     }
 
     /* ---------- 埋点心跳：定位「写库后必崩」到底死在哪一步 ---------- */

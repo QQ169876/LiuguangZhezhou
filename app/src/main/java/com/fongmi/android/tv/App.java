@@ -12,6 +12,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
 
+import com.fongmi.android.tv.utils.AliveBeat;
 import com.fongmi.android.tv.utils.CrashReporter;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
@@ -96,6 +97,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         watchMemory(); // 系统内存吃紧/回收时留一条带堆大小的记录，用来分辨是被系统杀还是 native 崩
         PlayWatchdog.check(); // 上次是不是「播着播着就没了」：是的话留一份日志并（MPV 时）自动降级
         CrashReporter.schedule(this); // 上次的崩溃日志后台回传归档网盘，传完即删
+        AliveBeat.start(); // 存活心跳：进程无声消失时，日志里最后一行就是死亡时刻
         SyncManager.boot();
         MoonSync.boot();
     }
