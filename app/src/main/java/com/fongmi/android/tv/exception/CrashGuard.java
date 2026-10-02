@@ -101,6 +101,8 @@ public class CrashGuard {
         e.printStackTrace();
         android.util.Log.w("CrashGuard", "Drop " + where + " crash from spider jar: " + e);
         dump(Thread.currentThread(), e, "swallow:" + where); // 吞掉的也留一份，第三方 jar 的锅一样要看
+        // 此刻进程还活着，马上试传一次：只等下次启动的话，中间一重装日志就没了
+        com.fongmi.android.tv.utils.CrashReporter.flush();
     }
 
     /** 把崩溃堆栈写到私有目录（免存储权限），任何一步失败都静默，绝不影响原有崩溃流程。 */
@@ -123,10 +125,22 @@ public class CrashGuard {
             pw.println("tag: " + tag);
             pw.println("thread: " + thread.getName());
             pw.println("version: " + com.fongmi.android.tv.BuildConfig.VERSION_NAME + " (" + com.fongmi.android.tv.BuildConfig.VERSION_CODE + ")");
+            pw.println("device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + " api" + android.os.Build.VERSION.SDK_INT);
+            pw.println("page: " + page()); // 崩在哪个页面，换源/播放这类问题一眼能认
             e.printStackTrace(pw);
             pw.flush();
             pw.close();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 当前在最上面的页面，拿不到就算了 */
+    private static String page() {
+        try {
+            android.app.Activity act = com.fongmi.android.tv.App.activity();
+            return act == null ? "none" : act.getClass().getSimpleName();
+        } catch (Throwable e) {
+            return "unknown";
         }
     }
 

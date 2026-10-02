@@ -48,6 +48,14 @@ public class CrashReporter {
         Task.schedule(() -> uploadPending(context.getApplicationContext()), 20, TimeUnit.SECONDS);
     }
 
+    /** 崩溃刚被兜住、进程还活着时立刻传一次：不等下次启动，重启了可能就被卸/重装冲掉 */
+    public static void flush() {
+        try {
+            Task.execute(() -> uploadPending(com.fongmi.android.tv.App.get()));
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 任意页面恢复时补一次：有些崩溃不会重启进程，只有这一趟能把它传出去 */
     public static synchronized void tick(Context context) {
         long now = System.currentTimeMillis();
