@@ -118,7 +118,8 @@ public class MoonDialog extends BaseBottomSheetDialog {
         }
         long time = MoonSetting.getLast();
         if (time == 0) binding.last.setText(R.string.moontv_off);
-        else binding.last.setText(getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
+        // 用 App 的上下文取串：同步结果回来得晚，那时候对话框可能已经关了，Fragment 已分离，getString() 会直接崩
+        else binding.last.setText(App.get().getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
     }
 
     private void save(boolean hint) {
@@ -230,7 +231,8 @@ public class MoonDialog extends BaseBottomSheetDialog {
             DebugLog.d("Sync", "结果回调 弹提示 " + message);
             Notify.show(message);
             DebugLog.d("Sync", "结果回调 提示已弹");
-            setLastText();
+            // 对话框可能已经关了：binding 还在不代表 Fragment 还挂着，两个都要看
+            if (isAdded() && binding != null) setLastText();
             DebugLog.d("Sync", "结果回调 收尾完成");
         };
     }

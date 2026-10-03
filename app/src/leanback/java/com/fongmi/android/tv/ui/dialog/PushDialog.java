@@ -82,8 +82,14 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
         scanner.start();
     }
 
+    /** 扫描是在后台跑的，结果 post 回来时对话框可能已经关了，那时候就别再动界面了 */
+    private boolean gone() {
+        return binding == null || !isAdded();
+    }
+
     @Override
     public void onFound(Device item) {
+        if (gone()) return;
         adapter.add(item);
         binding.empty.setVisibility(View.GONE);
         binding.info.setText(ResUtil.getString(R.string.lan_found, adapter.getItemCount()));
@@ -91,11 +97,13 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
 
     @Override
     public void onProgress(int done, int total) {
+        if (gone()) return;
         binding.info.setText(ResUtil.getString(R.string.lan_scanning, done, total));
     }
 
     @Override
     public void onEnd(int count) {
+        if (gone()) return;
         binding.progress.setVisibility(View.GONE);
         if (adapter.getItemCount() == 0) {
             binding.empty.setVisibility(View.VISIBLE);

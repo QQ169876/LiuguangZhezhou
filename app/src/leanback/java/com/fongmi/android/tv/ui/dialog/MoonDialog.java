@@ -98,6 +98,7 @@ public class MoonDialog extends BaseAlertDialog {
     private void askOnClose(int message, boolean need) {
         FragmentActivity activity = getActivity();
         if (asked || !need) return;
+        if (!isAdded() || isRemoving()) return;
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         asked = true;
         SyncRiskDialog.show(activity, message, () -> SyncDirectionDialog.show(activity, direction -> onDirection(activity, direction)));
@@ -110,7 +111,8 @@ public class MoonDialog extends BaseAlertDialog {
         }
         long time = MoonSetting.getLast();
         if (time == 0) binding.last.setText(R.string.moontv_off);
-        else binding.last.setText(getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
+        // 用 App 的上下文取串：同步结果回来得晚，那时候对话框可能已经关了，Fragment 已分离，getString() 会直接崩
+        else binding.last.setText(App.get().getString(R.string.moontv_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
     }
 
     private void save() {
@@ -202,8 +204,8 @@ public class MoonDialog extends BaseAlertDialog {
 
     private void onDirection(int direction) {
         checkSwitch();
-        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，requireActivity() 会直接崩
-        Notify.progress(this);
+        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，转圈框也要跟着 Fragment 走，没附加就别弹
+        if (isAdded()) Notify.progress(this);
         if (direction == SyncDirectionDialog.CLOUD) MoonSync.pull(getListener());
         else if (direction == SyncDirectionDialog.LOCAL) MoonSync.push(getListener());
         else MoonSync.sync(getListener());
@@ -225,7 +227,8 @@ public class MoonDialog extends BaseAlertDialog {
             DebugLog.d("Sync", "结果回调 弹提示 " + message);
             Notify.show(message);
             DebugLog.d("Sync", "结果回调 提示已弹");
-            if (binding != null) setLastText();
+            // 对话框可能已经关了：binding 还在不代表 Fragment 还挂着，两个都要看
+            if (isAdded() && binding != null) setLastText();
             DebugLog.d("Sync", "结果回调 收尾完成");
         };
     }
