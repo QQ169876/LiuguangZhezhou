@@ -592,9 +592,9 @@
     <string name="clear_done_all">已清除全部資料，正在重啟</string>
     <string name="detail_switching">請稍等，正在為您切換其他源。</string>
     <string name="detail_all_failed">真的什麼也找不到，返回看其他的吧</string>
-    <string name="sync_status_webdav">影視站(webdav)</string>
-    <string name="sync_status_moontv">影視站(moontv)</string>
-    <string name="sync_status_running">正在同步…</string>
-    <string name="sync_status_done">同步完成</string>
-    <string name="sync_status_fail">同步失敗</string>
+    <string name="sync_status_webdav">WebDAV</string>
+    <string name="sync_status_moontv">影視站</string>
+    <string name="sync_status_running">%1$s同步中…</string>
+    <string name="sync_status_done">%1$s同步完成</string>
+    <string name="sync_status_fail">%1$s同步失敗</string>
 </resources>

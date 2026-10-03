@@ -602,9 +602,9 @@
     <string name="clear_done_all">All data cleared, restarting</string>
     <string name="detail_switching">Please wait, switching to another source…</string>
     <string name="detail_all_failed">Nothing found on any source. Try something else.</string>
-    <string name="sync_status_webdav">Site (webdav) </string>
-    <string name="sync_status_moontv">Site (moontv) </string>
-    <string name="sync_status_running">is syncing…</string>
-    <string name="sync_status_done">sync finished</string>
-    <string name="sync_status_fail">sync failed</string>
+    <string name="sync_status_webdav">WebDAV</string>
+    <string name="sync_status_moontv">Site</string>
+    <string name="sync_status_running">%1$s is syncing…</string>
+    <string name="sync_status_done">%1$s sync finished</string>
+    <string name="sync_status_fail">%1$s sync failed</string>
 </resources>

@@ -32,6 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.CacheControl;
 import okhttp3.Request;
 import okhttp3.Response;
 
@@ -47,6 +48,11 @@ public class Updater implements Download.Callback, UpdateListener {
     private static final int SPEED_LIMIT = 3;
     private static final int SPEED_TIMEOUT = 8000;
     private static final int SPEED_BYTES = 384 * 1024;
+    /** App 一启动就先探一次版本文件，探到的结果在这段时间内可以直接拿来用 */
+    private static final long WARM_TTL = 60 * 1000;
+
+    private static volatile List<Probe> warm; // 启动时预热探到的线路结果
+    private static volatile long warmAt;
 
     private final List<Probe> backup = new ArrayList<>();
 
@@ -70,7 +76,7 @@ public class Updater implements Download.Callback, UpdateListener {
         return Path.cache("update.apk");
     }
 
-    private String getJson() {
+    private static String getJson() {
         return Github.getJson(BuildConfig.FLAVOR_mode);
     }
 
@@ -78,9 +84,35 @@ public class Updater implements Download.Callback, UpdateListener {
      * 版本文件带个时间戳再取：公益代理会缓存 raw 内容，
      * 不带这个参数改了更新说明可能还拿到旧的。
      */
-    private String getJsonUrl() {
+    private static String getJsonUrl() {
         String url = getJson();
         return url + (url.contains("?") ? "&" : "?") + "_t=" + System.currentTimeMillis();
+    }
+
+    /**
+     * 版本检测提前：App 一启动就先探一次版本文件（走独立线程，不跟首页的请求挤），
+     * 等首页或设置页真要检查更新时，直接拿这份新鲜结果用，弹框不用再干等网络。
+     * 探不到也无妨，原来该怎么走还怎么走。
+     */
+    public static void prewarm() {
+        if (!Setting.getUpdate()) return;
+        if (warm != null && System.currentTimeMillis() - warmAt < WARM_TTL) return;
+        new Thread(() -> {
+            try {
+                List<Probe> probes = probeAll(getRoutes(), getJsonUrl());
+                if (probes.isEmpty()) return;
+                warm = probes;
+                warmAt = System.currentTimeMillis();
+            } catch (Throwable ignored) {
+            }
+        }, "update-warm").start();
+    }
+
+    /** 预热结果还新鲜就拿过来用，省掉一次探测 */
+    private static List<Probe> fresh() {
+        if (warm == null) return null;
+        if (System.currentTimeMillis() - warmAt > WARM_TTL) return null;
+        return warm.isEmpty() ? null : warm;
     }
 
     private String getApk(String tag) {
@@ -90,6 +122,7 @@ public class Updater implements Download.Callback, UpdateListener {
 
     public Updater force() {
         forced = true;
+        warm = null; // 手动点的「检查更新」必须真去问一次，不能用启动时那份
         Notify.show(R.string.update_check);
         Setting.putUpdate(true);
         return this;
@@ -102,7 +135,8 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private void doInBackground(FragmentActivity activity) {
         try {
-            List<Probe> probes = probeAll(getRoutes(), getJsonUrl());
+            List<Probe> probes = fresh(); // 启动预热探到的那份还新鲜就直接用
+            if (probes == null) probes = probeAll(getRoutes(), getJsonUrl());
             if (probes.isEmpty()) return;
             JSONObject object = new JSONObject(probes.get(0).body);
             String name = object.optString("name");
@@ -135,7 +169,7 @@ public class Updater implements Download.Callback, UpdateListener {
     /**
      * 参与探测的线路：手动锁定的那条排在最前，后面是所有候选
      */
-    private List<String> getRoutes() {
+    private static List<String> getRoutes() {
         List<String> routes = new ArrayList<>();
         String fixed = GhRoute.fixed();
         if (fixed != null) routes.add(fixed);
@@ -179,7 +213,7 @@ public class Updater implements Download.Callback, UpdateListener {
     /**
      * 并发探测各条线路能不能取到版本文件，按耗时排序
      */
-    private List<Probe> probeAll(List<String> routes, String url) {
+    private static List<Probe> probeAll(List<String> routes, String url) {
         List<Probe> result = new ArrayList<>();
         if (routes.isEmpty()) return result;
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(routes.size(), 8));
@@ -197,9 +231,16 @@ public class Updater implements Download.Callback, UpdateListener {
         return result;
     }
 
-    private Probe probe(String route, String url) {
+    private static Probe probe(String route, String url) {
         long start = System.currentTimeMillis();
-        try (Response res = GhRoute.probe(route, PROBE_TIMEOUT).newCall(new Request.Builder().url(GhRoute.wrap(route, url)).get().build()).execute()) {
+        // 版本文件绝不能拿缓存的：时间戳参数（getJsonUrl）只挡得住按 URL 缓存的代理，
+        // 这里再补两个 no-cache 头 + 强制走网络，挡住忽略查询串、只按路径缓存的那种代理
+        Request request = new Request.Builder().url(GhRoute.wrap(route, url))
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .get().build();
+        try (Response res = GhRoute.probe(route, PROBE_TIMEOUT).newCall(request).execute()) {
             if (!res.isSuccessful() || res.body() == null) return null;
             String body = res.body().string();
             // 校验拿到的确实是版本文件，避免某些代理返回网页却给了 200

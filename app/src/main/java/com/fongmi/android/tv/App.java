@@ -93,6 +93,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
         SyncStatus.install(this); // 同步状态浮层要跟着页面走，先挂上生命周期
+        Updater.prewarm(); // 版本检测提前：先悄悄探一次版本文件，等进首页要检查更新时直接出结果
         CrashGuard.install();
         watchMemory(); // 系统内存吃紧/回收时留一条带堆大小的记录，用来分辨是被系统杀还是 native 崩
         PlayWatchdog.check(); // 上次是不是「播着播着就没了」：是的话留一份日志并（MPV 时）自动降级

@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -17,18 +18,23 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 
 /**
  * 同步状态小浮层：右下角一小条，告诉用户后台正在同步、同步完了还是没同步成。
  *
- * 两路同步（影视站 webdav / 影视站 moontv）各占一行：哪个在跑就显示哪个，
- * 两个都在跑就两行一起亮，互不顶替。每行出结果后亮 2.5 秒就收掉自己那行。
+ * 两路同步各占一格：WebDAV 那路写「WebDAV同步中… / WebDAV同步完成 / WebDAV同步失败」，
+ * 影视站那路写「影视站同步中… / 影视站同步完成 / 影视站同步失败」；
+ * 只启用哪路就只显示哪路，两路都启用就各自一格、左右并排，互不顶替也绝不叠在一起
+ * （马先生 2026-10-03 定的）。每一路出结果后亮 2.5 秒就收掉自己那一格。
  *
  * 三条规矩：
  * 1. 播放页不显示（正看着片子，右下角冒个框很烦）；
- * 2. 完成后自动消失，不常驻（到期把这一行的状态整个删掉，切页面也不会再冒出来）；
+ * 2. 完成后自动消失，不常驻（到期把这一路的状态整个删掉，切页面也不会再冒出来）；
  * 3. 不抢焦点——TV 上焦点一乱，遥控器就不好使了。
  */
 public class SyncStatus implements Application.ActivityLifecycleCallbacks {
@@ -38,30 +44,33 @@ public class SyncStatus implements Application.ActivityLifecycleCallbacks {
 
     private static final SyncStatus INSTANCE = new SyncStatus();
 
-    /** 一路同步的一行状态 */
+    /** 一路同步的一格状态 */
     private static final class Row {
         String text;
-        Runnable hide; // 到期收掉这一行
+        Runnable hide; // 到期收掉这一格
     }
 
     private final Map<Integer, Row> rows = new LinkedHashMap<>(); // key = 来源的 labelRes，保持先来后到
     private WeakReference<Activity> host;
-    private TextView view;
+    private LinearLayout bar; // 装状态格的横条容器，靠右下角；两路都在就左右并排
 
     public static void install(Context context) {
         Context app = context.getApplicationContext();
         if (app instanceof Application) ((Application) app).registerActivityLifecycleCallbacks(INSTANCE);
     }
 
-    /** 同步开始：labelRes 是「影视站(webdav)」「影视站(moontv)」这类来源名 */
+    /**
+     * 同步开始：labelRes 是来源名（WebDAV / 影视站），浮层写「影视站同步中…」这种。
+     * 用格式化字符串拼，中文不空格、英文带空格，各语言自己说了算。
+     */
     public static void begin(@StringRes int labelRes) {
-        String msg = ResUtil.getString(labelRes) + ResUtil.getString(R.string.sync_status_running);
+        String msg = String.format(ResUtil.getString(R.string.sync_status_running), ResUtil.getString(labelRes));
         App.post(() -> INSTANCE.update(labelRes, msg, true));
     }
 
-    /** 同步结束：成功亮「同步完成」，失败亮「同步失败」 */
+    /** 同步结束：成功亮「…同步完成」，失败亮「…同步失败」 */
     public static void finish(@StringRes int labelRes, boolean success) {
-        String msg = ResUtil.getString(labelRes) + ResUtil.getString(success ? R.string.sync_status_done : R.string.sync_status_fail);
+        String msg = String.format(ResUtil.getString(success ? R.string.sync_status_done : R.string.sync_status_fail), ResUtil.getString(labelRes));
         App.post(() -> INSTANCE.update(labelRes, msg, false));
     }
 
@@ -90,33 +99,39 @@ public class SyncStatus implements Application.ActivityLifecycleCallbacks {
             detach();
             return;
         }
-        StringBuilder sb = new StringBuilder();
+        // 一路一格：按先来后到排出各自的文字，两路都在就并排两格
+        LinkedHashSet<String> items = new LinkedHashSet<>();
         for (Row row : rows.values()) {
-            if (sb.length() > 0) sb.append('\n');
-            sb.append(row.text);
+            if (row.text != null && row.text.length() > 0) items.add(row.text);
         }
         Activity act = App.activity();
         if (act == null) return;
-        attach(act, sb.toString());
+        attach(act, new ArrayList<>(items));
     }
 
-    private void attach(Activity act, String text) {
+    private void attach(Activity act, List<String> texts) {
         try {
-            if (skip(act)) return;
+            if (skip(act) || texts.isEmpty()) return;
             Activity old = host == null ? null : host.get();
             if (old != null && old != act) {
-                if (view != null && view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
-                view = null;
+                if (bar != null && bar.getParent() instanceof ViewGroup) ((ViewGroup) bar.getParent()).removeView(bar);
+                bar = null;
             }
             host = new WeakReference<>(act);
-            if (view == null) view = create(act);
-            view.setText(text);
-            if (view.getParent() == null) {
+            if (bar == null) bar = createBar(act);
+            bar.removeAllViews();
+            int gap = (int) (8 * act.getResources().getDisplayMetrics().density);
+            for (int i = 0; i < texts.size(); i++) {
+                LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                if (i > 0) ip.leftMargin = gap; // 格与格之间留缝，绝不叠在一起
+                bar.addView(createItem(act, texts.get(i)), ip);
+            }
+            if (bar.getParent() == null) {
                 ViewGroup root = act.findViewById(android.R.id.content);
                 if (root == null) return;
-                root.addView(view, params());
+                root.addView(bar, params());
             }
-            view.setVisibility(View.VISIBLE);
+            bar.setVisibility(View.VISIBLE);
         } catch (Throwable ignored) {
             // 状态条只是提示，任何机器上加不上去都不许把 App 带崩
         }
@@ -124,25 +139,39 @@ public class SyncStatus implements Application.ActivityLifecycleCallbacks {
 
     /** 只摘 view，不动 rows：正在跑的同步切了页面还得接着显示，到期自清 */
     private void detach() {
-        if (view == null) return;
-        view.setVisibility(View.GONE);
-        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
-        view = null;
+        if (bar == null) return;
+        bar.setVisibility(View.GONE);
+        if (bar.getParent() instanceof ViewGroup) ((ViewGroup) bar.getParent()).removeView(bar);
+        bar = null;
         host = null;
     }
 
-    private TextView create(Context context) {
-        TextView tv = new TextView(context);
-        tv.setBackgroundResource(R.drawable.sync_status_bg);
-        tv.setTextColor(0xFFFFFFFF);
-        tv.setTextSize(12);
-        tv.setFocusable(false);
-        tv.setFocusableInTouchMode(false);
-        tv.setClickable(true);
-        tv.setOnClickListener(v -> {
+    /** 外层横条：靠右下角，里面一格一路 */
+    private LinearLayout createBar(Context context) {
+        LinearLayout ll = new LinearLayout(context);
+        ll.setOrientation(LinearLayout.HORIZONTAL);
+        ll.setGravity(Gravity.CENTER_VERTICAL);
+        ll.setFocusable(false);
+        ll.setFocusableInTouchMode(false);
+        ll.setClickable(true);
+        ll.setOnClickListener(v -> {
             rows.clear(); // 不想看就点掉，连状态一起清，别过会儿又冒出来
             detach();
         });
+        return ll;
+    }
+
+    /** 一格：一个独立的状态条，自带底色和外框 */
+    private TextView createItem(Context context, String text) {
+        TextView tv = new TextView(context);
+        tv.setText(text);
+        tv.setBackgroundResource(R.drawable.sync_status_bg);
+        tv.setTextColor(0xFFFFFFFF);
+        tv.setTextSize(12);
+        tv.setSingleLine(true);
+        tv.setFocusable(false);
+        tv.setFocusableInTouchMode(false);
+        tv.setClickable(false); // 点击交给外层容器，点哪儿都算点掉整条
         int pad = (int) (10 * context.getResources().getDisplayMetrics().density);
         tv.setPadding(pad * 2, pad, pad * 2, pad);
         return tv;
