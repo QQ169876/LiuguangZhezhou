@@ -498,6 +498,9 @@
     <string name="update_check">Checking for updates…</string>
     <string name="update_confirm">Update</string>
     <string name="update_latest">Already up to date</string>
+    <string name="update_check_fail">Can\'t reach the update server. Check the network and try again.</string>
+    <string name="update_checking">Still checking, please wait…</string>
+    <string name="update_prepare_fail">Download route not ready yet, tap update again.</string>
     <string name="update_install_fail">Can\'t open the installer. Please install it manually.</string>
     <string name="update_bad_package">The downloaded package is incomplete. Please update again.</string>
     <string name="setting_route">Update route</string>

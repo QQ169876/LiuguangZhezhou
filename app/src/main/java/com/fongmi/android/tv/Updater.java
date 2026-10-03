@@ -1,11 +1,17 @@
 package com.fongmi.android.tv;
 
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.os.Build;
 import android.view.View;
 
+import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.impl.UpdateListener;
@@ -17,7 +23,6 @@ import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Github;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
-import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Prefers;
 
@@ -50,9 +55,21 @@ public class Updater implements Download.Callback, UpdateListener {
     private static final int SPEED_BYTES = 384 * 1024;
     /** App 一启动就先探一次版本文件，探到的结果在这段时间内可以直接拿来用 */
     private static final long WARM_TTL = 60 * 1000;
+    /** 探测总时限：线路有十条左右，不能让一条半死不活的把整体拖到十几秒 */
+    private static final int PROBE_DEADLINE = 8000;
+    /** 上一轮检查超过这么久还没收工，就当它卡死了，放行新一轮 */
+    private static final long BUSY_TIMEOUT = 60 * 1000;
+    /** 网络一恢复就补探，但别被网络抖动反复触发 */
+    private static final long WARM_RETRY_GAP = 30 * 1000;
+    /** 弹框后给用户挑线路的最长等待：这段时间里每 1 秒看一眼好没好 */
+    private static final int PREPARE_RETRY = 10;
 
     private static volatile List<Probe> warm; // 启动时预热探到的线路结果
     private static volatile long warmAt;
+    private static volatile long warmTry;
+    private static volatile boolean watched;
+    private static volatile boolean busy;    // 正在检查标记：连点不会叠好几轮
+    private static volatile long busyAt;
 
     private final List<Probe> backup = new ArrayList<>();
 
@@ -108,6 +125,42 @@ public class Updater implements Download.Callback, UpdateListener {
         }, "update-warm").start();
     }
 
+    /**
+     * 网络恢复补探：刚开机那一刻 Wi-Fi 常常还没连上，App 启动时那次预热就是白跑的，
+     * 结果只能等到进首页才查。这里盯着网络，一通上来就补探一次。
+     * 注册完一直挂着，跟进程同寿，不用注销。
+     */
+    public static void watch() {
+        if (watched) return;
+        watched = true;
+        try {
+            ConnectivityManager manager = (ConnectivityManager) App.get().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return;
+            NetworkRequest request = new NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build();
+            manager.registerNetworkCallback(request, new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(@NonNull Network network) {
+                    retryWarm();
+                }
+
+                @Override
+                public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities capabilities) {
+                    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) retryWarm();
+                }
+            });
+        } catch (Throwable ignored) {
+            // 个别设备上这一步会甩 SecurityException，注册不上就还按老样子走，不值当崩
+        }
+    }
+
+    private static void retryWarm() {
+        if (!Setting.getUpdate()) return;
+        long now = System.currentTimeMillis();
+        if (now - warmTry < WARM_RETRY_GAP) return;
+        warmTry = now;
+        prewarm();
+    }
+
     /** 预热结果还新鲜就拿过来用，省掉一次探测 */
     private static List<Probe> fresh() {
         if (warm == null) return null;
@@ -130,14 +183,40 @@ public class Updater implements Download.Callback, UpdateListener {
 
     public void start(FragmentActivity activity) {
         if (!Setting.getUpdate()) return;
-        Task.execute(() -> doInBackground(activity));
+        if (!enter()) {
+            // 上一轮还没跑完。手动点的时候说一声，别让人以为没点到又连着点
+            if (forced) App.post(() -> Notify.show(R.string.update_checking));
+            return;
+        }
+        // 走自己的线程：Task 那个池子首页也在用，挤上去可能排队排到几十秒后
+        new Thread(() -> {
+            try {
+                doInBackground(activity);
+            } finally {
+                busy = false;
+            }
+        }, "update-check").start();
+    }
+
+    /** 一次只跑一轮检查；上一轮真卡死了也别把更新功能憋死 */
+    private static boolean enter() {
+        long now = System.currentTimeMillis();
+        if (busy && now - busyAt < BUSY_TIMEOUT) return false;
+        busy = true;
+        busyAt = now;
+        return true;
     }
 
     private void doInBackground(FragmentActivity activity) {
         try {
             List<Probe> probes = fresh(); // 启动预热探到的那份还新鲜就直接用
             if (probes == null) probes = probeAll(getRoutes(), getJsonUrl());
-            if (probes.isEmpty()) return;
+            // 手动点的，探测全挂就自动再试一轮，别让用户干等着以为没点到
+            if (forced && (probes == null || probes.isEmpty())) probes = probeAll(getRoutes(), getJsonUrl());
+            if (probes == null || probes.isEmpty()) {
+                fail(R.string.update_check_fail);
+                return;
+            }
             JSONObject object = new JSONObject(probes.get(0).body);
             String name = object.optString("name");
             String desc = wrap(object.optString("desc"));
@@ -147,14 +226,36 @@ public class Updater implements Download.Callback, UpdateListener {
                 if (forced) App.post(() -> Notify.show(R.string.update_latest));
                 return;
             }
-            apk = getApk(tag);
-            if (apk.isEmpty()) return;
-            route = choose(probes, apk);
-            if (route == null) return;
-            download = createDownload(route.route);
+            String url = getApk(tag);
+            if (url.isEmpty()) {
+                fail(R.string.update_check_fail);
+                return;
+            }
+            apk = url;
+            // 先弹框：确定有新版本就立刻告诉用户，别让他对着「正在检测更新…」干等
             App.post(() -> show(activity, name, desc));
+            // 挑哪条线路下、整包多大，这些放后台接着做，用户看更新说明的工夫刚好干完
+            prepare(probes);
         } catch (Exception e) {
             e.printStackTrace();
+            fail(R.string.update_check_fail);
+        }
+    }
+
+    /** 手动检查失败了一定要出声，以前是静悄悄返回，只能再点一次碰运气 */
+    private void fail(int resId) {
+        if (!forced) return;
+        App.post(() -> Notify.show(resId));
+    }
+
+    /** 弹框之后才做的活：选最快线路 + 量整包大小，做好了就把 download 挂上 */
+    private void prepare(List<Probe> probes) {
+        try {
+            Probe pick = choose(probes, apk);
+            if (pick == null) return;
+            route = pick;
+            download = createDownload(pick.route);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -219,9 +320,13 @@ public class Updater implements Download.Callback, UpdateListener {
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(routes.size(), 8));
         List<Future<Probe>> futures = new ArrayList<>();
         for (String route : routes) futures.add(pool.submit(() -> probe(route, url)));
+        // 整体设个 deadline：快的线路基本都在前几秒回来，剩下的慢的直接不等
+        long deadline = System.currentTimeMillis() + PROBE_DEADLINE;
         for (Future<Probe> future : futures) {
+            long left = deadline - System.currentTimeMillis();
+            if (left <= 0) break;
             try {
-                Probe item = future.get(PROBE_TIMEOUT + 1000, TimeUnit.MILLISECONDS);
+                Probe item = future.get(Math.min(left, PROBE_TIMEOUT), TimeUnit.MILLISECONDS);
                 if (item != null) result.add(item);
             } catch (Exception ignored) {
             }
@@ -351,7 +456,24 @@ public class Updater implements Download.Callback, UpdateListener {
     @Override
     public void onConfirm(View view) {
         view.setEnabled(false);
-        if (download != null) download.start(this);
+        waitReady(view, 0);
+    }
+
+    /**
+     * 更新框弹得早，线路可能还没挑完。最多等十秒，期间每秒看一眼好没好；
+     * 好了直接开下，实在没准备好就把按钮还给人家再点一次，总好过点了没反应。
+     */
+    private void waitReady(View view, int retry) {
+        if (download != null) {
+            download.start(this);
+            return;
+        }
+        if (retry >= PREPARE_RETRY) {
+            view.setEnabled(true);
+            Notify.show(R.string.update_prepare_fail);
+            return;
+        }
+        App.post(() -> waitReady(view, retry + 1), 1000);
     }
 
     @Override

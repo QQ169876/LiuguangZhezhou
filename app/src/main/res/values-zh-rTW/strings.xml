@@ -498,6 +498,9 @@
     <string name="update_check">正在檢查更新…</string>
     <string name="update_confirm">更新</string>
     <string name="update_latest">目前已是最新版</string>
+    <string name="update_check_fail">連不上更新伺服器，請檢查網路後再試</string>
+    <string name="update_checking">正在檢查中，請稍候…</string>
+    <string name="update_prepare_fail">下載線路還沒準備好，請再點一次更新</string>
     <string name="update_install_fail">叫不出安裝程式，請手動安裝</string>
     <string name="update_bad_package">下載的安裝包不完整，已刪除，請重新點更新</string>
     <string name="setting_route">更新線路</string>
