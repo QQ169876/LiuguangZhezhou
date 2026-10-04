@@ -33,6 +33,11 @@ function moontv() {
     warnToast('已提交，請查看設備提示');
 }
 
+function music() {
+    doAction('music', { url: $('#music_url').val(), pass: $('#music_pass').val(), jx: $('#music_jx').val(), script: $('#music_script').val() });
+    warnToast('已提交，請查看設備提示');
+}
+
 function socks() {
     doAction('socks', { host: $('#socks_host').val(), port: $('#socks_port').val(), user: $('#socks_user').val(), pass: $('#socks_pass').val() });
     warnToast('已提交，請查看設備提示');
@@ -276,13 +281,14 @@ function warnToast(msg) {
 }
 
 function showPanel(id) {
-    for (let i = 1; i <= 8; i++) {
+    for (let i = 1; i <= 9; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
     if (id === 5 && document.getElementById('file_list').innerHTML === '') listFile('');
     if (id === 6) loadWebDav();
     if (id === 7) loadMoonTV();
+    if (id === 9) loadMusic();
 }
 
 function loadWebDav() {
@@ -311,6 +317,21 @@ function loadMoonTV() {
         $('#moontv_url').val(info.url || '');
         $('#moontv_user').val(info.user || '');
         $('#moontv_pass').val(info.pass || '');
+    });
+}
+
+function loadMusic() {
+    $.get('/music', function (res) {
+        let info;
+        try {
+            info = JSON.parse(res);
+        } catch (e) {
+            return;
+        }
+        $('#music_url').val(info.url || '');
+        $('#music_pass').val(info.pass || '');
+        $('#music_jx').val(info.jx || '');
+        $('#music_script').val(info.script || '');
     });
 }
 

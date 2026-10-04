@@ -113,6 +113,25 @@
                     <button class="md-btn md-btn-filled md-btn-full" onclick="moontv()">確定</button>
                 </div>
             </div>
+            <!-- 音樂同步 -->
+            <div id="panel9" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="music_url" class="md-input" type="text" placeholder="請輸入同步服務器地址..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="music_pass" class="md-input" type="password" placeholder="請輸入同步密碼..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="music_jx" class="md-input" type="text" placeholder="解析服務地址（可留空）" />
+                    </div>
+                    <div class="md-field">
+                        <input id="music_script" class="md-input" type="text" placeholder="音源腳本地址（可留空）" />
+                    </div>
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:var(--md-on-surface-variant)">提交後只寫入設定，回到設備音樂頁點右上角同步即可拉取歌單。</p>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="music()">確定</button>
+                </div>
+            </div>
             <!-- SOCKS5 代理 -->
             <div id="panel8" class="tab-panel">
                 <div class="panel-content">
@@ -183,7 +202,13 @@
                 </div>
                 <span class="md-nav-label">代理</span>
             </div>
-        </nav>
+                    <div id="tab9" class="md-nav-item" onclick="showPanel(9)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                </div>
+                <span class="md-nav-label">音樂</span>
+            </div>
+</nav>
     </div>
     <!-- Dialog: 彈幕模式 -->
     <div id="danmakuModeDialog" class="md-dialog-overlay">

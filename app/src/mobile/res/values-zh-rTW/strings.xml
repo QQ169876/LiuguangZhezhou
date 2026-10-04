@@ -7,6 +7,7 @@
     <!-- Nav -->
     <string name="nav_vod">點播</string>
     <string name="nav_live">直播</string>
+    <string name="nav_music">音樂</string>
     <string name="nav_setting">設定</string>
 
     <!-- Menu -->

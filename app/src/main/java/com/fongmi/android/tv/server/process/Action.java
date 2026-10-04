@@ -18,6 +18,7 @@ import com.fongmi.android.tv.event.ServerEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonApi;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.music.MusicSetting;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.server.impl.Process;
@@ -69,6 +70,7 @@ public class Action implements Process {
             case "cookie" -> onCookie(params);
             case "spider" -> onSpider(params);
             case "moontv" -> onMoonTV(params);
+            case "music" -> onMusic(params);
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
             case "search" -> onSearch(params);
@@ -131,6 +133,21 @@ public class Action implements Process {
     }
 
     /**
+     * 网页 / 局域网提交的音乐同步设置：地址、密码、音质、解析服务、音源脚本
+     */
+    private void onMusic(Map<String, String> params) {
+        MusicSetting.putUrl(params.get("url"));
+        MusicSetting.putPass(params.get("pass"));
+        MusicSetting.putJx(params.get("jx"));
+        MusicSetting.putScript(params.get("script"));
+        String quality = params.get("quality");
+        if (!TextUtils.isEmpty(quality)) MusicSetting.putQuality(quality);
+        String lyric = params.get("lyric");
+        if (!TextUtils.isEmpty(lyric)) MusicSetting.putLyric("1".equals(lyric));
+        App.post(() -> Notify.show(R.string.music_sync_ok));
+    }
+
+    /**
      * 对面推过来的网盘 / 影视站扫码登录状态：直接灌进本机 WebView，之后不用再扫一次码
      */
     private void onCookie(Map<String, String> params) {
@@ -151,9 +168,10 @@ public class Action implements Process {
         String json = params.get("data");
         if (TextUtils.isEmpty(json)) return;
         Task.execute(() -> {
-            SpiderVault.apply(App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
-            }.getType()));
-            App.post(() -> Notify.show(R.string.push_cookie_done));
+            Map<String, String> data = App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
+            }.getType());
+            SpiderVault.apply(data);
+            App.post(() -> Notify.show(data == null || data.isEmpty() ? R.string.push_cookie_done : R.string.push_cookie_restart));
         });
     }
 

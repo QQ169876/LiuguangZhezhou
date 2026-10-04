@@ -5,6 +5,7 @@ import android.net.Uri;
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.music.MusicSetting;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.server.process.Action;
 import com.fongmi.android.tv.server.process.Cast;
@@ -102,6 +103,7 @@ public class Nano extends NanoHTTPD {
         if (url.startsWith("/device")) return ok(Device.get().toString());
         if (url.startsWith("/webdav")) return ok(WebDavSetting.toJson());
         if (url.startsWith("/moontv")) return ok(MoonSetting.toJson());
+        if (url.startsWith("/music")) return ok(MusicSetting.toJson());
         for (Process process : process) if (process.isRequest(session, url)) return process.doResponse(session, url, files);
         return getAssets(url.substring(1));
     }

@@ -130,6 +130,16 @@
             android:process=":error_activity"
             android:theme="@style/Theme.Crash" />
 
+        <activity
+            android:name=".ui.activity.MusicActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.activity.MusicPlayActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="false" />
+
         <receiver
             android:name=".receiver.ActionReceiver"
             android:exported="false">
