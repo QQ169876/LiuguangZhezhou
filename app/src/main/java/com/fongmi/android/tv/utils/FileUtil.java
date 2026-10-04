@@ -1,8 +1,13 @@
 package com.fongmi.android.tv.utils;
 
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
 import android.os.StatFs;
+import android.provider.MediaStore;
 import android.text.TextUtils;
 
 import androidx.core.content.FileProvider;
@@ -18,6 +23,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URLConnection;
 import java.text.DecimalFormat;
 import java.util.Enumeration;
@@ -141,6 +148,85 @@ public class FileUtil {
     private static String getMimeType(String fileName) {
         String mimeType = URLConnection.guessContentTypeFromName(fileName);
         return TextUtils.isEmpty(mimeType) ? "*/*" : mimeType;
+    }
+
+    /**
+     * 把文件另存一份到系统的「下载」目录，返回给人看的位置（比如 Download/xxx.apk）。
+     *
+     * 用途：有的设备（模拟器、改过的盒子）拉不起系统安装器，装不上就干瞪眼，
+     * 存一份到下载目录，用户去文件管理里点一下就能手动装。
+     *
+     * 两条路：能直接写公共目录就直接写（老系统、或是给了全部文件访问权限的），
+     * 写不了就走 MediaStore（Android 10 起分区存储，下载目录要靠它写）。
+     */
+    public static String saveToDownload(File src, String name) {
+        if (src == null || !src.exists() || src.length() <= 0) return null;
+        String path = saveToDownloadDir(src, name);
+        if (path != null) return path;
+        return saveToMediaStore(src, name);
+    }
+
+    private static String saveToDownloadDir(File src, String name) {
+        File dst = null;
+        try {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (dir == null) return null;
+            if (!dir.exists() && !dir.mkdirs()) return null;
+            cleanDownload(dir, name);
+            dst = new File(dir, name);
+            copy(src, dst);
+            if (dst.exists() && dst.length() == src.length()) return dst.getAbsolutePath();
+        } catch (Throwable ignored) {
+            // 分区存储不让直接写，交给 MediaStore
+        }
+        Path.clear(dst); // 写了一半的别留着占地方
+        return null;
+    }
+
+    /** 只留最新这一版的安装包，老版本的别在下载目录里堆着 */
+    private static void cleanDownload(File dir, String keep) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (!file.isFile()) continue;
+            String n = file.getName();
+            if (n.endsWith(".apk") && n.contains("流光褶皱") && !n.equals(keep)) Path.clear(file);
+        }
+    }
+
+    private static String saveToMediaStore(File src, String name) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null;
+        try {
+            ContentResolver resolver = App.get().getContentResolver();
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, name);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return null;
+            try (OutputStream os = resolver.openOutputStream(uri)) {
+                if (os == null) return null;
+                try (InputStream is = new FileInputStream(src)) {
+                    byte[] buffer = new byte[65536];
+                    int len;
+                    while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
+                }
+            }
+            values.clear();
+            values.put(MediaStore.Downloads.IS_PENDING, 0);
+            resolver.update(uri, values, null, null);
+            return Environment.DIRECTORY_DOWNLOADS + "/" + name;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void copy(File src, File dst) throws IOException {
+        try (InputStream is = new FileInputStream(src); OutputStream os = new FileOutputStream(dst)) {
+            byte[] buffer = new byte[65536];
+            int len;
+            while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
+        }
     }
 
     public static String byteCountToDisplaySize(long size) {

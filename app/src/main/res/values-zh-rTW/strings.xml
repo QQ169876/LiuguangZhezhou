@@ -528,6 +528,8 @@
     <string name="update_prepare_fail">下載線路還沒準備好，請再點一次更新</string>
     <string name="update_install_fail">叫不出安裝程式，請手動安裝</string>
     <string name="update_bad_package">下載的安裝包不完整，已刪除，請重新點更新</string>
+    <string name="update_keep">安裝包已另存到 <xliff:g name="path">%s</xliff:g>，安裝介面沒彈出的話去那裡手動裝</string>
+    <string name="update_install_manual">這台設備叫不出安裝介面，安裝包已放到 <xliff:g name="path">%s</xliff:g>，請手動安裝</string>
     <string name="setting_route">更新線路</string>
     <string name="route_auto">自動（直連優先）</string>
     <string name="route_direct">直連 GitHub</string>

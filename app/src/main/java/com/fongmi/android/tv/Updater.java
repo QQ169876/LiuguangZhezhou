@@ -644,7 +644,7 @@ public class Updater implements Download.Callback, UpdateListener {
     /**
      * 拉起安装器。老机器（Android 6 那台投影）有的系统安装器不认 content://，
      * 直接抛 ActivityNotFoundException / SecurityException 会把 App 带崩，
-     * 所以这里一层层退：content 地址 → file 地址 → 给个提示让你手动装。
+     * 所以这里一层层退：content 地址 → file 地址 → 下载目录留一份让你手动装。
      */
     private void install(File file) {
         if (!isInstallable(file)) {
@@ -652,11 +652,35 @@ public class Updater implements Download.Callback, UpdateListener {
             Notify.show(R.string.update_bad_package);
             return;
         }
+        boolean opened = false;
         try {
             FileUtil.openFile(file);
+            opened = true;
         } catch (Exception e) {
-            if (!installByPath(file)) Notify.show(R.string.update_install_fail);
+            opened = installByPath(file);
         }
+        keepCopy(file, opened);
+    }
+
+    /**
+     * 不管系统安装器露没露面，都在「下载」目录里留一份安装包。
+     * 有些设备（模拟器、改过的盒子）点了更新死活拉不起安装界面，留了这份，
+     * 至少还能去文件管理里点一下手动装，不至于卡在旧版本。
+     */
+    private void keepCopy(File file, boolean opened) {
+        new Thread(() -> {
+            String path = FileUtil.saveToDownload(file, apkName());
+            App.post(() -> {
+                if (path != null) Notify.show(ResUtil.getString(opened ? R.string.update_keep : R.string.update_install_manual, path));
+                else if (!opened) Notify.show(R.string.update_install_fail);
+            });
+        }, "update-keep").start();
+    }
+
+    /** 下载目录里那份的名字带上版本号，一眼能认出是哪一版 */
+    private String apkName() {
+        String version = tag == null || tag.isEmpty() ? BuildConfig.VERSION_NAME : tag;
+        return "流光褶皱-" + version + ".apk";
     }
 
     /**

@@ -528,6 +528,8 @@
     <string name="update_prepare_fail">Download route not ready yet, tap update again.</string>
     <string name="update_install_fail">Can\'t open the installer. Please install it manually.</string>
     <string name="update_bad_package">The downloaded package is incomplete. Please update again.</string>
+    <string name="update_keep">Installer may not show up on this device. A copy is saved to <xliff:g name="path">%s</xliff:g>, install it manually if needed.</string>
+    <string name="update_install_manual">Can\'t open the installer. The package is saved to <xliff:g name="path">%s</xliff:g>, please install it manually.</string>
     <string name="setting_route">Update route</string>
     <string name="route_auto">Auto (direct first)</string>
     <string name="route_direct">Direct GitHub</string>
