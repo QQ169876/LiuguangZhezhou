@@ -1,5 +1,8 @@
 package com.fongmi.android.tv.ui.dialog;
 
+import android.os.Bundle;
+import android.widget.Button;
+
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.FragmentActivity;
 import androidx.viewbinding.ViewBinding;
@@ -42,6 +45,18 @@ public class UpdateDialog extends BaseAlertDialog {
         return this;
     }
 
+    /**
+     * 更新框用的是无参构造，title/desc/listener 都是事后塞进来的。App 退到后台被回收、
+     * 转屏这类情况下系统会按无参构造把 Fragment 重建出来，那份是空的：listener 是 null，
+     * 点『更新』时 listener.getClass() 直接空指针崩（手机上实测到过）。
+     * 所以认出自己是「重建的空壳」就不显示了 —— 下次进首页还会重新弹，不影响更新。
+     */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) setShowsDialog(false);
+    }
+
     @Override
     protected ViewBinding getBinding() {
         return binding = DialogUpdateBinding.inflate(getLayoutInflater());
@@ -61,12 +76,17 @@ public class UpdateDialog extends BaseAlertDialog {
     public void onStart() {
         super.onStart();
         AlertDialog dialog = (AlertDialog) getDialog();
-        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(view -> listener.onCancel(view));
-        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> listener.onConfirm(view));
+        if (dialog == null) return;
+        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (negative != null) negative.setOnClickListener(view -> { if (listener != null) listener.onCancel(view); });
+        if (positive != null) positive.setOnClickListener(view -> { if (listener != null) listener.onConfirm(view); });
     }
 
     public void setProgress(int progress) {
         AlertDialog dialog = (AlertDialog) getDialog();
-        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText(String.format(Locale.getDefault(), "%1$d%%", progress));
+        if (dialog == null) return;
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (positive != null) positive.setText(String.format(Locale.getDefault(), "%1$d%%", progress));
     }
 }

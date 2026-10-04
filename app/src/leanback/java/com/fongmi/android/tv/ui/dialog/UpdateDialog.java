@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.ui.dialog;
 
+import android.os.Bundle;
 import android.view.View;
 
 import androidx.fragment.app.FragmentActivity;
@@ -42,6 +43,17 @@ public class UpdateDialog extends BaseAlertDialog {
         return this;
     }
 
+    /**
+     * 更新框用无参构造，title/desc/listener 都是事后塞进来的。App 被系统回收后重建、转屏时
+     * 系统会按无参构造重建 Fragment，那份 instance 里 listener 是 null，点『更新』就空指针崩。
+     * 认出是这种空壳就不显示，下次检查还会重新弹。
+     */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) setShowsDialog(false);
+    }
+
     @Override
     protected ViewBinding getBinding() {
         return binding = DialogUpdateBinding.inflate(getLayoutInflater());
@@ -67,18 +79,18 @@ public class UpdateDialog extends BaseAlertDialog {
     @Override
     public void onStart() {
         super.onStart();
-        binding.confirm.requestFocus();
+        if (binding != null) binding.confirm.requestFocus();
     }
 
     public void setProgress(int progress) {
-        binding.confirm.setText(String.format(Locale.getDefault(), "%1$d%%", progress));
+        if (binding != null) binding.confirm.setText(String.format(Locale.getDefault(), "%1$d%%", progress));
     }
 
     private void onConfirm(View view) {
-        listener.onConfirm(view);
+        if (listener != null) listener.onConfirm(view);
     }
 
     private void onCancel(View view) {
-        listener.onCancel(view);
+        if (listener != null) listener.onCancel(view);
     }
 }

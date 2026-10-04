@@ -24,6 +24,11 @@ import java.util.List;
  * ② 兜底：宿主 APK 自己都加载不到的类名，只可能是运行时动态塞进来的代码 —— 也算第三方。
  *    这道兜底治两个漏网场景：加固壳 jar 在内部另起 ClassLoader 解密类（我们只登记了最外层），
  *    以及源重载后旧 loader 被 GC、还挂在队列里的老任务没人认领。
+ *
+ * ③ 注意别再把 com.github.catvod.* 一股脑当自家人：catvod 是我方模块没错，
+ *    但 spider jar 爱把自己的类起名成 com.github.catvod.spider.merge.g1 这类样子，
+ *    一旦被 ours() 提前跳过，就认不到是第三方的锅，整 App 跟着它崩（2026-10-04 手机实测）。
+ *    现在只列 catvod 自己那几个包名，剩下的（含 spider.*）交给上面两道去认。
  */
 public class CrashGuard {
 
@@ -174,7 +179,10 @@ public class CrashGuard {
                 || name.startsWith("androidx.")
                 || name.startsWith("com.android.")
                 || name.startsWith("com.fongmi.")
-                || name.startsWith("com.github.catvod.")
+                || name.startsWith("com.github.catvod.crawler.")
+                || name.startsWith("com.github.catvod.bean.")
+                || name.startsWith("com.github.catvod.utils.")
+                || name.startsWith("com.github.catvod.net.")
                 || name.startsWith("com.google.")
                 || name.startsWith("okhttp3.");
     }
