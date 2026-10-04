@@ -30,11 +30,17 @@ public class CookieStore {
     private static final AtomicBoolean restored = new AtomicBoolean(false);
 
     /**
-     * 主流网盘的地址。网盘扫码登录是视频源（jar）自己干的，它不跟 App 打招呼，
+     * 要主动去捞的站点：主流网盘 + B 站。
+     *
+     * 这些站点的扫码登录都是视频源（jar）自己干的，它不跟 App 打招呼，
      * 只能按这份名单去系统 WebView 里挨个问：这家的登录态留下了吗。
-     * 有新的网盘要支持，往这里加域名就行。
+     * 有新的站点要支持，往这里加域名就行。
      */
     private static final String[] HOSTS = {
+            // bilibili：登录态（SESSDATA 等）写在 .bilibili.com 父域，主域和各子域都问一遍
+            "bilibili.com", "www.bilibili.com", "passport.bilibili.com", "account.bilibili.com",
+            "api.bilibili.com", "m.bilibili.com", "live.bilibili.com", "space.bilibili.com",
+            // 网盘
             "pan.baidu.com", "passport.baidu.com", "yun.baidu.com", "baidu.com",
             "pan.quark.cn", "quark.cn",
             "drive.uc.cn", "uc.cn",
@@ -54,9 +60,9 @@ public class CookieStore {
     }
 
     /**
-     * 主动捞一遍网盘登录态。
+     * 主动捞一遍网盘 / B 站这类站点的登录态。
      *
-     * 网盘扫码登录不是 App 的活儿，是视频源（jar）干的：它要么自己开网页，要么直接往系统 WebView 里
+     * 这些站点的扫码登录不是 App 的活儿，是视频源（jar）干的：它要么自己开网页，要么直接往系统 WebView 里
      * 写 Cookie，从头到尾不会通知 App 一声。而 CookieStore 只会记"有人告诉过它"的域名，
      * 于是这些登录态一个都没记下来 —— 同步没东西可传，局域网推送也推了个空，表现就是"扫完码换台设备还得重扫"。
      *
@@ -73,7 +79,7 @@ public class CookieStore {
                 if (map.size() >= LIMIT) break;
                 map.put(host, value);
                 dirty = true;
-                DebugLog.d("Cookie", "捞到网盘登录态 host=" + host + " len=" + value.length());
+                DebugLog.d("Cookie", "捞到站点登录态 host=" + host + " len=" + value.length());
             }
             if (dirty) write(map);
         } catch (Throwable ignored) {

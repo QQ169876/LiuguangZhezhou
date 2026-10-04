@@ -16,13 +16,16 @@ import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.impl.UpdateListener;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.SelfHost;
 import com.fongmi.android.tv.ui.dialog.UpdateDialog;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Download;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Github;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Prefers;
 
@@ -59,6 +62,10 @@ public class Updater implements Download.Callback, UpdateListener {
     private static final int PROBE_DEADLINE = 8000;
     /** 上一轮检查超过这么久还没收工，就当它卡死了，放行新一轮 */
     private static final long BUSY_TIMEOUT = 60 * 1000;
+    /** 手动点「检查更新」时只挡这么久：上一轮多半是进首页的自动检查，用户等不了也该让他重来 */
+    private static final long BUSY_TOL_FORCED = 3 * 1000;
+    /** 刚确认过「没有新版本」，这段时间内自动检查别反复去问 */
+    private static final long WARM_NONE_TTL = 5 * 60 * 1000;
     /** 网络一恢复就补探，但别被网络抖动反复触发 */
     private static final long WARM_RETRY_GAP = 30 * 1000;
     /** 弹框后给用户挑线路的最长等待：这段时间里每 1 秒看一眼好没好 */
@@ -66,6 +73,7 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private static volatile List<Probe> warm; // 启动时预热探到的线路结果
     private static volatile long warmAt;
+    private static volatile long warmNone; // 上次确认「没有新版本」的时刻
     private static volatile long warmTry;
     private static volatile boolean watched;
     private static volatile boolean busy;    // 正在检查标记：连点不会叠好几轮
@@ -117,12 +125,89 @@ public class Updater implements Download.Callback, UpdateListener {
         new Thread(() -> {
             try {
                 List<Probe> probes = probeAll(getRoutes(), getJsonUrl());
-                if (probes.isEmpty()) return;
+                Probe best = newest(probes);
+                if (best == null) return; // 一条都没通，下次再试
+                // 探到的是旧版本（多半是代理缓存），就别存：存了会让这一分钟内的检查一直拿旧结果
+                if (best.code <= BuildConfig.VERSION_CODE) {
+                    warmNone = System.currentTimeMillis();
+                    return;
+                }
                 warm = probes;
                 warmAt = System.currentTimeMillis();
             } catch (Throwable ignored) {
             }
         }, "update-warm").start();
+    }
+
+    /**
+     * 从所有探测结果里挑版本号最新的那份。
+     *
+     * 关键：各条加速代理的缓存新旧不一，刚发版那一阵有的给新版、有的还攥着旧版。
+     * 以前只看耗时最短的那条，它要是恰好缓存了旧版本，就判定"已是最新"——
+     * 表现出来就是要点很多次，哪次最快那条是新鲜的才弹框。现在任何一条拿到新版都算数。
+     */
+    private static Probe newest(List<Probe> probes) {
+        Probe best = null;
+        if (probes == null) return null;
+        for (Probe item : probes) {
+            if (item == null || item.code <= 0) continue;
+            if (best == null || item.code > best.code) best = item;
+        }
+        return best;
+    }
+
+    /**
+     * 定用哪份：自建源和 GitHub 比版本号，谁新用谁；一样新就用自建源（下载快、不经代理）。
+     * 自建源上没有这台机型对应的包（apk 为空）时，仍然走 GitHub。
+     */
+    private static Probe pick(List<Probe> probes, Probe self) {
+        Probe best = newest(probes);
+        if (self == null || self.apk == null || self.apk.isEmpty()) return best;
+        if (best == null || self.code >= best.code) return self;
+        return best;
+    }
+
+    /**
+     * 问自建网盘要版本文件。这一步不走 GhRoute 的任何线路，直连自己的服务器；
+     * 域名挂了会自动换备用域名（OkHttp 里那条兜底拦截器管这事），再不行就返回 null，
+     * 后面完全按 GitHub 的老路走。
+     */
+    private static Probe selfProbe() {
+        try {
+            Request request = new Request.Builder().url(SelfHost.json())
+                    .header("Authorization", SelfHost.auth())
+                    .header("Cache-Control", "no-cache")
+                    .cacheControl(CacheControl.FORCE_NETWORK)
+                    .get().build();
+            try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
+                if (!res.isSuccessful() || res.body() == null) return null;
+                String body = res.body().string();
+                JSONObject json = new JSONObject(body);
+                int code = json.optInt("code");
+                if (code <= 0) return null;
+                JSONObject map = json.optJSONObject("apk");
+                String apk = map == null ? "" : map.optString(SelfHost.key());
+                DebugLog.d("Update", "自建源 code=" + code + (apk.isEmpty() ? "（本机型的包不在网盘上，走 GitHub）" : " 有包"));
+                return new Probe(SelfHost.ROUTE, 0, body, code, apk);
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 两轮探测的结果合到一起（按线路去重，后一轮的为准） */
+    private static List<Probe> merge(List<Probe> first, List<Probe> second) {
+        List<Probe> all = new ArrayList<>();
+        if (first != null) all.addAll(first);
+        if (second == null) return all;
+        for (Probe item : second) {
+            if (item == null) continue;
+            for (int i = 0; i < all.size(); i++) {
+                if (all.get(i) != null && all.get(i).route.equals(item.route)) all.remove(i--);
+            }
+            all.add(item);
+        }
+        return all;
     }
 
     /**
@@ -198,10 +283,11 @@ public class Updater implements Download.Callback, UpdateListener {
         }, "update-check").start();
     }
 
-    /** 一次只跑一轮检查；上一轮真卡死了也别把更新功能憋死 */
-    private static boolean enter() {
+    /** 一次只跑一轮检查；上一轮真卡死了也别把更新功能憋死。手动点只挡三秒，别让人干等 */
+    private boolean enter() {
         long now = System.currentTimeMillis();
-        if (busy && now - busyAt < BUSY_TIMEOUT) return false;
+        long tolerate = forced ? BUSY_TOL_FORCED : BUSY_TIMEOUT;
+        if (busy && now - busyAt < tolerate) return false;
         busy = true;
         busyAt = now;
         return true;
@@ -210,23 +296,37 @@ public class Updater implements Download.Callback, UpdateListener {
     private void doInBackground(FragmentActivity activity) {
         try {
             List<Probe> probes = fresh(); // 启动预热探到的那份还新鲜就直接用
+            // 刚确认过没有新版本，自动检查就别反复去问了（手动点不受此限）
+            if (probes == null && !forced && System.currentTimeMillis() - warmNone < WARM_NONE_TTL) return;
             if (probes == null) probes = probeAll(getRoutes(), getJsonUrl());
             // 手动点的，探测全挂就自动再试一轮，别让用户干等着以为没点到
             if (forced && (probes == null || probes.isEmpty())) probes = probeAll(getRoutes(), getJsonUrl());
-            if (probes == null || probes.isEmpty()) {
+            // 自建源只问一次：自己的网盘不经公益代理，不会被缓存，拿到的一定是最新的
+            Probe self = selfProbe();
+            Probe best = pick(probes, self);
+            // 手动点：第一轮拿到的可能全是代理的旧缓存，换个时间戳再问一轮，哪条新用哪条
+            if (forced && best != null && best.code <= BuildConfig.VERSION_CODE) {
+                List<Probe> again = probeAll(getRoutes(), getJsonUrl());
+                if (again != null && !again.isEmpty()) {
+                    probes = merge(probes, again);
+                    best = pick(probes, self);
+                }
+            }
+            if (best == null) {
                 fail(R.string.update_check_fail);
                 return;
             }
-            JSONObject object = new JSONObject(probes.get(0).body);
+            JSONObject object = new JSONObject(best.body);
             String name = object.optString("name");
             String desc = wrap(object.optString("desc"));
             tag = object.optString("tag");
             int code = object.optInt("code");
             if (code <= BuildConfig.VERSION_CODE) {
+                if (code > 0) warmNone = System.currentTimeMillis();
                 if (forced) App.post(() -> Notify.show(R.string.update_latest));
                 return;
             }
-            String url = getApk(tag);
+            String url = best.apk == null || best.apk.isEmpty() ? getApk(tag) : best.apk;
             if (url.isEmpty()) {
                 fail(R.string.update_check_fail);
                 return;
@@ -234,8 +334,14 @@ public class Updater implements Download.Callback, UpdateListener {
             apk = url;
             // 先弹框：确定有新版本就立刻告诉用户，别让他对着「正在检测更新…」干等
             App.post(() -> show(activity, name, desc));
-            // 挑哪条线路下、整包多大，这些放后台接着做，用户看更新说明的工夫刚好干完
-            prepare(probes);
+            if (SelfHost.is(best.route)) {
+                // 自建源就这一条路，不用再挑线路测速
+                route = best;
+                download = createDownload(SelfHost.ROUTE);
+            } else {
+                // 挑哪条线路下、整包多大，这些放后台接着做，用户看更新说明的工夫刚好干完
+                prepare(probes);
+            }
         } catch (Exception e) {
             e.printStackTrace();
             fail(R.string.update_check_fail);
@@ -294,14 +400,23 @@ public class Updater implements Download.Callback, UpdateListener {
         if (size <= 0) size = probeSize(route);
         if (size > 0) Prefers.put("update_size", size);
         // 校验：装之前确认这是个真 APK（>20MB 且 zip 头），别把代理的报错页丢给安装器
-        return Download.create(GhRoute.wrap(route, apk), getFile()).client(GhRoute.stream(route)).expect(size).verify(20L * 1024 * 1024);
+        Download download = Download.create(url(route, apk), getFile()).expect(size).verify(20L * 1024 * 1024);
+        // 自建源是直连自己的网盘：不走加速线路，但要带上认证
+        return SelfHost.is(route) ? download.header("Authorization", SelfHost.auth()).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60))) : download.client(GhRoute.stream(route));
+    }
+
+    /** 自建源的包地址本来就是完整的，不能再往前面拼加速前缀 */
+    private static String url(String route, String apk) {
+        return SelfHost.is(route) ? apk : GhRoute.wrap(route, apk);
     }
 
     /**
      * 只取 1 个字节，从 Content-Range 里拿到整包大小
      */
     private long probeSize(String route) {
-        try (Response res = GhRoute.probe(route, 10000).newCall(new Request.Builder().url(GhRoute.wrap(route, apk)).header("Range", "bytes=0-0").get().build()).execute()) {
+        Request request = new Request.Builder().url(url(route, apk)).header("Range", "bytes=0-0").get().build();
+        if (SelfHost.is(route)) request = request.newBuilder().header("Authorization", SelfHost.auth()).build();
+        try (Response res = GhRoute.probe(route, 10000).newCall(request).execute()) {
             String range = res.header("Content-Range");
             if (range != null && range.contains("/")) return Long.parseLong(range.substring(range.lastIndexOf('/') + 1).trim());
             String length = res.header("Content-Length");
@@ -349,8 +464,11 @@ public class Updater implements Download.Callback, UpdateListener {
             if (!res.isSuccessful() || res.body() == null) return null;
             String body = res.body().string();
             // 校验拿到的确实是版本文件，避免某些代理返回网页却给了 200
-            if (new JSONObject(body).optInt("code") <= 0) return null;
-            return new Probe(route, System.currentTimeMillis() - start, body);
+            int code = new JSONObject(body).optInt("code");
+            if (code <= 0) return null;
+            // 留痕：日后看点几十次才弹出这种事，一眼就能看出是哪条线路攥着旧缓存
+            DebugLog.d("Update", host(route) + " 返回 code=" + code + " 用时 " + (System.currentTimeMillis() - start) + "ms");
+            return new Probe(route, System.currentTimeMillis() - start, body, code);
         } catch (Exception e) {
             return null;
         }
@@ -415,7 +533,7 @@ public class Updater implements Download.Callback, UpdateListener {
     private long speed(String route, String url) {
         long start = System.currentTimeMillis();
         long total = 0;
-        try (Response res = GhRoute.probe(route, SPEED_TIMEOUT).newCall(new Request.Builder().url(GhRoute.wrap(route, url)).header("Range", "bytes=0-" + SPEED_BYTES).get().build()).execute()) {
+        try (Response res = GhRoute.probe(route, SPEED_TIMEOUT).newCall(new Request.Builder().url(url(route, url)).header("Range", "bytes=0-" + SPEED_BYTES).get().build()).execute()) {
             if (!res.isSuccessful() || res.body() == null) return 0;
             try (InputStream is = res.body().byteStream()) {
                 byte[] buffer = new byte[16384];
@@ -573,12 +691,28 @@ public class Updater implements Download.Callback, UpdateListener {
         final String route;
         final long cost;
         final String body;
+        final int code; // 这条线路拿到的版本号
+        final String apk; // 自建源给的安装包地址；GitHub 那份没有，为空
         long speed;
 
-        Probe(String route, long cost, String body) {
+        Probe(String route, long cost, String body, int code) {
+            this(route, cost, body, code, "");
+        }
+
+        Probe(String route, long cost, String body, int code, String apk) {
             this.route = route;
             this.cost = cost;
             this.body = body;
+            this.code = code;
+            this.apk = apk == null ? "" : apk;
+        }
+    }
+
+    private static String host(String route) {
+        try {
+            return GhRoute.host(route).isEmpty() ? "直连" : GhRoute.host(route);
+        } catch (Exception e) {
+            return route == null ? "" : route;
         }
     }
 }

@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit;
 
 import okhttp3.Credentials;
 import okhttp3.MediaType;
+import com.github.catvod.net.interceptor.FailoverInterceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -22,6 +23,7 @@ public class WebDav {
             .followRedirects(true)
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
+            .addInterceptor(new FailoverInterceptor()) // 域名连不上时静默换备用域名再试一次
             .build();
 
     private static String auth() {

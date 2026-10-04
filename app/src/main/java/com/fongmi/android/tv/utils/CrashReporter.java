@@ -8,6 +8,7 @@ import android.widget.Toast;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
+import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.github.catvod.utils.Prefers;
 
 import java.io.File;
@@ -41,7 +42,9 @@ public class CrashReporter {
 
     // App 专用的错误日志 WebDAV（只收日志，跟归档网盘分开）
     // https 在前；老设备（Android 6）信任库里没有 GTS 根，SSL 握手会失败，退到 http 继续传
-    private static final String[] DAVS = {"https://www.12356.cool/dav", "http://www.12356.cool/dav"};
+    // 两个域名是同一台机器，前一个不通就换后一个（PUT 走的是 HttpURLConnection，
+    // 用不上 OkHttp 里那条自动换域名的拦截器，所以这里两个都列上）
+    private static final String[] DAVS = {"https://www.12356.cool/dav", "http://www.12356.cool/dav", "https://www.169876.xyz/dav", "http://www.169876.xyz/dav"};
     private static final String USER = "error";
     private static final String PASS = "errorcode";
     private static final String FOLDER = "/错误日志收集/";
@@ -56,6 +59,7 @@ public class CrashReporter {
             .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
             .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
             .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+            .addInterceptor(new FailoverInterceptor()) // 域名连不上时静默换备用域名再试一次
             .build();
 
     private static long last;

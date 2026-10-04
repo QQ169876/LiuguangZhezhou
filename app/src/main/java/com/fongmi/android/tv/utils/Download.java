@@ -11,6 +11,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 import okhttp3.OkHttpClient;
@@ -31,6 +33,7 @@ public class Download {
     private long minBytes;
     private boolean verify;
     private String tag;
+    private Map<String, String> headers;
 
     public static Download create(String url, File file) {
         return new Download(url, file);
@@ -45,6 +48,14 @@ public class Download {
 
     public Download tag(String tag) {
         this.tag = tag;
+        return this;
+    }
+
+    /** 带一个请求头（比如自建网盘要的认证） */
+    public Download header(String name, String value) {
+        if (name == null || value == null) return this;
+        if (headers == null) headers = new LinkedHashMap<>();
+        headers.put(name, value);
         return this;
     }
 
@@ -175,6 +186,7 @@ public class Download {
 
     private okhttp3.Call call(long offset) {
         Request.Builder builder = new Request.Builder().url(url).tag(tag).get();
+        if (headers != null) for (Map.Entry<String, String> entry : headers.entrySet()) builder.header(entry.getKey(), entry.getValue());
         if (offset > 0) builder.header(HttpHeaders.RANGE, "bytes=" + offset + "-");
         OkHttpClient use = client != null ? client : OkHttp.client();
         return use.newCall(builder.build());

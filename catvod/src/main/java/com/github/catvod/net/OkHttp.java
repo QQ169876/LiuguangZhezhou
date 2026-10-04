@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import androidx.collection.ArrayMap;
 
 import com.github.catvod.net.interceptor.AuthInterceptor;
+import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.github.catvod.net.interceptor.RequestInterceptor;
 import com.github.catvod.net.interceptor.ResponseInterceptor;
 
@@ -33,6 +34,7 @@ public class OkHttp {
     private static final long TIMEOUT = TimeUnit.SECONDS.toMillis(30);
 
     private ResponseInterceptor responseInterceptor;
+    private FailoverInterceptor failoverInterceptor;
     private RequestInterceptor requestInterceptor;
     private AuthInterceptor authInterceptor;
     private OkAuthenticator authenticator;
@@ -48,6 +50,11 @@ public class OkHttp {
     public static OkDns dns() {
         if (get().dns != null) return get().dns;
         return get().dns = new OkDns();
+    }
+
+    public static FailoverInterceptor failoverInterceptor() {
+        if (get().failoverInterceptor != null) return get().failoverInterceptor;
+        return get().failoverInterceptor = new FailoverInterceptor();
     }
 
     public static ResponseInterceptor responseInterceptor() {
@@ -187,7 +194,7 @@ public class OkHttp {
     }
 
     private static OkHttpClient.Builder getBuilder() {
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().addInterceptor(requestInterceptor()).addInterceptor(authInterceptor()).addNetworkInterceptor(responseInterceptor()).connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS).readTimeout(TIMEOUT, TimeUnit.MILLISECONDS).writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS).dns(dns()).hostnameVerifier((hostname, session) -> true).sslSocketFactory(getSSLContext().getSocketFactory(), trustAllCertificates());
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().addInterceptor(requestInterceptor()).addInterceptor(failoverInterceptor()).addInterceptor(authInterceptor()).addNetworkInterceptor(responseInterceptor()).connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS).readTimeout(TIMEOUT, TimeUnit.MILLISECONDS).writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS).dns(dns()).hostnameVerifier((hostname, session) -> true).sslSocketFactory(getSSLContext().getSocketFactory(), trustAllCertificates());
         HttpLoggingInterceptor logging = new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BODY);
         builder.proxyAuthenticator(authenticator());
         //builder.addNetworkInterceptor(logging);
