@@ -23,6 +23,7 @@ import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.SpiderVault;
 import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.utils.Prefers;
@@ -324,6 +325,7 @@ public class SyncManager {
         save(url, merged);
         Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
         Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
+        notifyDataChanged();
         if (changed) reload();
         return getSummary(merged);
     }
@@ -369,6 +371,7 @@ public class SyncManager {
         writeBaseline(remoteData);
         remoteData.setTime(System.currentTimeMillis());
         save(url, remoteData);
+        notifyDataChanged();
         reload();
         return getSummary(remoteData);
     }
@@ -476,11 +479,9 @@ public class SyncManager {
         }
         if (!data.getPrefers().isEmpty()) applyPrefers(data.getPrefers(), local.getPrefers());
         if (!data.getCookies().isEmpty()) CookieStore.apply(data.getCookies());
+        SpiderVault.apply(data.getSpider());
         if (configChanged) reload();
-        App.post(() -> {
-            RefreshEvent.history();
-            RefreshEvent.keep();
-        });
+        notifyDataChanged();
     }
 
     /* ---------- baseline ---------- */
@@ -763,6 +764,7 @@ public class SyncManager {
         }
         applyPrefers(merged.getPrefers(), backup(local).getPrefers());
         CookieStore.apply(merged.getData().getCookies());
+        SpiderVault.apply(merged.getData().getSpider());
         ConfigCache.apply(merged.getCache());
         return configChanged;
     }
@@ -780,6 +782,7 @@ public class SyncManager {
             Prefers.put(entry.getKey(), entry.getValue());
         }
         CookieStore.apply(backup.getCookies());
+        SpiderVault.apply(backup.getSpider());
     }
 
     private static <T> Set<String> keys(List<T> items, Function<T, String> key) {
@@ -797,6 +800,18 @@ public class SyncManager {
         }
         if (values.isEmpty()) return;
         for (Map.Entry<String, Object> entry : values.entrySet()) Prefers.put(entry.getKey(), entry.getValue());
+    }
+
+    /**
+     * 同步把历史 / 收藏写进数据库后，通知开着的页面立刻重查。
+     * 之前只有局域网推送（applyPush）发这个事件，WebDAV 同步（doSync/doPull）写完库就完了，
+     * 首页的最近观看和收藏页一直显示旧数据，要重启 App 才变 —— 马先生在小米盒子上踩到（2026-10-05）。
+     */
+    private static void notifyDataChanged() {
+        App.post(() -> {
+            RefreshEvent.history();
+            RefreshEvent.keep();
+        });
     }
 
     private static void reload() {

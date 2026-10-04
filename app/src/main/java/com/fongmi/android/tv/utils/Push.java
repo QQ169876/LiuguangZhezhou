@@ -147,12 +147,25 @@ public class Push {
         return true;
     }
 
-    /** 网盘 / 影视站的扫码登录状态（Cookie）一并推过去，对面就不用再扫一次 */
+    /**
+     * 网盘 / 影视站 / B 站的扫码登录状态一并推过去，对面就不用再扫一次。
+     * 两条都推：cookie 是系统 WebView 里那套（老路），spider 是点播源 jar 自己存的
+     * 那套（files/TV、spUtils、404 prefs，见 SpiderVault）——现在大多数源的登录态
+     * 都在后者，只推前者对面收到的就是空。
+     */
     public static boolean cookie(String host) throws Exception {
+        boolean sent = false;
         Map<String, String> cookies = CookieStore.snapshot();
-        if (cookies.isEmpty()) return false;
-        post(host, "cookie", new FormBody.Builder().add("data", App.gson().toJson(cookies)).build());
-        return true;
+        if (!cookies.isEmpty()) {
+            post(host, "cookie", new FormBody.Builder().add("data", App.gson().toJson(cookies)).build());
+            sent = true;
+        }
+        Map<String, String> spider = SpiderVault.collect();
+        if (!spider.isEmpty()) {
+            post(host, "spider", new FormBody.Builder().add("data", App.gson().toJson(spider)).build());
+            sent = true;
+        }
+        return sent;
     }
 
     public static boolean moontv(String host) throws Exception {

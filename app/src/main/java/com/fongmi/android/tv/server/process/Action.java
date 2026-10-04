@@ -27,6 +27,7 @@ import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.SpiderVault;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.webdav.WebDavSetting;
@@ -66,6 +67,7 @@ public class Action implements Process {
             case "sync" -> onSync(params);
             case "webdav" -> onWebDav(params);
             case "cookie" -> onCookie(params);
+            case "spider" -> onSpider(params);
             case "moontv" -> onMoonTV(params);
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
@@ -136,6 +138,20 @@ public class Action implements Process {
         if (TextUtils.isEmpty(json)) return;
         Task.execute(() -> {
             CookieStore.merge(App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
+            }.getType()));
+            App.post(() -> Notify.show(R.string.push_cookie_done));
+        });
+    }
+
+    /**
+     * 对面推过来的点播源 jar 登录态（files/TV 的 cookie 文件、spUtils、404 prefs 等），
+     * 按 key 前缀写回原位。现在大多数源的登录态都在这套里。
+     */
+    private void onSpider(Map<String, String> params) {
+        String json = params.get("data");
+        if (TextUtils.isEmpty(json)) return;
+        Task.execute(() -> {
+            SpiderVault.apply(App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
             }.getType()));
             App.post(() -> Notify.show(R.string.push_cookie_done));
         });

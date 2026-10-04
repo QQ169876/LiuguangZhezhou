@@ -5,6 +5,7 @@ import androidx.annotation.NonNull;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.utils.CookieStore;
+import com.fongmi.android.tv.utils.SpiderVault;
 import com.github.catvod.utils.Prefers;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -32,11 +33,15 @@ public class Backup {
     private Map<String, ?> prefers;
     @SerializedName("cookies")
     private Map<String, String> cookies;
+    /** 点播源 jar 自己存的登录态（files/TV 下的 cookie 文件、spUtils、404 prefs 等），见 SpiderVault */
+    @SerializedName("spider")
+    private Map<String, String> spider;
 
     public static Backup create() {
         Backup backup = new Backup();
         backup.setPrefers(Prefers.getPrefers().getAll());
         backup.setCookies(CookieStore.all());
+        backup.setSpider(SpiderVault.collect());
         backup.setSite(AppDatabase.get().getSiteDao().findAll());
         backup.setLive(AppDatabase.get().getLiveDao().findAll());
         backup.setKeep(AppDatabase.get().getKeepDao().findAll());
@@ -64,6 +69,7 @@ public class Backup {
         AppDatabase.get().getHistoryDao().insertOrUpdate(getHistory());
         for (Map.Entry<String, ?> entry : getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
         CookieStore.apply(getCookies());
+        SpiderVault.apply(getSpider());
     }
 
     public List<Site> getSite() {
@@ -120,6 +126,14 @@ public class Backup {
 
     public void setCookies(Map<String, String> cookies) {
         this.cookies = cookies;
+    }
+
+    public Map<String, String> getSpider() {
+        return spider == null ? new HashMap<>() : spider;
+    }
+
+    public void setSpider(Map<String, String> spider) {
+        this.spider = spider;
     }
 
     @NonNull
