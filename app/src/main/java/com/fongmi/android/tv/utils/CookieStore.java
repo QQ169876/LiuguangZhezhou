@@ -25,15 +25,65 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class CookieStore {
 
     private static final String KEY = "webdav_cookie_jar";
-    private static final int LIMIT = 64;
+    /** 白名单有二十来个域名，上限放宽一点，免得捞到的网盘登录态挤不进来 */
+    private static final int LIMIT = 96;
     private static final AtomicBoolean restored = new AtomicBoolean(false);
+
+    /**
+     * 主流网盘的地址。网盘扫码登录是视频源（jar）自己干的，它不跟 App 打招呼，
+     * 只能按这份名单去系统 WebView 里挨个问：这家的登录态留下了吗。
+     * 有新的网盘要支持，往这里加域名就行。
+     */
+    private static final String[] HOSTS = {
+            "pan.baidu.com", "passport.baidu.com", "yun.baidu.com", "baidu.com",
+            "pan.quark.cn", "quark.cn",
+            "drive.uc.cn", "uc.cn",
+            "www.aliyundrive.com", "aliyundrive.com",
+            "pan.115.com", "115.com",
+            "pan.xunlei.com", "xunlei.com",
+            "cloud.189.cn", "189.cn",
+            "yun.139.com", "caiyun.139.com", "139.com",
+            "www.123pan.com", "123pan.com", "vip.123pan.cn", "123pan.cn",
+            "www.jianguoyun.com", "jianguoyun.com",
+            "pan.pikpak.com", "mypikpak.com", "pikpak.com",
+            "www.terabox.com", "terabox.com",
+            "pan.hao123.com",
+    };
 
     private CookieStore() {
     }
 
-    /** 交给同步上传：顺手用系统 WebView 里最新的值刷新一遍 */
+    /**
+     * 主动捞一遍网盘登录态。
+     *
+     * 网盘扫码登录不是 App 的活儿，是视频源（jar）干的：它要么自己开网页，要么直接往系统 WebView 里
+     * 写 Cookie，从头到尾不会通知 App 一声。而 CookieStore 只会记"有人告诉过它"的域名，
+     * 于是这些登录态一个都没记下来 —— 同步没东西可传，局域网推送也推了个空，表现就是"扫完码换台设备还得重扫"。
+     *
+     * 这里按白名单挨个去系统 WebView 里问一次，捞到就记下来，后面的同步和推送自然就带上了。
+     */
+    private static void harvest() {
+        try {
+            Map<String, String> map = read();
+            boolean dirty = false;
+            for (String host : HOSTS) {
+                if (map.containsKey(host)) continue; // 记过的交给 all()/snapshot() 去刷新
+                String value = get(url(host));
+                if (value.isEmpty()) continue;
+                if (map.size() >= LIMIT) break;
+                map.put(host, value);
+                dirty = true;
+                DebugLog.d("Cookie", "捞到网盘登录态 host=" + host + " len=" + value.length());
+            }
+            if (dirty) write(map);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 交给同步上传：先把网盘登录态捞一遍，再用系统 WebView 里最新的值刷新已记录的 */
     public static Map<String, String> all() {
         if (!WebDavSetting.isCookie()) return new LinkedHashMap<>();
+        harvest();
         Map<String, String> map = read();
         boolean dirty = false;
         for (String host : new ArrayList<>(map.keySet())) {
@@ -67,8 +117,9 @@ public class CookieStore {
         return true;
     }
 
-    /** 局域网推送出去：不看同步开关，本机记过的就推 */
+    /** 局域网推送出去：不看同步开关，本机有的就推（同样先把网盘登录态捞一遍） */
     public static Map<String, String> snapshot() {
+        harvest();
         Map<String, String> map = read();
         boolean dirty = false;
         for (String host : new ArrayList<>(map.keySet())) {
