@@ -16,8 +16,8 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 638
-        versionName rootProject.legacy ? "5.6.78-legacy" : "5.6.78"
+        versionCode 639
+        versionName rootProject.legacy ? "5.6.79-legacy" : "5.6.79"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
         javaCompileOptions {
             annotationProcessorOptions {
@@ -27,6 +27,20 @@ android {
     }
 
     flavorDimensions = ["mode", "abi"]
+
+    sourceSets {
+        main {
+            // 音乐模块：源码整包存在 app/music-src/，默认只挂 app/src-stub/ 的同名占位类。
+            // 想启用就在 local.properties 写 music=true，届时换挂真实源码、res 与 assets。
+            if (rootProject.music) {
+                java.srcDirs += 'music-src/java'
+                res.srcDirs += 'music-src/res'
+                assets.srcDirs += 'music-src/assets'
+            } else {
+                java.srcDirs += 'src-stub/java'
+            }
+        }
+    }
 
     productFlavors {
         leanback {
@@ -105,7 +119,7 @@ androidComponents {
         def mode = flavors['mode'] ?: 'mode'
         def abi = flavors['abi'] ?: 'abi'
         variant.outputs.each { output ->
-            def mark = rootProject.legacy ? "5.6.78-legacy" : "5.6.78"
+            def mark = rootProject.legacy ? "5.6.79-legacy" : "5.6.79"
             output.outputFileName.set("${mode}${mark}-${abi}.apk")
         }
     }

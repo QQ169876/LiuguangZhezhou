@@ -386,6 +386,9 @@
     <string name="music_status_script">Script source · connected</string>
     <string name="music_status_fail">No audio link</string>
     <string name="music_status_retry">Getting the audio link again…</string>
+    <string name="music_status_fake">Replaced audio — skipped</string>
+    <string name="music_status_fake_dur">Audio is %1$s, should be about %2$s — skipped</string>
+    <string name="music_status_fake_blocked">This platform just served a replaced audio</string>
     <string name="music_random">Listen casually</string>
     <string name="music_random_toast">Listen casually: %1$d songs, shuffled</string>
     <string name="music_random_empty">No built-in sample songs</string>

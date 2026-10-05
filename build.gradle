@@ -11,6 +11,11 @@ def localProperties = new Properties()
 rootProject.file('local.properties').withInputStream { localProperties.load(it) }
 ext.legacy = 'true'.equals(localProperties.getProperty('legacy'))
 
+// music=true（写在 local.properties 里）把「音乐」功能整体装回来：
+// src-stub 里的占位类换成 app/music-src/ 下的真实源码，音乐相关的 res / assets 也一起并入。
+// 默认关闭 —— 源码一份不少地留在 app/music-src/，但不参与编译，也不打包进 APK。
+ext.music = 'true'.equals(localProperties.getProperty('music'))
+
 allprojects {
     ext.minSdkLevel = rootProject.legacy ? 23 : libs.versions.minSdk.get().toInteger()
 }

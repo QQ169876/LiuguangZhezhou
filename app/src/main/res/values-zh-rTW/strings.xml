@@ -385,6 +385,9 @@
     <string name="music_status_script">腳本音源 · 已連線</string>
     <string name="music_status_fail">取不到播放位址</string>
     <string name="music_status_retry">正在重新取得播放位址…</string>
+    <string name="music_status_fake">疑似替換音訊（不是這首歌），已跳過</string>
+    <string name="music_status_fake_dur">實際只有 %1$s，應為 %2$s —— 疑似替換音訊，已跳過</string>
+    <string name="music_status_fake_blocked">該平台剛回傳過替換音訊，先停用一會兒</string>
     <string name="music_random">隨便聽聽</string>
     <string name="music_random_toast">隨便聽聽：%1$d 首隨機播放</string>
     <string name="music_random_empty">內建清單是空的</string>

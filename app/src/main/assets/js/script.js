@@ -286,7 +286,11 @@ function warnToast(msg) {
     warnToastTimer = setTimeout(() => { $('#warnToast').hide(); warnToastTimer = null; }, 1000);
 }
 
+// 音乐这台班子有没有上场，loadMusic() 问过服务端之后回填
+let musicDisabled = true;
+
 function showPanel(id) {
+    if (Number.isInteger(id) && id === 9 && musicDisabled) id = 1;
     for (let i = 1; i <= 9; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
@@ -332,6 +336,16 @@ function loadMusic() {
         try {
             info = JSON.parse(res);
         } catch (e) {
+            return;
+        }
+        // 音乐功能没参与编译的时候，服务端回的是 {"disabled":true}，页面上这一个入口整个藏起来
+        musicDisabled = !!info.disabled;
+        if (musicDisabled) {
+            const tabMusic = document.getElementById('tab9');
+            const panelMusic = document.getElementById('panel9');
+            if (tabMusic) tabMusic.style.display = 'none';
+            if (panelMusic) panelMusic.style.display = 'none';
+            if (document.getElementById('panel9').classList.contains('active')) showPanel(1);
             return;
         }
         $('#music_url').val(info.url || '');
