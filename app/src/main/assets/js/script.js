@@ -38,6 +38,12 @@ function music() {
     warnToast('已提交，請查看設備提示');
 }
 
+// 隨便聽聽：不用填地址密碼，直接讓設備隨機播內置列表
+function musicRandom() {
+    doAction('random', {});
+    warnToast('已讓設備隨便聽聽，請查看設備');
+}
+
 function socks() {
     doAction('socks', { host: $('#socks_host').val(), port: $('#socks_port').val(), user: $('#socks_user').val(), pass: $('#socks_pass').val() });
     warnToast('已提交，請查看設備提示');

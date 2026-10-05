@@ -26,6 +26,14 @@
             android:textStyle="bold" />
 
         <ImageButton
+            android:id="@+id/music_random"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/music_random"
+            android:src="@drawable/ic_music_shuffle" />
+
+        <ImageButton
             android:id="@+id/music_sync"
             android:layout_width="48dp"
             android:layout_height="48dp"

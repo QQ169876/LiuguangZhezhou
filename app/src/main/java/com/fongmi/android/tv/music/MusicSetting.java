@@ -66,6 +66,15 @@ public class MusicSetting {
         Prefers.put("music_lyric", lyric);
     }
 
+    /** 随机播放开关，下次进播放页还是这个状态 */
+    public static boolean isShuffle() {
+        return Prefers.getBoolean("music_shuffle", false);
+    }
+
+    public static void putShuffle(boolean shuffle) {
+        Prefers.put("music_shuffle", shuffle);
+    }
+
     /** 服务器地址：把末尾多余的 / 去掉 */
     public static String getBase() {
         String url = getUrl();

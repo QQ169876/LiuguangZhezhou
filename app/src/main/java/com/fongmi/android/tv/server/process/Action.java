@@ -22,6 +22,7 @@ import com.fongmi.android.tv.music.LxSync;
 import com.fongmi.android.tv.music.MusicSetting;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.ui.activity.MusicActivity;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.Setting;
@@ -72,6 +73,7 @@ public class Action implements Process {
             case "spider" -> onSpider(params);
             case "moontv" -> onMoonTV(params);
             case "music" -> onMusic(params);
+            case "random" -> onRandom();
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
             case "search" -> onSearch(params);
@@ -148,6 +150,13 @@ public class Action implements Process {
         App.post(() -> Notify.show(R.string.music_sync_ok));
         // 网页/推送改完地址密码，顺手把歌单拉下来
         if (MusicSetting.isValid()) LxSync.sync((ok, message) -> App.post(() -> Notify.show(ok ? message : App.get().getString(R.string.music_sync_fail) + "：" + message)));
+    }
+
+    /**
+     * 网页点「随便听听」：不用登录、不用填服务器，直接让设备随机播内置列表
+     */
+    private void onRandom() {
+        App.post(() -> MusicActivity.startRandom(App.get()));
     }
 
     /**

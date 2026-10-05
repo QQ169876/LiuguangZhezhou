@@ -44,6 +44,22 @@ public class MusicDirect {
         return "";
     }
 
+    /** 网易 eapi：自持算法，不依赖任何第三方服务器，取地址的主路 */
+    public static boolean isWy(Music music) {
+        return music != null && "wy".equals(music.getSource());
+    }
+
+    /**
+     * 这首歌能不能不靠第三方取到地址（wy 是可靠的自持算法）。
+     *
+     * 注意：**酷我不算**。它的 anti.s 官方已限制非客户端调用，多数设备拿回来的是
+     * 「下载酷我音乐客户端」的提示页而不是音频（马先生实机确认播不成），
+     * 所以只用最后一次兜底，失败跳曲时不该往酷我上跳。
+     */
+    public static boolean support(Music music) {
+        return isWy(music);
+    }
+
     public static String lyric(Music music) {
         String source = music.getSource();
         if ("wy".equals(source)) return wyLyric(music);
@@ -138,6 +154,11 @@ public class MusicDirect {
 
     /* ---------- 酷我 ---------- */
 
+    /**
+     * 酷我 anti.s。这条路已经半废：官方只对客户端放行，非客户端设备常被回一个
+     * 「下载酷我音乐客户端」的提示页（HTML）而不是音频 URL（马先生实机确认）。
+     * 所以 {@link MusicSource} 把它排在最后兜底，主路走脚本音源。
+     */
     private static String kwUrl(Music music, String quality) {
         String format = "flac".equals(quality) || "flac24bit".equals(quality) ? "flac" : "mp3";
         String br = "320k".equals(quality) ? "&br=320kmp3" : "";

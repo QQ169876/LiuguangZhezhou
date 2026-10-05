@@ -45,6 +45,22 @@
             android:textColor="@color/white_70"
             android:textSize="15sp" />
 
+        <!-- 随便听听模式下才出现：提示这是内置的试听列表，跟账号无关 -->
+        <TextView
+            android:id="@+id/music_mode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_music_mode"
+            android:paddingStart="10dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="3dp"
+            android:text="@string/music_random"
+            android:textColor="@color/blue_on_primary_container"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/music_lrc"
             android:layout_width="match_parent"
@@ -53,6 +69,18 @@
             android:layout_weight="1"
             android:gravity="center_horizontal"
             app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+        <!-- 歌词下面一行：现在这首歌的地址是从哪条路取来的，取不到时说明原因 -->
+        <TextView
+            android:id="@+id/music_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:singleLine="true"
+            android:textColor="@color/white_70"
+            android:textSize="12sp" />
 
     </LinearLayout>
 
@@ -94,6 +122,15 @@
         android:layout_marginTop="8dp"
         android:gravity="center"
         android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/music_shuffle"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/music_shuffle"
+            android:src="@drawable/ic_music_shuffle" />
 
         <ImageButton
             android:id="@+id/music_prev"

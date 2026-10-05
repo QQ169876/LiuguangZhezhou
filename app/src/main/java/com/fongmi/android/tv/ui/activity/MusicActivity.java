@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.ui.activity;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.InputType;
@@ -25,6 +26,7 @@ import com.fongmi.android.tv.music.LxSync;
 import com.fongmi.android.tv.music.Music;
 import com.fongmi.android.tv.music.MusicApi;
 import com.fongmi.android.tv.music.MusicPlayer;
+import com.fongmi.android.tv.music.MusicRandom;
 import com.fongmi.android.tv.music.MusicSetting;
 import com.fongmi.android.tv.music.MusicStore;
 import com.fongmi.android.tv.ui.adapter.MusicGroupAdapter;
@@ -70,8 +72,43 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
     private void initEvent() {
         binding.musicSync.setOnClickListener(v -> doSync());
         binding.musicSetting.setOnClickListener(v -> showSetting());
+        binding.musicRandom.setOnClickListener(v -> playRandom());
         binding.musicBar.setOnClickListener(v -> MusicPlayActivity.start(this));
         binding.musicBarPlay.setOnClickListener(v -> MusicPlayer.get().toggle());
+    }
+
+    /** 随便听听：随机播，不用配同步服务、不问账号；收藏只存本机 */
+    private void playRandom() {
+        startRandom(this, true);
+    }
+
+    /**
+     * 随便听听的启动入口（网页遥控也走这里）：
+     * 每次点进来都先把曲库从本机已同步的歌单重刷一遍（马先生要的「点一次更新一次」），
+     * 没同步过就用包里自带那份兜底。曲库只落本机，不会上传任何东西。
+     */
+    public static void startRandom(Context context) {
+        startRandom(context, false);
+    }
+
+    private static void startRandom(Context context, boolean openPlay) {
+        new Thread(() -> {
+            if (!MusicApi.get().isReady()) MusicApi.get().init();
+            List<Music> songs = MusicRandom.fresh();
+            String error = MusicApi.get().isReady() ? "" : MusicApi.get().getLastError();
+            App.post(() -> {
+                if (songs.isEmpty()) {
+                    Notify.show(R.string.music_random_empty);
+                    return;
+                }
+                MusicPlayer.get().playRandom(songs);
+                Notify.show(App.get().getString(R.string.music_random_toast, songs.size()));
+                if (error != null && !error.isEmpty()) Notify.show(error);
+                Intent intent = new Intent(context, openPlay ? MusicPlayActivity.class : MusicActivity.class);
+                if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+            });
+        }, "lx-random").start();
     }
 
     private void reload() {
@@ -120,7 +157,11 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
             if (isDestroyed() || isFinishing()) return;
             binding.musicLoading.setVisibility(View.GONE);
             Notify.show(ok ? message : getString(R.string.music_sync_fail) + "：" + message);
-            if (ok) reload();
+            if (ok) {
+                reload();
+                // 同步完顺手把「随便听听」的曲库也刷一遍，新歌立刻能随机到
+                new Thread(() -> MusicRandom.refresh(), "lx-random-refresh").start();
+            }
         }));
     }
 
