@@ -55,6 +55,7 @@ public class LxSync {
             } catch (Exception e) {
                 message = e.getMessage() == null ? e.toString() : e.getMessage();
             }
+            DebugLog.d("LxSync", (ok ? "成功 " : "失败 ") + message);
             if (callback != null) callback.onDone(ok, message);
         }, "lx-sync").start();
     }
@@ -64,8 +65,18 @@ public class LxSync {
         if (base.isEmpty()) throw new Exception("还没填同步服务器地址");
         String authCode = MusicSetting.getPass();
         if (authCode.isEmpty()) throw new Exception("还没填同步密码");
+        hello(base);
         Auth auth = auth(base, authCode);
+        DebugLog.d("LxSync", "握手成功 serverName=" + auth.serverName + " clientId=" + auth.clientId);
         return socket(base, auth);
+    }
+
+    /** 官方客户端第一步：先问 /hello 确认是同步服务器、版本也对得上 */
+    private static void hello(String base) throws Exception {
+        String text = get(base + "/hello", null);
+        if (text.isEmpty()) throw new Exception("这个地址不是洛雪同步服务器");
+        if (!text.startsWith("Hello~::^-^::")) throw new Exception("这个地址不是洛雪同步服务器");
+        DebugLog.d("LxSync", "hello " + text);
     }
 
     /** 第一步：/id 拿服务器标识，第二步：/ah 用 RSA 换回 clientId 和密钥 */
@@ -121,6 +132,14 @@ public class LxSync {
 
             @Override
             public void onClosed(@androidx.annotation.NonNull WebSocket webSocket, int code, @androidx.annotation.NonNull String reason) {
+                // 没到 finished 就断了：按失败算，别让人以为同步成功了
+                if (result[0] == null && result[1] == null) result[0] = "连接被服务器关闭（" + code + "），同步没完成";
+                latch.countDown();
+            }
+
+            @Override
+            public void onClosing(@androidx.annotation.NonNull WebSocket webSocket, int code, @androidx.annotation.NonNull String reason) {
+                if (result[0] == null && result[1] == null) result[0] = "连接被服务器关闭（" + code + "），同步没完成";
                 latch.countDown();
             }
         });
@@ -136,10 +155,9 @@ public class LxSync {
     private static void handle(WebSocket socket, String raw, CountDownLatch latch, String[] result) {
         try {
             String text = raw;
-            if ("ping".equals(text)) {
-                socket.send("pong");
-                return;
-            }
+            // 官方客户端收到应用层 ping 只续命、不回话（回 'pong' 这类非 JSON 文本，
+            // 服务端 JSON.parse 不过会直接以 4100 断开连接）
+            if ("ping".equals(text)) return;
             if (text.startsWith("cg_")) text = gunzip(text.substring(3));
             JSONObject msg = new JSONObject(text);
             boolean isCall = msg.optInt("type", -1) == 0 || (!msg.has("type") && msg.has("path"));
@@ -153,6 +171,7 @@ public class LxSync {
             reply.put("error", JSONObject.NULL);
             reply.put("data", data == null ? JSONObject.NULL : data);
             socket.send(reply.toString());
+            DebugLog.d("LxSync", "应答 " + path);
             if ("finished".equals(path)) {
                 result[1] = "同步完成，共 " + MusicStore.get().count() + " 首";
                 latch.countDown();
@@ -190,7 +209,10 @@ public class LxSync {
                 return LxCrypto.md5(GSON.toJson(MusicStore.get()));
             }
             case "list_sync_get_sync_mode": {
-                return "overwrite_local_remote_full";
+                // 官方语义：overwrite_local_remote 是「本机覆盖远程」，overwrite_remote_local 才是「远程覆盖本机」。
+                // 我们要的是把服务器歌单拉下来覆盖本机，千万不能再写反——写反了就是拿本机的（可能只有几首的）
+                // 列表去覆盖服务器，不但拉不到，还会把服务器上的歌单清空。
+                return "overwrite_remote_local_full";
             }
             case "list_sync_get_list_data": {
                 return new JSONObject(GSON.toJson(MusicStore.get()));

@@ -55,6 +55,8 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
         initView();
         initEvent();
         new Thread(() -> MusicApi.get().init(), "lx-api").start();
+        // 填了同步配置而本地还没有歌单：进来就自动拉一次，不用自己找同步按钮
+        if (MusicSetting.isValid() && MusicStore.get().isEmpty()) doSync();
     }
 
     private void initView() {
@@ -115,6 +117,7 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
         binding.musicLoading.setVisibility(View.VISIBLE);
         Notify.show(R.string.music_syncing);
         LxSync.sync((ok, message) -> App.post(() -> {
+            if (isDestroyed() || isFinishing()) return;
             binding.musicLoading.setVisibility(View.GONE);
             Notify.show(ok ? message : getString(R.string.music_sync_fail) + "：" + message);
             if (ok) reload();
@@ -156,6 +159,7 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
         new MaterialAlertDialogBuilder(this).setTitle(R.string.music_title).setView(layout)
                 .setNegativeButton(R.string.dialog_negative, null)
                 .setPositiveButton(R.string.dialog_positive, (dialog, which) -> {
+                    boolean changed = !MusicSetting.getUrl().equals(host.getText().toString().trim()) || !MusicSetting.getPass().equals(pass.getText().toString().trim());
                     MusicSetting.putUrl(host.getText().toString());
                     MusicSetting.putPass(pass.getText().toString());
                     MusicSetting.putJx(jx.getText().toString());
@@ -163,6 +167,8 @@ public class MusicActivity extends AppCompatActivity implements MusicPlayer.List
                     MusicSetting.putQuality((String) spinner.getSelectedItem());
                     MusicSetting.putLyric(lyric.isChecked());
                     new Thread(() -> MusicApi.get().init(), "lx-api").start();
+                    // 填完地址密码顺手就把歌单拉下来，不用再自己找同步按钮
+                    if (changed && MusicSetting.isValid()) doSync();
                 }).show();
     }
 

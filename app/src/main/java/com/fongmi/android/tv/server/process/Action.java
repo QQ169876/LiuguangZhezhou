@@ -18,6 +18,7 @@ import com.fongmi.android.tv.event.ServerEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonApi;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.music.LxSync;
 import com.fongmi.android.tv.music.MusicSetting;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.Server;
@@ -145,6 +146,8 @@ public class Action implements Process {
         String lyric = params.get("lyric");
         if (!TextUtils.isEmpty(lyric)) MusicSetting.putLyric("1".equals(lyric));
         App.post(() -> Notify.show(R.string.music_sync_ok));
+        // 网页/推送改完地址密码，顺手把歌单拉下来
+        if (MusicSetting.isValid()) LxSync.sync((ok, message) -> App.post(() -> Notify.show(ok ? message : App.get().getString(R.string.music_sync_fail) + "：" + message)));
     }
 
     /**
