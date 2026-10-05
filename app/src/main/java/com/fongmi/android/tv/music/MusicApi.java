@@ -59,6 +59,7 @@ public class MusicApi {
     private QuickJSContext ctx;
     private String key;
     private String script;
+    private String lastError = "";
     private volatile boolean ready;
 
     public static MusicApi get() {
@@ -85,21 +86,23 @@ public class MusicApi {
         return sources;
     }
 
-    /** 六音的在线地址：内置那份起不来时，拉一份最新的再试一次 */
-    private static final String ONLINE = "https://fastly.jsdelivr.net/gh/pdone/lx-music-source@main/sixyin/latest.js";
+    /** 音源没起来时的原因，用来给用户提示，别让人干瞪眼 */
+    public String getLastError() {
+        return lastError;
+    }
 
     /** 加载音源脚本；已经加载过就跳过 */
     public synchronized void init() {
         if (ready) return;
         String text = MusicSetting.getScript();
-        if (text.startsWith("http")) text = OkHttp.string(text);
-        if (text.isEmpty()) text = builtIn();
-        if (!boot(text)) {
-            // 内置那份没能初始化（脚本自己会报「请下载最新版本」），在线拉一份再试
-            String online = OkHttp.string(ONLINE);
-            if (!online.isEmpty() && !online.equals(text)) boot(online);
+        if (text.startsWith("http")) {
+            String fetched = OkHttp.string(text);
+            if (fetched.isEmpty()) DebugLog.d("MusicApi", "自定义音源脚本下载失败 " + text);
+            else text = fetched;
         }
-        DebugLog.d("MusicApi", "音源就绪 " + ready + " 支持 " + sources);
+        if (text.isEmpty()) text = builtIn();
+        boot(text);
+        DebugLog.d("MusicApi", "音源就绪 " + ready + " 支持 " + sources + (ready ? "" : " 原因 " + lastError));
     }
 
     /** 把脚本塞进引擎，等它把支持的音源报上来 */
@@ -117,10 +120,39 @@ public class MusicApi {
 
     private String builtIn() {
         try {
-            return com.github.catvod.utils.Asset.read("music/sixyin.js");
+            return com.github.catvod.utils.Asset.read("music/flower.js");
         } catch (Throwable e) {
             return "";
         }
+    }
+
+    /**
+     * 照官方移动版 data.ts 的 matchInfo：从脚本头注释解析
+     * @name/@description/@version/@author/@homepage，解析不到就留空。
+     * 元信息必须跟脚本里写的一致——六音那种带自检的脚本会拿 description 逐字比对，
+     * 写错了脚本直接拒绝加载。
+     */
+    private static String[] scriptInfo(String rawScript) {
+        String[] info = {"", "", "", "", ""};
+        try {
+            java.util.regex.Matcher block = java.util.regex.Pattern.compile("^/\\*[\\S\\s]+?\\*/").matcher(rawScript);
+            if (block.find()) {
+                java.util.regex.Matcher line = java.util.regex.Pattern.compile("(?m)^\\s?\\*\\s?@(\\w+)\\s(.+)$").matcher(block.group());
+                while (line.find()) {
+                    String value = line.group(2).trim();
+                    switch (line.group(1)) {
+                        case "name" -> info[0] = value;
+                        case "description" -> info[1] = value;
+                        case "version" -> info[2] = value;
+                        case "author" -> info[3] = value;
+                        case "homepage" -> info[4] = value;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        if (info[0].isEmpty()) info[0] = "user_api_builtin";
+        return info;
     }
 
     private void create(String rawScript) {
@@ -128,16 +160,38 @@ public class MusicApi {
             QuickJSLoader.init();
             if (ctx != null) ctx.destroy();
             ctx = QuickJSContext.create();
+            // 必须先给上下文挂上 console 的输出去向：wrapper 的原生 console.log 在没有 stdout 时
+            // 会直接 throw（"you should be set a stdout of platform to console.stdout"），
+            // 而 user-api-preload.js 结尾就有一句 console.log，不挂的话环境根本建不起来。
+            QuickJSLoader.initConsoleLog(ctx, "MusicApi");
             key = UUID.randomUUID().toString();
             bind();
             String preload = com.github.catvod.utils.Asset.read("music/user-api-preload.js");
             ctx.evaluate(preload);
-            ctx.getGlobalObject().getJSFunction("lx_setup").call(key, "sixyin", "六音音源", "v1.2.1", "v1.2.1", "六音", "www.sixyin.com", rawScript);
+            DebugLog.d("MusicApi", "preload 已执行 " + preload.length() + " 字节");
+            String[] meta = scriptInfo(rawScript);
+            ctx.getGlobalObject().getJSFunction("lx_setup").call(key, "builtin", meta[0], meta[1], meta[2], meta[3], meta[4], rawScript);
             ctx.evaluate(rawScript);
+            DebugLog.d("MusicApi", "脚本已执行 " + rawScript.length() + " 字节");
             script = rawScript;
         } catch (Throwable e) {
+            lastError = String.valueOf(e.getMessage() == null ? e : e.getMessage());
             DebugLog.d("MusicApi", "建环境失败 " + e);
         }
+    }
+
+    /** 宽容一点的 base64 解码：去掉空白、兼容 urlsafe、补足长度——脚本里各种写法都有 */
+    private static byte[] b64(String text) {
+        String src = text == null ? "" : text.replaceAll("\\s", "");
+        if (src.indexOf('-') >= 0 || src.indexOf('_') >= 0) src = src.replace('-', '+').replace('_', '/');
+        int pad = src.length() % 4;
+        if (pad > 0) src = src + "==".substring(0, 4 - pad);
+        return Base64.decode(src, Base64.NO_WRAP);
+    }
+
+    private static String head(String text) {
+        if (text == null) return "null";
+        return text.length() > 80 ? text.substring(0, 80) + "..." : text;
     }
 
     /** 把宿主要给脚本用的几个函数挂到全局上 */
@@ -149,27 +203,35 @@ public class MusicApi {
         });
         ctx.getGlobalObject().setProperty("__lx_native_call__utils_str2b64", args -> {
             try {
-                return new String(Base64.encode(String.valueOf(args[0]).getBytes("UTF-8"), Base64.NO_WRAP));
+                String out = new String(Base64.encode(String.valueOf(args[0]).getBytes("UTF-8"), Base64.NO_WRAP));
+                DebugLog.d("MusicApi", "str2b64 " + head(String.valueOf(args[0])) + " -> " + head(out));
+                return out;
             } catch (Throwable e) {
                 return "";
             }
         });
         ctx.getGlobalObject().setProperty("__lx_native_call__utils_b642buf", args -> {
+            String input = String.valueOf(args[0]);
             try {
-                byte[] data = Base64.decode(String.valueOf(args[0]).getBytes("UTF-8"), Base64.NO_WRAP);
+                byte[] data = b64(input);
                 StringBuilder sb = new StringBuilder("[");
                 for (int i = 0; i < data.length; i++) {
                     if (i > 0) sb.append(",");
                     sb.append((int) data[i]);
                 }
-                return sb.append("]").toString();
+                String out = sb.append("]").toString();
+                DebugLog.d("MusicApi", "b642buf " + head(input) + " -> " + head(out));
+                return out;
             } catch (Throwable e) {
+                DebugLog.d("MusicApi", "base64 解码失败 长度=" + input.length() + " 内容=" + head(input) + " " + e);
                 return "";
             }
         });
         ctx.getGlobalObject().setProperty("__lx_native_call__utils_str2md5", args -> {
             try {
-                return LxCrypto.md5(URLDecoder.decode(String.valueOf(args[0]), "UTF-8"));
+                String out = LxCrypto.md5(URLDecoder.decode(String.valueOf(args[0]), "UTF-8"));
+                DebugLog.d("MusicApi", "str2md5 " + head(String.valueOf(args[0])) + " -> " + head(out));
+                return out;
             } catch (Throwable e) {
                 return "";
             }
@@ -216,7 +278,7 @@ public class MusicApi {
                 case "request" -> doRequest(object.optString("requestKey"), object.optString("url"), object.optJSONObject("options"));
                 case "response" -> onResponse(object);
                 case "cancelRequest" -> DebugLog.d("MusicApi", "脚本取消请求");
-                default -> DebugLog.d("MusicApi", "脚本消息 " + action);
+                default -> DebugLog.d("MusicApi", "脚本消息 " + action + " " + head(data));
             }
         } catch (Throwable e) {
             DebugLog.d("MusicApi", "处理脚本消息出错 " + e);
@@ -226,6 +288,7 @@ public class MusicApi {
     /** 替脚本发一个 HTTP 请求，结果送回脚本 */
     private void doRequest(String requestKey, String url, JSONObject options) {
         if (requestKey.isEmpty() || url.isEmpty()) return;
+        DebugLog.d("MusicApi", "脚本请求 " + (options == null ? "get" : options.optString("method", "get")) + " " + url);
         try {
             String method = options == null ? "get" : options.optString("method", "get");
             boolean binary = options != null && options.optBoolean("binary");

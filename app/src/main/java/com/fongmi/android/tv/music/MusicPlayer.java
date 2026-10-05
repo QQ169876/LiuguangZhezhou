@@ -7,10 +7,13 @@ import androidx.annotation.NonNull;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.utils.DebugLog;
+import com.github.catvod.net.OkHttp;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,7 +74,12 @@ public class MusicPlayer {
 
     private ExoPlayer player() {
         if (player == null) {
-            player = new ExoPlayer.Builder(App.get()).build();
+            // 必须换 OkHttp 的 DataSource：默认 DefaultHttpDataSource 不跟跨协议 302，
+            // 酷我 anti.s 是 http 跳 https，会被当成 "Response code: 302" 错误直接起播失败。
+            // 视频那边（ExoMediaSourceFactory）也是同一套 OkHttpDataSource。
+            player = new ExoPlayer.Builder(App.get())
+                    .setMediaSourceFactory(new DefaultMediaSourceFactory(new OkHttpDataSource.Factory(OkHttp.player())))
+                    .build();
             player.setRepeatMode(Player.REPEAT_MODE_OFF);
             player.addListener(new Player.Listener() {
                 @Override

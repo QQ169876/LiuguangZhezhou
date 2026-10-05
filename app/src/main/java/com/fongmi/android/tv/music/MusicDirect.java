@@ -87,9 +87,9 @@ public class MusicDirect {
             payload.put("yrv", 0);
             payload.put("header", wyHeader().toString());
             JSONObject result = eapi("/song/lyric", payload);
-            String text = result.optString("lrc", "");
-            if (text.isEmpty()) text = result.optJSONObject("lrc") == null ? "" : result.optJSONObject("lrc").optString("lyric");
-            return text;
+            // lrc 是个对象 {"version":2,"lyric":"..."}，直接 optString 会把整个 JSON 文本拿出来
+            JSONObject lrc = result.optJSONObject("lrc");
+            return lrc == null ? "" : lrc.optString("lyric", "");
         } catch (Throwable e) {
             return "";
         }
