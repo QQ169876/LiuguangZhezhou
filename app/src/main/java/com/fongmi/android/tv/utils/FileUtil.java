@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.text.TextUtils;
 
 import androidx.core.content.FileProvider;
@@ -28,12 +29,16 @@ import java.io.OutputStream;
 import java.net.URLConnection;
 import java.text.DecimalFormat;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class FileUtil {
+
+    private static final String APK_MIME = "application/vnd.android.package-archive";
 
     public static File getWall(int index) {
         return Path.files("wallpaper_" + index);
@@ -44,11 +49,152 @@ public class FileUtil {
     }
 
     public static void openFile(File file) {
-        Intent intent = new Intent(Intent.ACTION_VIEW);
+        openFile(file, false);
+    }
+
+    /**
+     * 拿系统里能处理这种文件的应用去打开它。
+     *
+     * chooser = true 时先弹系统的「用其他应用打开」列表，把「用谁开」的决定权留给用户 ——
+     * 局域网推过来的东西，接收端自己没资格替对面挑应用。
+     */
+    public static void openFile(File file, boolean chooser) {
+        if (file == null || !file.exists()) return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.setDataAndType(openUri(file), getMimeType(file.getName()));
+            Intent target = intent;
+            if (chooser) {
+                target = Intent.createChooser(intent, ResUtil.getString(R.string.push_open_with));
+                target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            }
+            App.get().startActivity(target);
+        } catch (Throwable e) {
+            Notify.show(R.string.push_open_fail);
+        }
+    }
+
+    /**
+     * 推过来的安装包：直接把系统安装器拉起来装。
+     *
+     * 之前只做了一句 ACTION_VIEW，对端经常一点反应都没有，三个坑：
+     * 1. mime 靠 guessContentTypeFromName 猜，.apk 基本猜不出来，落到 "* / *"，
+     *    系统不知道该拿什么开 —— TV 上的表现就是「什么都没发生」；
+     * 2. Android 8 起装未知应用要先给授权（canRequestPackageInstalls），没给的话 Intent 会被系统吞掉；
+     * 3. 文件原先落在 sdcard 根目录，Android 10 分区存储下常常压根没写进去，装什么装。
+     *
+     * 安卓 6（我们的兼容版就是 minSdk 23）还得另眼看待：
+     * 它的系统安装器不认 content://、只认 file://，而去读别的应用私有目录里的文件又常被系统拦住，
+     * 所以先往公共的「下载」目录落一份，拿那份去拉安装器；两条路都不行再把位置告诉用户。
+     */
+    public static void installApk(File file) {
+        if (file == null || !file.exists() || file.length() <= 0) {
+            Notify.show(R.string.push_install_fail);
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !App.get().getPackageManager().canRequestPackageInstalls()) {
+                // 安卓 8 起「未知应用」是按 App 分别授权的
+                openUnknownSource(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:".concat(App.get().getPackageName())));
+                return;
+            }
+            // 安卓 6 那批机器是另一种规矩：一个全机通用的「允许安装未知应用」总开关，关着的话安装器会把 Intent 吞掉
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N && !installNonMarketAllowed()) {
+                openUnknownSource(Settings.ACTION_SECURITY_SETTINGS, null);
+                return;
+            }
+            String saved = null;
+            File target = file;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                saved = saveToDownload(file, file.getName());
+                if (saved != null) target = new File(saved);
+                makeWorldReadable(target);
+                if (launch(apkIntent(target, Intent.ACTION_INSTALL_PACKAGE))) return;
+                if (launch(apkIntent(target, Intent.ACTION_VIEW))) return;
+            } else {
+                if (launch(apkIntent(file, Intent.ACTION_VIEW))) return;
+            }
+            fallback(file, saved);
+        } catch (Throwable e) {
+            fallback(file, null);
+        }
+    }
+
+    private static void fallback(File file, String saved) {
+        if (saved == null) saved = saveToDownload(file, file.getName());
+        Notify.show(saved == null ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, saved));
+    }
+
+    private static void openUnknownSource(String action, Uri data) {
+        try {
+            Intent intent = new Intent(action, data);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            App.get().startActivity(intent);
+        } catch (Throwable ignored) {
+            // 连设置页都拉不起来（有些盒子精简掉了），那就只能提示一句
+        }
+        Notify.show(R.string.push_install_perm);
+    }
+
+    /** 安卓 6 及更早的那个全局开关。读不到就当开着的，别把人拦在门外 */
+    private static boolean installNonMarketAllowed() {
+        try {
+            return Settings.Secure.getInt(App.get().getContentResolver(), Settings.Secure.INSTALL_NON_MARKET_APPS, 1) != 0;
+        } catch (Throwable e) {
+            return true;
+        }
+    }
+
+    private static Intent apkIntent(File file, String action) {
+        Intent intent = new Intent(action);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        intent.setDataAndType(getShareUri(file), FileUtil.getMimeType(file.getName()));
-        App.get().startActivity(intent);
+        intent.addCategory(Intent.CATEGORY_DEFAULT);
+        intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.setDataAndType(getShareUri(file), APK_MIME);
+        } else {
+            intent.setDataAndType(Uri.fromFile(file), APK_MIME);
+        }
+        return intent;
+    }
+
+    private static boolean launch(Intent intent) {
+        try {
+            if (intent.resolveActivity(App.get().getPackageManager()) == null) return false;
+            App.get().startActivity(intent);
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    /**
+     * 交给别的应用打开的 Uri：安卓 7 起不能直接把 file:// 递出去（会抛 FileUriExposedException），得走 FileProvider；
+     * 安卓 6 反过来 —— 它的系统安装器不认 content://，只认 file://。
+     */
+    private static Uri openUri(File file) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) return getShareUri(file);
+        makeWorldReadable(file);
+        return Uri.fromFile(file);
+    }
+
+    /**
+     * 用 file:// 把私有目录里的文件交给别的应用时，对方是另一个 uid，
+     * 不放开读权限它连文件都读不到（表现为安装器闪一下就没了）。
+     * 文件本身要可读，父目录还得可进入。
+     */
+    private static void makeWorldReadable(File file) {
+        try {
+            file.setReadable(true, false);
+            File dir = file.getParentFile();
+            for (int i = 0; dir != null && i < 8; ++i, dir = dir.getParentFile()) {
+                dir.setExecutable(true, false);
+                dir.setReadable(true, false);
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public static void gzipCompress(File target) {
@@ -145,9 +291,61 @@ public class FileUtil {
         return FileProvider.getUriForFile(App.get(), App.get().getPackageName() + ".provider", file);
     }
 
+    /**
+     * 猜文件的类型，交给系统去挑应用。
+     *
+     * 光靠 guessContentTypeFromName 很不顶用：apk、mkv、字幕这些它一律返回 null，
+     * 落到 "* / *" 之后系统就不知道该拿什么开，TV 上的表现是「什么都没发生」。
+     * 常见后缀自己给一份，剩下的再交回它去猜。
+     */
     private static String getMimeType(String fileName) {
-        String mimeType = URLConnection.guessContentTypeFromName(fileName);
-        return TextUtils.isEmpty(mimeType) ? "*/*" : mimeType;
+        String result = MIME.get(extension(fileName));
+        if (!TextUtils.isEmpty(result)) return result;
+        result = URLConnection.guessContentTypeFromName(fileName);
+        return TextUtils.isEmpty(result) ? "*/*" : result;
+    }
+
+    private static String extension(String name) {
+        int index = name == null ? -1 : name.lastIndexOf('.');
+        return index < 0 ? "" : name.substring(index + 1).toLowerCase();
+    }
+
+    private static final Map<String, String> MIME = new HashMap<>();
+
+    static {
+        MIME.put("apk", APK_MIME);
+        MIME.put("mp3", "audio/mpeg");
+        MIME.put("flac", "audio/flac");
+        MIME.put("m4a", "audio/mp4");
+        MIME.put("wav", "audio/x-wav");
+        MIME.put("ogg", "audio/ogg");
+        MIME.put("mp4", "video/mp4");
+        MIME.put("mkv", "video/x-matroska");
+        MIME.put("m3u8", "application/vnd.apple.mpegurl");
+        MIME.put("ts", "video/mp2t");
+        MIME.put("avi", "video/x-msvideo");
+        MIME.put("flv", "video/x-flv");
+        MIME.put("webm", "video/webm");
+        MIME.put("3gp", "video/3gpp");
+        MIME.put("mov", "video/quicktime");
+        MIME.put("jpg", "image/jpeg");
+        MIME.put("jpeg", "image/jpeg");
+        MIME.put("png", "image/png");
+        MIME.put("gif", "image/gif");
+        MIME.put("webp", "image/webp");
+        MIME.put("json", "application/json");
+        MIME.put("txt", "text/plain");
+        MIME.put("log", "text/plain");
+        MIME.put("xml", "text/xml");
+        MIME.put("zip", "application/zip");
+        MIME.put("pdf", "application/pdf");
+        MIME.put("html", "text/html");
+        MIME.put("m3u", "audio/x-mpegurl");
+        MIME.put("srt", "application/x-subrip");
+        MIME.put("ass", "text/x-ssa");
+        MIME.put("ssa", "text/x-ssa");
+        MIME.put("vtt", "text/vtt");
+        MIME.put("lrc", "application/x-subrip");
     }
 
     /**

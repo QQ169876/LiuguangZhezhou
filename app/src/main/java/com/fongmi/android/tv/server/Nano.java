@@ -1,7 +1,5 @@
 package com.fongmi.android.tv.server;
 
-import android.net.Uri;
-
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.moontv.MoonSetting;
@@ -18,6 +16,8 @@ import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Asset;
 
 import java.io.InputStream;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -70,7 +70,7 @@ public class Nano extends NanoHTTPD {
         String url = session.getUri().trim();
         Map<String, String> files = new HashMap<>();
         boolean upload = session.getMethod() == Method.POST && url.startsWith("/upload");
-        if (upload) UploadProgress.begin(name(url), size(session));
+        if (upload) UploadProgress.begin(name(session), size(session));
         try {
             if (session.getMethod() == Method.POST) parse(session, files);
             return reply(session, url, files);
@@ -88,14 +88,26 @@ public class Nano extends NanoHTTPD {
         }
     }
 
-    /** 发送端会把文件名放在网址后面（?name=xxx.apk），收不到就由对话框显示通用文案 */
-    private String name(String url) {
+    /**
+     * 发送端把文件名放在网址后面（?name=xxx.apk）。
+     *
+     * 注意不能拿 session.getUri() 去解析 —— 它只给路径，问号后面那截是拿不到的
+     * （所以进度框上以前一直不显示文件名）。问号后的部分得问 session.getQueryParameterString()。
+     */
+    private String name(IHTTPSession session) {
         try {
-            String value = Uri.parse(url).getQueryParameter("name");
-            return value == null ? "" : value.trim();
-        } catch (Exception e) {
-            return "";
+            String query = session.getQueryParameterString();
+            if (query == null) return "";
+            for (String pair : query.split("&")) {
+                int index = pair.indexOf('=');
+                if (index < 0) continue;
+                if (!pair.substring(0, index).trim().equals("name")) continue;
+                String value = pair.substring(index + 1).trim();
+                return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+            }
+        } catch (Exception ignored) {
         }
+        return "";
     }
 
     private Response reply(IHTTPSession session, String url, Map<String, String> files) {

@@ -8,6 +8,7 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.impl.Process;
+import com.fongmi.android.tv.ui.dialog.ReceiveFileDialog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Formatters;
 import com.fongmi.android.tv.utils.Notify;
@@ -62,16 +63,55 @@ public class Local implements Process {
             String fn = params.get(k);
             File temp = new File(files.get(k));
             if (fn == null) continue;
-            if (fn.toLowerCase().endsWith(".zip")) FileUtil.zipDecompress(temp, Path.root(path));
-            else Path.copy(temp, Path.root(path, fn));
-            if (fn.toLowerCase().endsWith(".apk")) install(Path.root(path, fn));
-            else hint(R.string.push_received);
+            if (fn.toLowerCase().endsWith(".zip")) {
+                FileUtil.zipDecompress(temp, Path.root(path));
+                hint(R.string.push_received);
+            } else if (fn.toLowerCase().endsWith(".apk")) {
+                install(temp, fn);
+            } else {
+                // 普通文件：先存下来，再问用户要不要打开，别替他决定。
+                // 存这一步必须同步做 —— 请求一返回 NanoHTTPD 就把临时文件删了，
+                // 丢到主线程去做只能拷到一个空文件（进度框/file:// 抓取都是这个教训）。
+                File file = save(temp, path, fn);
+                App.post(() -> ReceiveFileDialog.show(file));
+            }
         }
         return Nano.ok();
     }
 
-    private void install(File file) {
-        App.post(() -> FileUtil.openFile(file));
+    /**
+     * 存用户目录（还是老位置），存不进去就落到自己的私有目录 ——
+     * Android 10 起 sdcard 根目录没有权限写（以前这里静默失败，收到等于没收到），
+     * 退回私有目录至少文件还在，打开时由 FileProvider 把关。
+     */
+    private File save(File temp, String path, String name) {
+        try {
+            File file = Path.root(path, name);
+            Path.copy(temp, file);
+            if (file.exists() && file.length() > 0) return file;
+        } catch (Throwable ignored) {
+        }
+        try {
+            File dir = new File(Path.files(), "download");
+            if (!dir.exists() && !dir.mkdirs()) dir = Path.files();
+            File file = new File(dir, name);
+            Path.copy(temp, file);
+            if (file.exists() && file.length() > 0) return file;
+        } catch (Throwable ignored) {
+        }
+        return new File(Path.root(path), name);
+    }
+
+    /**
+     * 安装包不往 sdcard 根目录存了 —— Android 10 起分区存储，那儿经常根本写不进去，
+     * 写不进去自然也就没东西可装。放到 App 自己的缓存目录，再通过 FileProvider 交给系统安装器。
+     */
+    private void install(File temp, String name) {
+        File dir = Path.cache("push");
+        if (!dir.exists() && !dir.mkdirs()) dir = Path.cache();
+        File file = new File(dir, name);
+        Path.copy(temp, file);
+        App.post(() -> FileUtil.installApk(file));
     }
 
     private void hint(int resId) {

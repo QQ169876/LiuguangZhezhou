@@ -338,6 +338,14 @@
     <string name="push_fail">推送失败</string>
     <string name="push_empty">设备地址为空</string>
     <string name="push_received">已收到文件</string>
+    <string name="push_install_perm">这台设备还没给「允许安装未知应用」的权限，设置页已经打开了，开一下再推一次就行。</string>
+    <string name="push_install_fail">安装包没装上，可能接收不完整，再推一次试试。</string>
+    <string name="push_install_saved">系统安装器没拉起来，已经存到 %1$s，去那儿点一下就能装。</string>
+    <string name="push_received_saved">已收到 %1$s</string>
+    <string name="push_open_ask">收到「%1$s」（%2$s），要用其他应用打开吗？</string>
+    <string name="push_open">打开</string>
+    <string name="push_open_with">用其他应用打开</string>
+    <string name="push_open_fail">这台设备上没找到能打开这种文件的应用</string>
     <string name="upload_receiving">正在接收文件</string>
     <string name="upload_size">%1$d%%  %2$s / %3$s</string>
     <string name="push_all">推送全部配置</string>

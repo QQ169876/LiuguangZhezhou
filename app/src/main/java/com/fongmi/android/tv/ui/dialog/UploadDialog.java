@@ -18,10 +18,16 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
  */
 public class UploadDialog extends BaseAlertDialog {
 
+    private final String name;
+
     private DialogUploadBinding binding;
 
-    public static UploadDialog create() {
-        return new UploadDialog();
+    public static UploadDialog create(String name) {
+        return new UploadDialog(name);
+    }
+
+    private UploadDialog(String name) {
+        this.name = name;
     }
 
     public void show(FragmentActivity activity) {
@@ -39,11 +45,10 @@ public class UploadDialog extends BaseAlertDialog {
         return builder().setTitle(R.string.upload_receiving).setView(getBinding().getRoot()).setCancelable(false);
     }
 
-    public void setName(String name) {
-        App.post(() -> {
-            if (binding == null || name == null || name.isEmpty()) return;
-            binding.name.setText(name);
-        });
+    @Override
+    protected void initView() {
+        // 文件名从创建时就带上：这里再 set 一次是为了那种「还没来得及显示就改名」的情况
+        if (name != null && !name.isEmpty()) binding.name.setText(name);
     }
 
     /** percent 传负数表示总量未知（分块上传），这时只显示已收到的体积 */

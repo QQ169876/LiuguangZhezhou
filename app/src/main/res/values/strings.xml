@@ -339,6 +339,14 @@
     <string name="push_fail">Push failed</string>
     <string name="push_empty">Device address is empty</string>
     <string name="push_received">File received</string>
+    <string name="push_install_perm">Allow "install unknown apps" for this app first — the settings page is open now.</string>
+    <string name="push_install_fail">Could not install the package. It may be incomplete, try pushing again.</string>
+    <string name="push_install_saved">Installer did not open — saved to %1$s, tap it there to install.</string>
+    <string name="push_received_saved">Received: %1$s</string>
+    <string name="push_open_ask">Got “%1$s” (%2$s). Open it with another app?</string>
+    <string name="push_open">Open</string>
+    <string name="push_open_with">Open with</string>
+    <string name="push_open_fail">No app on this device can open this file</string>
     <string name="upload_receiving">Receiving file</string>
     <string name="upload_size">%1$d%%  %2$s / %3$s</string>
     <string name="push_all">Push all configs</string>

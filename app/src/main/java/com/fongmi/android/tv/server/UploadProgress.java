@@ -7,33 +7,48 @@ import androidx.fragment.app.FragmentActivity;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.ui.dialog.UploadDialog;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.concurrent.atomic.AtomicLong;
+import java.io.File;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import fi.iki.elonen.NanoHTTPD;
 
 /**
  * 局域网推送文件 / APK 时，接收这一头的进度。
  *
- * 难点：NanoHTTPD 会把整个请求体先读进临时文件，读完之后才轮到业务代码，
- * 所以按原来的写法，传到一半的时候「已经收到多少」是量不出来的。
- * 这里换个办法：给服务套一层临时文件工厂，请求体写临时文件的同时顺手数字节。
- * 一个连接从创建 TempFileManager 到把请求体读完都在同一条线程上，
- * 所以用 ThreadLocal 就能把这一路网络和那个进度框对上号。
+ * 难点有两个，都踩过：
+ * 1. NanoHTTPD 是「要写请求体了才建临时文件」，比 serve() 里调 begin() 晚得多 ——
+ *    早先在 begin() 里直接挂账，那时候 Manager 还是空的，于是整个传输过程账一直是空的；
+ * 2. 数字节不能靠数写操作 —— 翻过 NanoHTTPD 的代码才知道，它把 multipart 分片落盘时
+ *    是自己 new FileOutputStream(临时文件)，压根不走 TempFile.open() 给它的那个输出流，
+ *    包装临时文件在这儿一个字节都数不到。
+ *
+ * 所以现在改用量：这些临时文件一律经我们的 Manager 创建，名字都记着，
+ * 每 200 毫秒看一眼它们长到多大 —— 请求体是连续流进来的，文件体积就是已收到的字节数。
  */
 public class UploadProgress {
 
     private static final long MIN_SIZE = 512 * 1024;
+    private static final long TICK = 200;
 
     private static final ThreadLocal<Manager> LOCAL = new ThreadLocal<>();
 
+    /** 本次上传的总字节数。临时文件工厂还没建起来先用 ThreadLocal 存着，建好再挂过去 */
+    private static final ThreadLocal<Long> PENDING = new ThreadLocal<>();
+
     private static UploadDialog dialog;
 
-    /** 套在原本的工厂外面：临时目录的创建规则照旧，只是多记一笔账 */
+    /** 套在原本的工厂外面：临时目录的创建规则照旧，只是多留意一下这些文件长多大 */
     public static NanoHTTPD.TempFileManagerFactory factory(NanoHTTPD.TempFileManagerFactory origin) {
         return () -> {
             Manager manager = new Manager(origin.create());
+            Long total = PENDING.get();
+            if (total != null && total >= MIN_SIZE) {
+                Track track = new Track(total);
+                track.task = () -> tick(manager);
+                manager.track = track;
+                App.post(track.task, TICK); // 先等一小会儿，免得上来就是 0% 闪一下
+            }
             LOCAL.set(manager);
             return manager;
         };
@@ -45,16 +60,19 @@ public class UploadProgress {
      */
     public static void begin(String name, long total) {
         if (total < MIN_SIZE) return; // 小文件一眨眼就收完了，别弹个框闪一下
+        PENDING.set(total);
         Manager manager = LOCAL.get();
-        if (manager != null) manager.track = new Track(total);
+        if (manager != null) track(manager, total);
         App.post(() -> show(name));
     }
 
     /** 上传收尾：收完了，或者对面传一半断了，都要把进度框收掉 */
     public static void end() {
         Manager manager = LOCAL.get();
+        if (manager != null && manager.track != null) App.removeCallbacks(manager.track.task);
         if (manager != null) manager.track = null;
         LOCAL.remove();
+        PENDING.remove();
         App.post(() -> hide());
     }
 
@@ -62,9 +80,8 @@ public class UploadProgress {
         Activity activity = App.activity();
         if (!(activity instanceof FragmentActivity)) return;
         if (dialog != null) return;
-        dialog = UploadDialog.create();
+        dialog = UploadDialog.create(name);
         dialog.show((FragmentActivity) activity);
-        if (name != null && !name.isEmpty()) dialog.setName(name);
     }
 
     private static void hide() {
@@ -77,23 +94,38 @@ public class UploadProgress {
         }
     }
 
-    private static void add(Manager manager, int bytes) {
+    /**
+     * 看看临时文件长到多大了。
+     *
+     * NanoHTTPD 会先把整个请求体灌进一个「桶」里，拆出来的分片再各自另存一份 ——
+     * 所以取这批文件里最大的那个（就是那个一直在长的桶），而不是求和，否则会数成两倍。
+     */
+    /** 把这次的总量挂到 Manager 上，同时起轮询。重复调用只认第一次 */
+    private static void track(Manager manager, long total) {
+        if (manager.track != null) return;
+        Track track = new Track(total);
+        track.task = () -> tick(manager);
+        manager.track = track;
+        App.post(track.task, TICK); // 稍等一小会儿再看，免得上来就是 0% 闪一下
+    }
+
+    private static void tick(Manager manager) {
         Track track = manager.track;
-        if (track == null || track.total <= 0) return;
-        long done = track.done.addAndGet(bytes);
-        long now = System.currentTimeMillis();
-        if (now - track.stamp < 150) return; // 每十几毫秒刷一次界面没必要，节流
-        track.stamp = now;
-        int percent = (int) Math.min(99, done * 100 / track.total);
+        if (track == null) return;
+        long done = 0;
+        for (String name : manager.names) {
+            File file = new File(name);
+            if (file.exists()) done = Math.max(done, file.length());
+        }
         UploadDialog self = dialog;
-        if (self != null) self.setProgress(percent, done, track.total);
+        if (self != null) self.setProgress((int) Math.min(99, done * 100 / track.total), done, track.total);
+        App.post(track.task, TICK);
     }
 
     private static class Track {
 
         private final long total;
-        private final AtomicLong done = new AtomicLong();
-        private volatile long stamp;
+        private Runnable task;
 
         private Track(long total) {
             this.total = total;
@@ -103,6 +135,7 @@ public class UploadProgress {
     private static class Manager implements NanoHTTPD.TempFileManager {
 
         private final NanoHTTPD.TempFileManager origin;
+        private final List<String> names = new CopyOnWriteArrayList<>();
 
         private volatile Track track;
 
@@ -117,66 +150,9 @@ public class UploadProgress {
 
         @Override
         public NanoHTTPD.TempFile createTempFile(String fileNameHint) throws Exception {
-            return new Temp(origin.createTempFile(fileNameHint), this);
-        }
-    }
-
-    private static class Temp implements NanoHTTPD.TempFile {
-
-        private final NanoHTTPD.TempFile file;
-        private final Manager manager;
-
-        private Temp(NanoHTTPD.TempFile file, Manager manager) {
-            this.file = file;
-            this.manager = manager;
-        }
-
-        @Override
-        public void delete() throws Exception {
-            file.delete();
-        }
-
-        @Override
-        public String getName() {
-            return file.getName();
-        }
-
-        @Override
-        public OutputStream open() throws Exception {
-            return new Stream(file.open(), manager);
-        }
-    }
-
-    private static class Stream extends OutputStream {
-
-        private final OutputStream out;
-        private final Manager manager;
-
-        private Stream(OutputStream out, Manager manager) {
-            this.out = out;
-            this.manager = manager;
-        }
-
-        @Override
-        public void write(int oneByte) throws IOException {
-            out.write(oneByte);
-            add(manager, 1);
-        }
-
-        @Override
-        public void write(byte[] buffer, int offset, int length) throws IOException {
-            out.write(buffer, offset, length);
-            add(manager, length);
-        }
-
-        @Override
-        public void flush() throws IOException {
-            out.flush();
-        }
-
-        @Override
-        public void close() throws IOException {
-            out.close();
+            NanoHTTPD.TempFile file = origin.createTempFile(fileNameHint);
+            names.add(file.getName());
+            return file;
         }
     }
 }
