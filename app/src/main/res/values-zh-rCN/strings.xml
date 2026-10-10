@@ -268,6 +268,7 @@
     <string name="setting_player">播放设置</string>
     <string name="setting_danmaku">弹幕设置</string>
     <string name="setting_binge">刷剧</string>
+    <string name="setting_ai">智能识别</string>
     <string name="setting_incognito">无痕模式</string>
     <string name="setting_debug">调试模式（记录操作日志）</string>
     <string name="setting_upload_log">上传日志（测试用）</string>
@@ -411,6 +412,7 @@
     <string name="music_shuffle_off">已关闭随机播放</string>
     <string name="push_item_history">历史记录</string>
     <string name="push_item_keep">收藏记录</string>
+    <string name="push_item_star">演员关注</string>
     <string name="push_item_moon">影视站设置</string>
     <string name="push_item_apk">本机安装包</string>
     <string name="push_item_file">文件</string>

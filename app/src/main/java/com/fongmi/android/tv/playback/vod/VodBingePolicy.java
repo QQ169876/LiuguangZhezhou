@@ -6,7 +6,10 @@ import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Vod;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.BingeSetting;
+import com.fongmi.android.tv.utils.AiGuard;
+import com.fongmi.android.tv.utils.AiJudge;
 import com.fongmi.android.tv.utils.DebugLog;
 
 import java.util.ArrayList;
@@ -57,6 +60,7 @@ class VodBingePolicy {
     /** 没有下一集了：刷剧开着的又是短剧，就去找下一部；返回 true 表示接管了 */
     boolean onNoNext(boolean reversed) {
         if (reversed || !BingeSetting.isEnabled()) return false;
+        if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
         if (!isShortDrama()) return false;
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
@@ -69,11 +73,24 @@ class VodBingePolicy {
     /** 当前这部能不能一部接一部刷下去，决定「下一部」按钮要不要显示 */
     boolean canBingeNow() {
         if (!BingeSetting.isEnabled()) return false;
+        if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
         if (state.getHistory() != null && state.getHistory().isRevPlay()) return false; // 倒序看就别刷
         if (!state.hasFlags()) return false;
         int episodes = state.getFlag().getEpisodes().size();
         long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
-        return BingeTags.canBinge(episodes, duration, host.getVodName());
+        String name = host.getVodName();
+        if (episodes >= BingeTags.MIN_PLAYABLE) return BingeTags.canBinge(episodes, duration, name);
+        // 集数很少，看看是不是整部短剧压成一个视频的合集版
+        int verdict = BingeTags.compileOf(name, "", episodes, duration);
+        if (verdict == BingeTags.COMPILE_YES) return true;
+        if (verdict == BingeTags.COMPILE_ASK) {
+            String key = BingeTags.compileKey(name, "", episodes, duration);
+            Boolean hit = AiJudge.peek(key);
+            if (hit != null) return hit; // 模型给过结论就按模型的来
+            if (AiSetting.isEnabled()) AiJudge.ask(key, name, "", episodes, duration, host.getVodMark(), null); // 先问着，播完就有结论了
+            return BingeTags.compileFallback(name, "", episodes, duration); // 模型没结论，本地评分兜底
+        }
+        return false;
     }
 
     private boolean isShortDrama() {
@@ -83,6 +100,7 @@ class VodBingePolicy {
     /** 手动点「下一部」：不等播完，立刻换一部 */
     void forceNext() {
         if (!BingeSetting.isEnabled()) return;
+        if (AiGuard.blocked(host.getVodName())) return; // 碰线的剧不联想、不搜索
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
             return;
@@ -142,11 +160,37 @@ class VodBingePolicy {
             if (BingeTags.isBanned(name)) continue;
             if (!BingeTags.sameRegion(region, name)) continue; // 别跳到别的国籍去
             int episodes = BingeTags.parseEpisodes(item.getRemarks());
-            if (episodes > 0 && episodes < BingeTags.MIN_PLAYABLE) continue;
+            if (episodes > 0 && episodes < BingeTags.MIN_PLAYABLE) {
+                // 集数很少，可能是整部压成一个视频的合集版：是就收，拿不准的先问大模型
+                int verdict = BingeTags.compileOf(name, item.getRemarks(), episodes, 0);
+                if (verdict == BingeTags.COMPILE_NO) continue;
+                if (verdict == BingeTags.COMPILE_ASK && !ask(item, episodes) && !BingeTags.compileFallback(name, item.getRemarks(), episodes, 0)) continue;
+            }
             if (watched(name)) continue;
             items.add(item);
         }
         return items;
+    }
+
+    /**
+     * 拿不准是不是合集的条目，去问大模型。有缓存结论的直接回；问完回来如果还轮得到它，就进池子。
+     * 返回 false 表示这次先放下（没结论），不是判它死刑——下一轮搜到还会再问一次，但只问一次就记住了。
+     */
+    private boolean ask(Vod item, int episodes) {
+        if (!AiSetting.isEnabled()) return false;
+        String name = item.getName();
+        String key = BingeTags.compileKey(name, item.getRemarks(), episodes, 0);
+        Boolean hit = AiJudge.peek(key);
+        if (hit != null) return hit; // 有缓存：同步返回，filter 自己把它放进候选，不走回调
+        // 没缓存才发起询问，回调只会异步回来，不会在 filter 迭代中途动 pool
+        AiJudge.ask(key, name, item.getRemarks(), episodes, 0, item.getSiteName(), ok -> {
+            if (!ok || !isHandling()) return;
+            if (tried.contains(name) || contains(pool, name)) return;
+            DebugLog.d("Binge", "大模型认下合集 " + name);
+            pool.add(item);
+            pick();
+        });
+        return false;
     }
 
     private boolean contains(List<Vod> list, String name) {
@@ -164,7 +208,7 @@ class VodBingePolicy {
 
     /** 选中就换过去，不等确认：不想看了用户自己按返回 */
     private void pick() {
-        if (pool.isEmpty()) return;
+        if (!active || pool.isEmpty()) return; // 已经选中一部在等详情了，不许再选，防止双跳
         pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), keywords), BingeTags.score(a.getName(), keywords)));
         Vod item = pool.remove(0);
         DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
@@ -196,8 +240,27 @@ class VodBingePolicy {
             failures = 0; // 接上了，失败计数清零，重新计连续失败
             return;
         }
+        if (state.hasFlags() && isCompiled()) {
+            failures = 0; // 只有一集但那是整部压成的合集，也算接上了
+            return;
+        }
         tried.add(host.getVodName());
         next();
+    }
+
+    /** 当前这部是不是「整部短剧压成一个视频」的合集版：本地判得准就本地定，拿不准看大模型有没有结论 */
+    private boolean isCompiled() {
+        String name = host.getVodName();
+        int episodes = state.getFlag().getEpisodes().size();
+        long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
+        int verdict = BingeTags.compileOf(name, "", episodes, duration);
+        if (verdict == BingeTags.COMPILE_YES) return true;
+        if (verdict == BingeTags.COMPILE_ASK) {
+            Boolean hit = AiJudge.peek(BingeTags.compileKey(name, "", episodes, duration));
+            if (hit != null) return hit; // 模型给过结论就按模型的来
+            return BingeTags.compileFallback(name, "", episodes, duration); // 模型没结论/不可用，本地评分兜底
+        }
+        return false;
     }
 
     /** 这一部接不下去，接着找下一部 */

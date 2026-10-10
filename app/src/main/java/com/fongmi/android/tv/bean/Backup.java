@@ -29,6 +29,8 @@ public class Backup {
     private List<Config> config;
     @SerializedName("history")
     private List<History> history;
+    @SerializedName("star")
+    private List<Star> star;
     @SerializedName("prefers")
     private Map<String, ?> prefers;
     @SerializedName("cookies")
@@ -47,6 +49,7 @@ public class Backup {
         backup.setKeep(AppDatabase.get().getKeepDao().findAll());
         backup.setConfig(AppDatabase.get().getConfigDao().findAll());
         backup.setHistory(AppDatabase.get().getHistoryDao().findAll());
+        backup.setStar(Star.getAllRaw());
         return backup;
     }
 
@@ -67,6 +70,7 @@ public class Backup {
         AppDatabase.get().getKeepDao().insertOrUpdate(getKeep());
         AppDatabase.get().getConfigDao().insertOrUpdate(getConfig());
         AppDatabase.get().getHistoryDao().insertOrUpdate(getHistory());
+        Star.merge(getStar());
         for (Map.Entry<String, ?> entry : getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
         CookieStore.apply(getCookies());
         SpiderVault.apply(getSpider());
@@ -94,6 +98,14 @@ public class Backup {
 
     public void setKeep(List<Keep> keep) {
         this.keep = keep;
+    }
+
+    public List<Star> getStar() {
+        return star == null ? Collections.emptyList() : star;
+    }
+
+    public void setStar(List<Star> star) {
+        this.star = star;
     }
 
     public List<Config> getConfig() {

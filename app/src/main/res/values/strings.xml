@@ -269,6 +269,7 @@
     <string name="setting_player">Player setting</string>
     <string name="setting_danmaku">Danmaku setting</string>
     <string name="setting_binge">Binge mode</string>
+    <string name="setting_ai">Smart match</string>
     <string name="setting_incognito">Incognito mode</string>
     <string name="setting_debug">Debug mode (log everything)</string>
     <string name="setting_upload_log">Upload logs (test)</string>
@@ -412,6 +413,7 @@
     <string name="music_shuffle_off">Shuffle off</string>
     <string name="push_item_history">History</string>
     <string name="push_item_keep">Favorites</string>
+    <string name="push_item_star">Followed actors</string>
     <string name="push_item_moon">Site settings</string>
     <string name="push_item_apk">This APK</string>
     <string name="push_item_file">File</string>

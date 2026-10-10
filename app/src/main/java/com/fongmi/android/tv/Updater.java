@@ -7,8 +7,6 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
-import android.net.Uri;
-import android.os.Build;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -50,7 +48,6 @@ import okhttp3.Response;
  */
 public class Updater implements Download.Callback, UpdateListener {
 
-    private static final String APK_MIME = "application/vnd.android.package-archive";
     private static final int PROBE_TIMEOUT = 6000;
     /** 测速线路上限：多了既费流量又拖慢老设备 */
     private static final int SPEED_LIMIT = 3;
@@ -652,14 +649,18 @@ public class Updater implements Download.Callback, UpdateListener {
             Notify.show(R.string.update_bad_package);
             return;
         }
-        boolean opened = false;
-        try {
-            FileUtil.openFile(file);
-            opened = true;
-        } catch (Exception e) {
-            opened = installByPath(file);
+        // 没开「允许安装未知应用」的话，系统会把安装 Intent 直接吞掉：界面上什么都没有，
+        // 只剩下下载目录里那份包——以前就是这个症状。先把设置页拉起来让人开，别白装一次。
+        if (!FileUtil.installPermissionGranted()) {
+            FileUtil.openInstallPermission();
+            Notify.show(R.string.push_install_perm);
+            keepCopy(file);
+            return;
         }
-        keepCopy(file, opened);
+        String left = FileUtil.installApk(file, apkName());
+        if (left == null) keepCopy(file);
+        else if (left.isEmpty()) Notify.show(R.string.update_install_fail);
+        else Notify.show(ResUtil.getString(R.string.update_install_manual, left));
     }
 
     /**
@@ -667,12 +668,11 @@ public class Updater implements Download.Callback, UpdateListener {
      * 有些设备（模拟器、改过的盒子）点了更新死活拉不起安装界面，留了这份，
      * 至少还能去文件管理里点一下手动装，不至于卡在旧版本。
      */
-    private void keepCopy(File file, boolean opened) {
+    private void keepCopy(File file) {
         new Thread(() -> {
             String path = FileUtil.saveToDownload(file, apkName());
             App.post(() -> {
-                if (path != null) Notify.show(ResUtil.getString(opened ? R.string.update_keep : R.string.update_install_manual, path));
-                else if (!opened) Notify.show(R.string.update_install_fail);
+                if (path != null) Notify.show(ResUtil.getString(R.string.update_keep, path));
             });
         }, "update-keep").start();
     }
@@ -697,18 +697,6 @@ public class Updater implements Download.Callback, UpdateListener {
         }
     }
 
-    private boolean installByPath(File file) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) return false; // 7.0 以后 file:// 一律不给过
-        try {
-            Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            intent.setDataAndType(Uri.fromFile(file), APK_MIME);
-            App.get().startActivity(intent);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     private static class Probe {
 

@@ -13,6 +13,7 @@ import com.fongmi.android.tv.databinding.FragmentSettingPlayerBinding;
 import com.fongmi.android.tv.impl.BufferListener;
 import com.fongmi.android.tv.impl.UaListener;
 import com.fongmi.android.tv.player.mpv.MpvUtil;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.BingeSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
@@ -46,11 +47,17 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
     }
 
+    private void setAi(View view) {
+        AiSetting.putEnabled(!AiSetting.isEnabled());
+        mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
+    }
+
     @Override
     protected void initView() {
         setVisible();
         setPlaybackModeText();
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
+        mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
         mBinding.bufferText.setText(String.valueOf(PlayerSetting.getBuffer()));
         mBinding.mpvVulkanText.setText(Setting.getSwitch(PlayerSetting.isMpvVulkan()));
@@ -64,6 +71,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.engine.setOnClickListener(this::setEngine);
         mBinding.decode.setOnClickListener(this::onDecode);
         mBinding.binge.setOnClickListener(this::setBinge);
+        mBinding.ai.setOnClickListener(this::setAi);
         mBinding.adblock.setOnClickListener(this::setAdblock);
         mBinding.mpvConf.setOnClickListener(this::onMpvConf);
         mBinding.mpvGpuNext.setOnClickListener(this::setMpvGpuNext);

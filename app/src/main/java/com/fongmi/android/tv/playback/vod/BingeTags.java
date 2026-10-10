@@ -106,10 +106,67 @@ public class BingeTags {
 
     /** 能不能一部接一部刷：多集即可，短剧/漫剧优先，别卡死门槛 */
     public static boolean canBinge(int episodes, long duration, String name) {
-        if (episodes < MIN_PLAYABLE) return false;
-        if (episodes >= MIN_EPISODES) return true;
-        if (isShortMark(name)) return true;
-        return duration <= 0 || duration <= SHORT_EPISODE_MS;
+        if (episodes >= MIN_PLAYABLE) {
+            if (episodes >= MIN_EPISODES) return true;
+            if (isShortMark(name)) return true;
+            return duration <= 0 || duration <= SHORT_EPISODE_MS;
+        }
+        // 集数不到 8：可能是整部短剧被压成一个视频的合集版，本地评分说了算
+        return compileScore(name, "", episodes, duration) >= FALLBACK_YES;
+    }
+
+    /** 名字上明写着「整部合在一起」 */
+    public static boolean hasCompileMark(String name) {
+        if (name == null || name.isEmpty()) return false;
+        for (String mark : COMPILE_MARKS) if (name.contains(mark)) return true;
+        return false;
+    }
+
+    /** 名字里有没有题材词（短剧语境加分） */
+    public static boolean hasTag(String name) {
+        if (name == null || name.isEmpty()) return false;
+        for (String tag : SORTED_TAGS) if (name.contains(tag)) return true;
+        return false;
+    }
+
+    /**
+     * 「一整部短剧被合成一个视频」的本地评分，0~100。
+     * 70 集 × 1 分钟 = 一个 70 分钟的单集，内容就是那部剧，不能因为只有一集就排除。
+     */
+    public static int compileScore(String name, String remarks, int episodes, long duration) {
+        if (episodes > 1) return 0; // 分集齐全，本来就是一集一集的
+        if (isBanned(name)) return 0; // 解说、混剪这些再像也不是正片
+        int score = 0;
+        if (hasCompileMark(name)) score += 65; // 名字明写合集/完整版，八九不离十
+        int total = parseEpisodes(remarks);
+        if (total >= MIN_EPISODES) score += 40; // 备注写着「全70集」，装的就是整部
+        else if (total >= MIN_PLAYABLE) score += 25;
+        if (episodes == 1 && duration >= COMPILE_MIN_MS) score += 35; // 单集但时长是一部剧的量级：灰色地带，交模型
+        else if (episodes == 0 && duration >= COMPILE_MIN_MS) score += 15;
+        if (isShortMark(name)) score += 20; // 名字带短剧/漫剧字样
+        if (hasTag(name)) score += 10; // 命中题材词，短剧语境
+        return Math.min(score, 100);
+    }
+
+    /**
+     * 阈值判定：本地评分 ≥70 直接判「是」（不进模型），≤30 直接判「不是」（也不进模型），
+     * 只有中间的灰色地带才返回 COMPILE_ASK，交给大模型问一句。
+     */
+    public static int compileOf(String name, String remarks, int episodes, long duration) {
+        int score = compileScore(name, remarks, episodes, duration);
+        if (score >= THRESHOLD_YES) return COMPILE_YES;
+        if (score <= THRESHOLD_NO) return COMPILE_NO;
+        return COMPILE_ASK;
+    }
+
+    /** 大模型不可用时的本地兜底：评分到 50 就当它是合集，按一部剧对待 */
+    public static boolean compileFallback(String name, String remarks, int episodes, long duration) {
+        return compileScore(name, remarks, episodes, duration) >= FALLBACK_YES;
+    }
+
+    /** 大模型缓存键：同名同备注只问一次 */
+    public static String compileKey(String name, String remarks, int episodes, long duration) {
+        return name + "|" + remarks + "|" + episodes + "|" + (duration / 60000);
     }
 
     /** 名字上就写着是短剧/微剧/AI漫剧的标记，命中即按短剧对待 */
@@ -126,12 +183,35 @@ public class BingeTags {
         "第一季", "第二季", "第三季", "上部", "下部", "上集", "下集", "大结局", "结局", "未完待续", "更新中"
     };
 
-    /** 不是一集一集正片的东西：解说、合集、混剪，一律不刷 */
+    /**
+     * 不是一集一集正片的东西：解说、混剪、盘点，一律不刷。
+     * 注意「合集 / 完整版 / 一口气」从这里挪走了：有些站就是把整部短剧压成一个视频，
+     * 名字上带这些词，但它就是那部短剧本身，不能一刀切（见 compileOf）。
+     */
     private static final String[] BANNED = {
-        "解说", "速看", "几分钟", "一口气", "合集", "合辑", "盘点", "混剪", "剪辑", "cut", "CUT", "花絮", "预告", "番外", "幕后", "纯享", "加长",
-        "全集版", "完整版", "抢先版", "精彩片段", "高光", "名场面", "reaction", "Reaction", "吐槽", "点评", "解析", "剧情介绍", "分集剧情", "剧情解说",
+        "解说", "速看", "几分钟", "盘点", "混剪", "剪辑", "cut", "CUT", "花絮", "预告", "番外", "幕后", "纯享", "加长",
+        "抢先版", "精彩片段", "高光", "名场面", "reaction", "Reaction", "吐槽", "点评", "解析", "剧情介绍", "分集剧情", "剧情解说",
         "电影", "大电影", "剧场版", "MV", "主题曲", "插曲", "花絮合集", "幕后花絮"
     };
+
+    /** 合集判定：是 / 不是 / 拿不准（拿不准的交给大模型） */
+    public static final int COMPILE_NO = 0;
+    public static final int COMPILE_YES = 1;
+    public static final int COMPILE_ASK = 2;
+
+    /** 阈值：本地评分到 70 直接判「是」，不到 30 直接判「不是」，中间才去问大模型 */
+    public static final int THRESHOLD_YES = 70;
+    public static final int THRESHOLD_NO = 30;
+    /** 大模型不可用时的本地兜底线：评分到 50 就当它是合集 */
+    public static final int FALLBACK_YES = 50;
+
+    /** 名字上明写着整部合在一起 */
+    private static final String[] COMPILE_MARKS = {
+        "合集", "合辑", "总集", "全剧", "全集版", "完整版", "整部", "一口气", "全程", "连播", "一次看", "看完"
+    };
+
+    /** 单集但时长到了一部短剧的量级，下限 20 分钟 */
+    public static final long COMPILE_MIN_MS = 20L * 60 * 1000L;
 
     /** 续集后缀，去掉后可拿主标题找同系列 */
     private static final Pattern SERIAL_SUFFIX = Pattern.compile("(第[一二三四五六七八九十\\d]+[部季篇章]|之[\\u4e00-\\u9fa5]{1,6}|续集|续|[ⅡII2]|下部|下部篇)$");

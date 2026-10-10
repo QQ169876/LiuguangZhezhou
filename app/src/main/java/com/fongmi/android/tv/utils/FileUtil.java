@@ -89,52 +89,84 @@ public class FileUtil {
      * 所以先往公共的「下载」目录落一份，拿那份去拉安装器；两条路都不行再把位置告诉用户。
      */
     public static void installApk(File file) {
-        if (file == null || !file.exists() || file.length() <= 0) {
-            Notify.show(R.string.push_install_fail);
+        String name = file == null ? "" : file.getName();
+        if (!installPermissionGranted()) {
+            openInstallPermission();
+            Notify.show(R.string.push_install_perm);
             return;
         }
+        String left = installApk(file, name);
+        if (left == null) return;
+        Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
+    }
+
+    /**
+     * 把系统安装器拉起来装这个包，成败交给调用方处理（更新流程要自己决定提示什么）。
+     *
+     * 返回 null = 安装界面已经起来了；返回空串 = 彻底没拉起来；返回路径 = 拉不起来，
+     * 但已经在「下载」目录留了一份（路径给人看）。saveAs 用来指定下载目录里那份的名字。
+     *
+     * 三个老坑这里一并绕开：
+     * 1. mime 必须写死 apk（靠文件名猜会落到 *／*，TV 上就是「什么都没发生」）；
+     * 2. 安卓 7 起走 content:// 还得带 FLAG_GRANT_READ_URI_PERMISSION，不给读权限安装器一闪就没；
+     * 3. 安卓 6 的安装器不认 content://，而私有目录里的文件它根本读不到，所以先往公共下载目录落一份再装。
+     */
+    public static String installApk(File file, String saveAs) {
+        String name = TextUtils.isEmpty(saveAs) ? (file == null ? "" : file.getName()) : saveAs;
+        if (file == null || !file.exists() || file.length() <= 0) return "";
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !App.get().getPackageManager().canRequestPackageInstalls()) {
-                // 安卓 8 起「未知应用」是按 App 分别授权的
-                openUnknownSource(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:".concat(App.get().getPackageName())));
-                return;
-            }
-            // 安卓 6 那批机器是另一种规矩：一个全机通用的「允许安装未知应用」总开关，关着的话安装器会把 Intent 吞掉
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N && !installNonMarketAllowed()) {
-                openUnknownSource(Settings.ACTION_SECURITY_SETTINGS, null);
-                return;
-            }
-            String saved = null;
             File target = file;
+            String saved = null;
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                saved = saveToDownload(file, file.getName());
+                saved = saveToDownload(file, name);
                 if (saved != null) target = new File(saved);
                 makeWorldReadable(target);
-                if (launch(apkIntent(target, Intent.ACTION_INSTALL_PACKAGE))) return;
-                if (launch(apkIntent(target, Intent.ACTION_VIEW))) return;
+                if (launch(apkIntent(target, Intent.ACTION_INSTALL_PACKAGE))) return null;
+                if (launch(apkIntent(target, Intent.ACTION_VIEW))) return null;
             } else {
-                if (launch(apkIntent(file, Intent.ACTION_VIEW))) return;
+                // 先 INSTALL_PACKAGE（更明确），个别精简系统没这个 activity 就退 ACTION_VIEW
+                if (launch(apkIntent(file, Intent.ACTION_INSTALL_PACKAGE))) return null;
+                if (launch(apkIntent(file, Intent.ACTION_VIEW))) return null;
             }
-            fallback(file, saved);
+            return saved != null ? saved : keep(file, name);
         } catch (Throwable e) {
-            fallback(file, null);
+            return keep(file, name);
         }
     }
 
-    private static void fallback(File file, String saved) {
-        if (saved == null) saved = saveToDownload(file, file.getName());
-        Notify.show(saved == null ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, saved));
+    /** 拉不起来的时候，至少在「下载」目录留一份让人手动装 */
+    private static String keep(File file, String name) {
+        String path = saveToDownload(file, name);
+        return path == null ? "" : path;
     }
 
-    private static void openUnknownSource(String action, Uri data) {
+    /**
+     * 有没有「安装未知应用」的权限：安卓 8 起按 App 单独授权，安卓 6 是全机一个总开关。
+     * 没这个权限时系统会把安装 Intent 直接吞掉，界面上什么都不会发生。
+     */
+    public static boolean installPermissionGranted() {
         try {
-            Intent intent = new Intent(action, data);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) return App.get().getPackageManager().canRequestPackageInstalls();
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return installNonMarketAllowed();
+            return true; // 安卓 7 还是老规矩，装的时候系统自己会问
+        } catch (Throwable e) {
+            return true;
+        }
+    }
+
+    /** 带用户去开「允许安装未知应用」（有些盒子把设置页精简掉了，拉不起来也不崩） */
+    public static void openInstallPermission() {
+        try {
+            Intent intent;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:".concat(App.get().getPackageName())));
+            } else {
+                intent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
+            }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             App.get().startActivity(intent);
         } catch (Throwable ignored) {
-            // 连设置页都拉不起来（有些盒子精简掉了），那就只能提示一句
         }
-        Notify.show(R.string.push_install_perm);
     }
 
     /** 安卓 6 及更早的那个全局开关。读不到就当开着的，别把人拦在门外 */

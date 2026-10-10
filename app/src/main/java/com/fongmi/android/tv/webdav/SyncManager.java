@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
+import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
@@ -362,6 +363,7 @@ public class SyncManager {
         List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
         List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
         insertAll(remoteData);
+        Star.merge(remoteData.getData().getStar()); // 关注的演员：按「最后操作为准」合并，多设备共用一份
         if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
         if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
         ConfigCache.apply(remoteData.getCache());
@@ -444,6 +446,7 @@ public class SyncManager {
         Map<String, History> localHistory = map(local.getHistory(), SyncManager::key);
         Map<String, Keep> localKeep = map(local.getKeep(), SyncManager::key);
         Map<String, Config> localConfig = map(local.getConfig(), SyncManager::key);
+        Star.merge(data.getStar());
         if (!data.getHistory().isEmpty()) {
             for (History item : data.getHistory()) {
                 History old = localHistory.get(key(item));

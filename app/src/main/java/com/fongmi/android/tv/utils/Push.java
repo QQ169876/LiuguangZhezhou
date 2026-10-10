@@ -9,6 +9,7 @@ import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Backup;
 import com.fongmi.android.tv.bean.Config;
+import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.webdav.WebDavSetting;
@@ -41,11 +42,12 @@ public class Push {
     public static final String COOKIE = "cookie";
     public static final String HISTORY = "history";
     public static final String KEEP = "keep";
+    public static final String STAR = "star";
     public static final String MOON = "moon";
     public static final String APK = "apk";
     public static final String FILE = "file";
 
-    private static final List<String> DATA = new ArrayList<>(Arrays.asList(VOD, LIVE, PREF, HISTORY, KEEP));
+    private static final List<String> DATA = new ArrayList<>(Arrays.asList(VOD, LIVE, PREF, HISTORY, KEEP, STAR));
     private static final long TIMEOUT = Constant.TIMEOUT_VOD;
     private static final long TIMEOUT_FILE = Constant.TIMEOUT_VOD * 20;
     private static final int MAX_SIZE = 2 * 1024 * 1024;
@@ -78,6 +80,7 @@ public class Push {
         items.add(COOKIE);
         items.add(HISTORY);
         items.add(KEEP);
+        items.add(STAR);
         items.add(MOON);
         return items;
     }
@@ -91,6 +94,7 @@ public class Push {
             case COOKIE -> R.string.push_item_cookie;
             case HISTORY -> R.string.push_item_history;
             case KEEP -> R.string.push_item_keep;
+            case STAR -> R.string.push_item_star;
             case MOON -> R.string.push_item_moon;
             case APK -> R.string.push_item_apk;
             default -> R.string.push_item_file;
@@ -189,6 +193,7 @@ public class Push {
         }
         if (keys.contains(HISTORY)) backup.setHistory(AppDatabase.get().getHistoryDao().findAll());
         if (keys.contains(KEEP)) backup.setKeep(AppDatabase.get().getKeepDao().findAll());
+        if (keys.contains(STAR)) backup.setStar(Star.getAllRaw()); // 含墓碑，取消关注也能推过去
         if (keys.contains(PREF)) backup.setPrefers(prefers());
         String json = App.gson().toJson(backup);
         if (json.length() > MAX_SIZE) {
