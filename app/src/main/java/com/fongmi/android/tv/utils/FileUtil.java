@@ -81,7 +81,8 @@ public class FileUtil {
      * 之前只做了一句 ACTION_VIEW，对端经常一点反应都没有，三个坑：
      * 1. mime 靠 guessContentTypeFromName 猜，.apk 基本猜不出来，落到 "* / *"，
      *    系统不知道该拿什么开 —— TV 上的表现就是「什么都没发生」；
-     * 2. Android 8 起装未知应用要先给授权（canRequestPackageInstalls），没给的话 Intent 会被系统吞掉；
+     * 2. Android 8 起装未知应用要先给授权（canRequestPackageInstalls）——但不在这儿拦：
+     *    先照老办法把安装器拉起来，系统自己会处理授权；真拉不起来了才带人去开设置；
      * 3. 文件原先落在 sdcard 根目录，Android 10 分区存储下常常压根没写进去，装什么装。
      *
      * 安卓 6（我们的兼容版就是 minSdk 23）还得另眼看待：
@@ -90,13 +91,14 @@ public class FileUtil {
      */
     public static void installApk(File file) {
         String name = file == null ? "" : file.getName();
+        // 跟更新流程一个路数：先把安装器拉起来，拉不起来再去看是不是权限没开
+        String left = installApk(file, name);
+        if (left == null) return;
         if (!installPermissionGranted()) {
             openInstallPermission();
             Notify.show(R.string.push_install_perm);
             return;
         }
-        String left = installApk(file, name);
-        if (left == null) return;
         Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
     }
 

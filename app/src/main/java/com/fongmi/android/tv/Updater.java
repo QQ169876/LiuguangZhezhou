@@ -642,6 +642,12 @@ public class Updater implements Download.Callback, UpdateListener {
      * 拉起安装器。老机器（Android 6 那台投影）有的系统安装器不认 content://，
      * 直接抛 ActivityNotFoundException / SecurityException 会把 App 带崩，
      * 所以这里一层层退：content 地址 → file 地址 → 下载目录留一份让你手动装。
+     *
+     * 顺序按 5.6.36 那会儿的老办法来：**先直接装，不先查权限**。
+     * 装不装得了本来就是系统自己的事——绝大多数机器上系统安装器会自己处理授权
+     * （要么直接装，要么在它自己的界面上给个开关），我们在前面横插一道「先跳设置页」，
+     * 反而把一次能装完的事变成两步，还得先去设置里绕一趟。
+     * 只有真的拉不起安装器、又确实是没授权，才带人去开设置，并在下载目录留一份兜底。
      */
     private void install(File file) {
         if (!isInstallable(file)) {
@@ -649,17 +655,15 @@ public class Updater implements Download.Callback, UpdateListener {
             Notify.show(R.string.update_bad_package);
             return;
         }
-        // 没开「允许安装未知应用」的话，系统会把安装 Intent 直接吞掉：界面上什么都没有，
-        // 只剩下下载目录里那份包——以前就是这个症状。先把设置页拉起来让人开，别白装一次。
-        if (!FileUtil.installPermissionGranted()) {
+        String left = FileUtil.installApk(file, apkName());
+        if (left == null) return; // 安装界面起来了，后面交给系统
+        if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
             FileUtil.openInstallPermission();
             Notify.show(R.string.push_install_perm);
             keepCopy(file);
             return;
         }
-        String left = FileUtil.installApk(file, apkName());
-        if (left == null) keepCopy(file);
-        else if (left.isEmpty()) Notify.show(R.string.update_install_fail);
+        if (left.isEmpty()) Notify.show(R.string.update_install_fail);
         else Notify.show(ResUtil.getString(R.string.update_install_manual, left));
     }
 
