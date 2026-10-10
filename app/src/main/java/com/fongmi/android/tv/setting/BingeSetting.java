@@ -13,6 +13,14 @@ public class BingeSetting {
     public static final int MAX_FAILURE = 5;
     /** 一批搜索等多久算没戏 */
     public static final long SEARCH_TIMEOUT = 6000L;
+    /** 还剩几集就开始备下一部：短剧单集平均 2~3 分钟，剩 2 集≈提前 4~6 分钟，跨站搜索+详情最坏约 45 秒，余量足够 */
+    public static final int PREPARE_AHEAD = 2;
+    /** 探索位初始比例：25% 概率换到画像里比较冷的题材族试试新口味（工业典型 0.05~0.20，冷启动取偏上） */
+    public static final double EXPLORE_INIT = 0.25;
+    /** 探索比例地板：再怎么衰减也留 5% 出界试探 */
+    public static final double EXPLORE_MIN = 0.05;
+    /** 探索比例按画像累计完播数指数衰减（0.99^n），刷得越久越不折腾 */
+    public static final double EXPLORE_DECAY = 0.99;
 
     public static boolean isEnabled() {
         return Prefers.getBoolean("binge", true);

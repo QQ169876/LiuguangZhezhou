@@ -12,6 +12,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,16 +37,28 @@ public class AiJudge {
             + "例如 70 集每集 1 分钟的短剧被压成一个 70 分钟的单集。只输出 JSON，不要任何解释："
             + "{\"ok\":true或false,\"confidence\":0到100}";
 
+    /** 主题不明确的剧，让模型给几个同类题材搜索词；AI 漫剧/动态漫这类也要会推 */
+    private static final String SYSTEM_SUGGEST = "你是短剧推荐助手。根据剧名和类型，给出 3 到 5 个适合用来搜索同类短剧的中文题材关键词"
+            + "（每个 2~8 个字，例如：重生、穿越、古装、甜宠、复仇、漫剧、动态漫；AI 漫剧、动态漫、沙雕漫这类题材也要覆盖）。"
+            + "只输出 JSON，不要任何解释：{\"tags\":[\"词1\",\"词2\",\"词3\"]}";
+
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, List<String>> SUGGEST = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Boolean> SUGGESTING = new ConcurrentHashMap<>();
     private static final int MEMO_LIMIT = 800;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
     private static volatile OkHttpClient client;
     private static volatile boolean loaded;
+    private static volatile boolean suggestLoaded;
 
     public interface Callback {
         void onResult(boolean ok);
+    }
+
+    public interface SuggestCallback {
+        void onResult(List<String> tags);
     }
 
     private static OkHttpClient http() {
@@ -118,6 +132,116 @@ public class AiJudge {
         try {
             if (callback != null) callback.onResult(result);
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 大模型给过的题材词，直接给；没问过返回 null。敏感剧名连缓存都不查 */
+    public static List<String> peekSuggest(String name) {
+        if (AiGuard.blocked(name)) return null;
+        loadSuggest();
+        return SUGGEST.get(name);
+    }
+
+    /**
+     * 主题不明确的剧（本地抠不出题材词），让大模型给几个同类题材搜索词。
+     * 结果记在本机，同剧不再重复问；任何异常都走 onResult(null)，调用方退回本地规则。
+     */
+    public static void suggest(String name, String typeName, String region, SuggestCallback callback) {
+        // 铁律：涉黄赌毒等违法关键词一律不送模型，一个字节都不许出去
+        if (AiGuard.blocked(name, typeName)) {
+            DebugLog.d("AiJudge", "命中敏感词，拒绝调用大模型：" + name);
+            replySuggest(callback, null);
+            return;
+        }
+        loadSuggest();
+        List<String> hit = SUGGEST.get(name);
+        if (hit != null) {
+            replySuggest(callback, hit);
+            return;
+        }
+        if (!AiSetting.isEnabled()) {
+            replySuggest(callback, null);
+            return;
+        }
+        if (SUGGESTING.putIfAbsent(name, Boolean.TRUE) != null) {
+            replySuggest(callback, null); // 已经在问了，别重复烧钱
+            return;
+        }
+        POOL.execute(() -> {
+            List<String> tags = null; // null＝没问到（断网、超时、报错），不缓存，下次还能再问
+            try {
+                tags = requestSuggest(name, typeName, region);
+            } catch (Throwable e) {
+                DebugLog.d("AiJudge", "推荐词模型不可用，退回本地规则：" + name);
+            }
+            SUGGESTING.remove(name);
+            if (tags != null) {
+                if (SUGGEST.size() > MEMO_LIMIT) SUGGEST.clear();
+                SUGGEST.put(name, tags);
+                saveSuggest();
+            }
+            List<String> result = tags;
+            App.post(() -> replySuggest(callback, result));
+        });
+    }
+
+    private static void replySuggest(SuggestCallback callback, List<String> tags) {
+        try {
+            if (callback != null) callback.onResult(tags);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static List<String> requestSuggest(String name, String typeName, String region) throws Exception {
+        JSONObject user = new JSONObject();
+        user.put("role", "user");
+        user.put("content", "剧名：" + name
+                + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
+                + "\n地区：" + (TextUtils.isEmpty(region) ? "未知" : region)
+                + "\n问：这部剧是什么题材？给出 3 到 5 个能搜到同类短剧的关键词。");
+
+        JSONObject body = new JSONObject();
+        body.put("model", AiSetting.getModel());
+        body.put("temperature", 0);
+        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM_SUGGEST)).put(user));
+
+        Request request = new Request.Builder()
+                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
+                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
+                .post(RequestBody.create(JSON, body.toString()))
+                .build();
+
+        try (Response response = http().newCall(request).execute()) {
+            if (response.body() == null) return null;
+            String text = response.body().string();
+            JSONObject json = new JSONObject(text);
+            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+            return parseSuggest(content);
+        }
+    }
+
+    /** 模型吐的词逐个过闸：太短不像题材、太长怕是瞎编的句子、脏词直接扔；一个能用的都没有就当没问 */
+    private static List<String> parseSuggest(String content) {
+        if (content == null) return null;
+        String text = content.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try {
+            JSONObject json = new JSONObject(text.substring(start, end + 1));
+            JSONArray array = json.optJSONArray("tags");
+            if (array == null) return null;
+            List<String> tags = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) {
+                String tag = array.optString(i, "").trim();
+                if (tag.length() < 2 || tag.length() > 8) continue;
+                if (AiGuard.blocked(tag)) continue;
+                if (!tags.contains(tag)) tags.add(tag);
+            }
+            DebugLog.d("AiJudge", "推荐题材词 " + tags);
+            return tags.isEmpty() ? null : tags;
+        } catch (Exception e) {
+            return null; // 模型说了听不懂的话，就当没问
         }
     }
 
@@ -205,5 +329,50 @@ public class AiJudge {
 
     private static File file() {
         return new File(App.get().getFilesDir(), "ai_judge.json");
+    }
+
+    private static void loadSuggest() {
+        if (suggestLoaded) return;
+        synchronized (AiJudge.class) {
+            if (suggestLoaded) return;
+            try {
+                File file = suggestFile();
+                if (file.exists()) {
+                    byte[] data = new byte[(int) file.length()];
+                    try (FileInputStream in = new FileInputStream(file)) {
+                        int read = in.read(data);
+                        JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
+                        for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
+                            String key = it.next();
+                            JSONArray array = json.optJSONArray(key);
+                            if (array == null) continue;
+                            List<String> tags = new ArrayList<>();
+                            for (int i = 0; i < array.length(); i++) {
+                                String tag = array.optString(i, "");
+                                if (!tag.isEmpty() && !AiGuard.blocked(tag)) tags.add(tag);
+                            }
+                            if (!tags.isEmpty()) SUGGEST.put(key, tags);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            suggestLoaded = true;
+        }
+    }
+
+    private static synchronized void saveSuggest() {
+        try {
+            JSONObject json = new JSONObject();
+            for (java.util.Map.Entry<String, List<String>> entry : SUGGEST.entrySet()) json.put(entry.getKey(), new JSONArray(entry.getValue()));
+            try (FileOutputStream out = new FileOutputStream(suggestFile())) {
+                out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static File suggestFile() {
+        return new File(App.get().getFilesDir(), "ai_suggest.json");
     }
 }

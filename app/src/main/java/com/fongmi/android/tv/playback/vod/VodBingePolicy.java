@@ -15,6 +15,7 @@ import com.fongmi.android.tv.utils.DebugLog;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
 /** 刷剧：一部短剧播完后，跨站搜同题材的下一部，一部接一部往下播 */
@@ -28,13 +29,19 @@ class VodBingePolicy {
     private final Set<String> tried = new HashSet<>();
     private final Runnable timeoutTask = this::onTimeout;
 
+    private final Random random = new Random();
+    private final List<Integer> recentFamilies = new ArrayList<>(); // 最近几部刷过的题材族（新→旧），防一路死磕一族
+
     private List<String> keywords = new ArrayList<>();
     private String region = "";
+    private String typeName = ""; // 站点给的分类（如「爱情/都市」），搜同类用得上
     private int keywordIndex;
     private int serial;
     private int failures;
     private boolean active;
     private boolean waitingDetail; // 已选中一部、正在等详情回来校验
+    private boolean preparing; // 预加载中：搜索照旧跑，但 pick 只备货不切换
+    private Vod pending; // 提前备好的下一部，真播完直接接上
 
     VodBingePolicy(VodPlaybackController controller, VodPlaybackState state, VodPlaybackHost host) {
         this.controller = controller;
@@ -54,6 +61,8 @@ class VodBingePolicy {
     /** 换源搜索要开始了，刷剧先停，免得两边抢结果 */
     void interrupt() {
         active = false;
+        preparing = false;
+        pending = null; // 备的货也不要了，免得跟换源抢结果
         App.removeCallbacks(timeoutTask);
     }
 
@@ -62,10 +71,25 @@ class VodBingePolicy {
         if (reversed || !BingeSetting.isEnabled()) return false;
         if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
         if (!isShortDrama()) return false;
+        BingeProfile.hit(BingeTags.tagsOf(host.getVodName())); // 看完了：题材记一分，下次更懂你
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
             return true; // 接管掉，别再叠一个「没有下一集」的提示
         }
+        Vod item = pending;
+        if (item != null) { // 剩最后几集时已经备好的，直接接上，不用再搜
+            pending = null;
+            DebugLog.d("Binge", "接备好的下一部 " + item.getName() + " 来自 " + item.getSiteName());
+            host.showBingeNext(item);
+            tried.add(item.getName());
+            serial++;
+            waitingDetail = true;
+            active = false;
+            controller.selectSource(item);
+            return true;
+        }
+        if (preparing) preparing = false; // 等不到备好了：正在搜的结果直接拿来接，不再只备货
+        if (active) return true; // 搜索正在进行，搜到即接
         begin();
         return true;
     }
@@ -101,6 +125,7 @@ class VodBingePolicy {
     void forceNext() {
         if (!BingeSetting.isEnabled()) return;
         if (AiGuard.blocked(host.getVodName())) return; // 碰线的剧不联想、不搜索
+        BingeProfile.miss(BingeTags.tagsOf(host.getVodName())); // 没看完就换：题材降权，别老推这类
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
             return;
@@ -109,17 +134,86 @@ class VodBingePolicy {
         pool.clear();
         active = false;
         waitingDetail = false;
+        preparing = false;
+        pending = null;
+        begin();
+    }
+
+    /** 还剩没几集了：提前把下一部搜好备着（只备货不切换），播完直接接上，不用干等搜索 */
+    void prepare() {
+        if (pending != null || preparing || active || waitingDetail) return;
+        if (!BingeSetting.isEnabled()) return;
+        if (AiGuard.blocked(host.getVodName())) return; // 碰线的剧不联想、不搜索
+        if (serial >= BingeSetting.MAX_SERIAL) return;
+        if (!canBingeNow()) return;
+        DebugLog.d("Binge", "快播完了，提前备下一部，当前=" + host.getVodName());
+        preparing = true;
         begin();
     }
 
     private void begin() {
         region = BingeTags.regionOf(host.getVodName()); // 当前是哪一国的，后面就一路哪一国
-        keywords = BingeTags.keywords(host.getVodName(), "", region);
+        keywords = buildKeywords(host.getVodName());
         DebugLog.d("Binge", "开始刷剧，产地=" + region + "，关键词=" + keywords + "，当前=" + host.getVodName());
         active = true;
         keywordIndex = 0;
         tried.add(host.getVodName());
         search();
+    }
+
+    /**
+     * 组搜索词：先拿基础词表（产地词→题材词→主标题→分类→兜底），再按「族」重排——
+     * 优先换到最近没刷过的题材族（看「穿越王妃」下部可以是「重生王妃」也可以是「穿越XX」，
+     * 而不是一路全是「王妃」）；主族里再补一个没搜过的词换换口味。
+     * 还有个小比例走探索位：换到画像里比较冷的族，试试新口味，防信息茧房。
+     */
+    private List<String> buildKeywords(String name) {
+        List<String> base = BingeTags.keywords(name, typeName, region);
+        List<String> tags = BingeTags.tagsOf(name);
+        // 本地抠不出题材词：看大模型有没有给过推荐词；没给过就先问着（下部剧用得上），这部按画像/原词表走
+        if (tags.isEmpty()) {
+            List<String> suggested = AiJudge.peekSuggest(name);
+            if (suggested != null && !suggested.isEmpty()) {
+                tags = suggested;
+                int insertAt = BingeTags.regionWord(region).isEmpty() ? 0 : Math.min(1, base.size());
+                for (int i = suggested.size() - 1; i >= 0; i--) {
+                    String word = suggested.get(i);
+                    if (!base.contains(word)) base.add(insertAt, word);
+                }
+            } else if (AiSetting.isEnabled()) {
+                AiJudge.suggest(name, typeName, region, null); // 先问着，不用等
+            }
+        }
+        int family;
+        if (random.nextDouble() < epsilon()) {
+            family = BingeProfile.coldestFamily(new HashSet<>(recentFamilies), random); // 探索：试试画像里比较冷的族
+            if (family >= 0) DebugLog.d("Binge", "探索新题材 " + BingeTags.familyHead(family));
+        } else {
+            family = BingeTags.pickFamily(tags, recentFamilies); // 利用：当前剧的族里优先换最近没刷过的
+            if (family < 0) family = BingeProfile.hottestFamily(new HashSet<>(recentFamilies)); // 抠不出族：按画像最热的来
+        }
+        recordFamily(family);
+        if (family < 0) return base;
+        List<String> keys = new ArrayList<>();
+        String regionWord = BingeTags.regionWord(region);
+        if (!regionWord.isEmpty() && base.contains(regionWord)) keys.add(regionWord);
+        for (String key : base) if (BingeTags.familyOf(key) == family && !keys.contains(key)) keys.add(key);
+        String alt = BingeTags.familyAlt(family, keys);
+        if (alt != null && keys.size() < 4) keys.add(alt); // 族里再补一个没搜过的词，族内也换口味
+        for (String key : base) if (!keys.contains(key)) keys.add(key);
+        return keys;
+    }
+
+    /** 探索比例：初始 25%，按画像累计完播数指数衰减（0.99^n），地板 5%（工业典型 0.05~0.20，冷启动取偏上） */
+    private double epsilon() {
+        return Math.max(BingeSetting.EXPLORE_MIN, BingeSetting.EXPLORE_INIT * Math.pow(BingeSetting.EXPLORE_DECAY, BingeProfile.totalPos()));
+    }
+
+    private void recordFamily(int family) {
+        if (family < 0) return;
+        recentFamilies.remove((Integer) family);
+        recentFamilies.add(0, family);
+        while (recentFamilies.size() > 3) recentFamilies.remove(recentFamilies.size() - 1);
     }
 
     private void search() {
@@ -206,14 +300,22 @@ class VodBingePolicy {
         }
     }
 
-    /** 选中就换过去，不等确认：不想看了用户自己按返回 */
+    /** 选中就换过去，不等确认：不想看了用户自己按返回。预加载模式下只备货，等真播完再接 */
     private void pick() {
         if (!active || pool.isEmpty()) return; // 已经选中一部在等详情了，不许再选，防止双跳
-        pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), keywords), BingeTags.score(a.getName(), keywords)));
+        pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), b.getRemarks(), keywords), BingeTags.score(a.getName(), a.getRemarks(), keywords)));
         Vod item = pool.remove(0);
+        tried.add(item.getName());
+        if (preparing) { // 快播完提前搜的：存起来，onNoNext 直接用
+            pending = item;
+            active = false;
+            preparing = false;
+            App.removeCallbacks(timeoutTask);
+            DebugLog.d("Binge", "下一部已备好 " + item.getName() + " 来自 " + item.getSiteName());
+            return;
+        }
         DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
         host.showBingeNext(item);
-        tried.add(item.getName());
         serial++;
         waitingDetail = true;
         active = false;
@@ -223,6 +325,10 @@ class VodBingePolicy {
 
     /** 换过去的详情回来了：外剧、电影/单集这类接不下去的，换下一部 */
     void onDetailLoaded(Vod item) {
+        if (item != null) {
+            String type = item.getTypeName();
+            if (type != null && !type.isEmpty()) typeName = type; // 站点给的分类，搜同类用得上
+        }
         if (!waitingDetail) return;
         waitingDetail = false;
         if (item != null) {
@@ -285,6 +391,10 @@ class VodBingePolicy {
         DebugLog.d("Binge", "刷剧结束，没有更多候选");
         active = false;
         App.removeCallbacks(timeoutTask);
+        if (preparing) { // 只是提前备货没备到，别打扰用户，播完时会重新搜
+            preparing = false;
+            return;
+        }
         host.onBingeEnd();
     }
 
@@ -293,11 +403,15 @@ class VodBingePolicy {
         pool.clear();
         tried.clear();
         keywords.clear();
+        recentFamilies.clear();
         region = "";
+        typeName = "";
         keywordIndex = 0;
         serial = 0;
         failures = 0;
         active = false;
         waitingDetail = false;
+        preparing = false;
+        pending = null;
     }
 }

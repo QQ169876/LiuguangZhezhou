@@ -9,26 +9,33 @@ import java.util.regex.Pattern;
 /** 短剧题材词库与标题小工具：判定是不是短剧、从标题里联想同类关键词、排除解说合集 */
 public class BingeTags {
 
-    /** 题材词典：命中越靠前优先级越高，长词优先匹配 */
-    private static final String[] TAGS = {
+    /**
+     * 题材族：同族算「同类换个说法」，跨族算「换个方向」。
+     * 刷剧换下一部时优先换族，族内再轮转，防止一路死磕同一个词刷成信息茧房（红果的「相关设定延伸」思路）。
+     * 每族第一个词是族代表：剧名里抠不出该族的词时，拿它当搜索词兜底。
+     */
+    public static final String[][] FAMILIES = {
         // 古装 / 宫斗 / 宅斗
-        "宫斗", "宅斗", "王妃", "王爷", "太子", "公主", "长公主", "郡主", "世子", "摄政", "太后", "太妃", "娘娘", "贵妃", "冷宫", "废后", "选妃", "和亲", "替嫁", "冲喜",
-        "主母", "小妾", "姨娘", "侧妃", "通房", "嫡女", "庶女", "夫人", "少奶奶", "内宅", "后宫", "朝堂", "权臣", "驸马", "皇帝", "皇叔", "国师", "太监", "宫女", "世家", "贵女",
+        {"王妃", "王爷", "宫斗", "宅斗", "太子", "公主", "长公主", "郡主", "世子", "摄政", "太后", "太妃", "娘娘", "贵妃", "冷宫", "废后", "选妃", "和亲", "替嫁", "冲喜",
+         "主母", "小妾", "姨娘", "侧妃", "通房", "嫡女", "庶女", "夫人", "少奶奶", "内宅", "后宫", "朝堂", "权臣", "驸马", "皇帝", "皇叔", "国师", "太监", "宫女", "世家", "贵女"},
+        // 重生 / 穿越 / 系统流
+        {"重生", "穿越", "穿书", "系统", "签到", "金手指", "空间", "读心", "时间循环", "马甲", "隐藏身份", "扮猪吃虎", "无限流", "副本", "规则怪谈", "觉醒"},
         // 现代都市 / 婚恋
-        "总裁", "霸总", "豪门", "首富", "隐婚", "闪婚", "契约婚姻", "先婚后爱", "娃娃亲", "联姻", "婚约", "前夫", "前妻", "离婚", "隐婚", "追妻", "破镜重圆",
-        "替身", "白月光", "甜宠", "虐恋", "暗恋", "姐弟恋", "青梅竹马", "秘书", "保镖", "办公室", "职场", "小三", "出轨", "复仇", "逆袭",
+        {"总裁", "霸总", "豪门", "首富", "隐婚", "闪婚", "契约婚姻", "先婚后爱", "娃娃亲", "联姻", "婚约", "前夫", "前妻", "离婚", "追妻", "破镜重圆",
+         "替身", "白月光", "甜宠", "虐恋", "暗恋", "姐弟恋", "青梅竹马", "秘书", "保镖", "办公室", "职场", "小三", "出轨"},
         // 男频逆袭
-        "重生", "穿越", "穿书", "系统", "签到", "金手指", "空间", "读心", "时间循环", "马甲", "隐藏身份", "扮猪吃虎",
-        "战神", "龙王", "神豪", "赘婿", "上门女婿", "废柴", "废婿", "三年之期", "修仙", "仙尊", "帝尊", "师尊", "神医", "鉴宝", "天师",
-        "末世", "丧尸", "抽卡", "异能", "大佬", "隐世", "退伍", "兵王", "杀手", "特工", "神医出山",
+        {"复仇", "逆袭", "战神", "龙王", "神豪", "赘婿", "上门女婿", "废柴", "废婿", "三年之期", "大佬", "隐世", "退伍", "兵王", "杀手", "特工"},
+        // 玄幻 / 修仙 / 异能
+        {"修仙", "仙尊", "帝尊", "师尊", "神医", "神医出山", "鉴宝", "天师", "末世", "丧尸", "抽卡", "异能", "炼丹", "宗门", "剑尊", "魔尊", "妖妃", "狐妖"},
         // 家庭伦理
-        "婆媳", "萌宝", "带球跑", "带娃", "萌娃", "单亲", "继母", "后妈", "重男轻女", "赡养", "二婚", "寻亲", "真假千金", "真假少爷", "弃妇", "弃子", "保姆",
-        // 其他常见
-        "校园", "校霸", "高考", "高三", "乡村", "种田", "致富", "悬疑", "探案", "法医", "警察", "律师", "医生", "护士", "电竞", "网红", "直播", "明星", "娱乐圈", "选秀",
-        "大女主", "女强", "团宠", "马甲", "失忆", "替嫁", "守寡", "和离", "休妻", "入赘", "继妹", "闺蜜", "渣男", "凤凰男",
+        {"婆媳", "萌宝", "带球跑", "带娃", "萌娃", "单亲", "继母", "后妈", "重男轻女", "赡养", "二婚", "寻亲", "真假千金", "真假少爷", "弃妇", "弃子", "保姆", "凤凰男"},
+        // 校园 / 行业 / 悬疑
+        {"校园", "校霸", "高考", "高三", "电竞", "网红", "直播", "明星", "娱乐圈", "选秀", "医生", "护士", "警察", "律师", "法医", "探案", "悬疑"},
+        // 乡村 / 种田 / 女频成长
+        {"乡村", "种田", "致富", "守寡", "和离", "休妻", "入赘", "继妹", "闺蜜", "渣男", "失忆", "大女主", "女强", "团宠"},
         // AI 漫剧 / 动态漫题材
-        "漫剧", "动态漫", "沙雕漫", "二次元", "国漫", "动漫", "漫画", "漫改",
-        "无限流", "副本", "规则怪谈", "诡异", "异兽", "觉醒", "升级", "卡牌", "废土", "机甲", "星际", "虫族", "兽人", "血族", "狼人", "御兽", "炼丹", "宗门", "剑尊", "魔尊", "妖妃", "狐妖"
+        {"漫剧", "动态漫", "沙雕漫", "二次元", "国漫", "动漫", "漫画", "漫改",
+         "诡异", "异兽", "升级", "卡牌", "废土", "机甲", "星际", "虫族", "兽人", "血族", "狼人", "御兽"}
     };
 
     /** 产地：跟着当前这部剧走，刷国产一路国产，刷韩剧一路韩剧 */
@@ -222,8 +229,37 @@ public class BingeTags {
 
     private static List<String> sortedTags() {
         List<String> tags = new ArrayList<>();
-        for (int i = 0; i < TAGS.length; i++) tags.add(TAGS[i]);
+        for (String[] family : FAMILIES) for (String tag : family) if (!tags.contains(tag)) tags.add(tag);
         tags.sort(Comparator.comparingInt(String::length).reversed());
+        return tags;
+    }
+
+    /** 题材词属于哪一族（见 FAMILIES），查不到返回 -1 */
+    public static int familyOf(String tag) {
+        if (tag == null || tag.isEmpty()) return -1;
+        for (int i = 0; i < FAMILIES.length; i++) {
+            for (String word : FAMILIES[i]) if (word.equals(tag)) return i;
+        }
+        return -1;
+    }
+
+    /** 族代表词：剧名里抠不出该族的词时，拿它当搜索词 */
+    public static String familyHead(int family) {
+        return family >= 0 && family < FAMILIES.length ? FAMILIES[family][0] : "";
+    }
+
+    /** 族里找一个不在 excluded 里的词，族内轮转用；全用过了返回 null */
+    public static String familyAlt(int family, List<String> excluded) {
+        if (family < 0 || family >= FAMILIES.length) return null;
+        for (String word : FAMILIES[family]) if (excluded == null || !excluded.contains(word)) return word;
+        return null;
+    }
+
+    /** 从剧名里抽出命中的题材词，长词优先、去重；漫剧/古风这些一个都不漏 */
+    public static List<String> tagsOf(String name) {
+        List<String> tags = new ArrayList<>();
+        if (name == null || name.isEmpty()) return tags;
+        for (String tag : SORTED_TAGS) if (name.contains(tag) && !tags.contains(tag)) tags.add(tag);
         return tags;
     }
 
@@ -283,15 +319,30 @@ public class BingeTags {
         return 0;
     }
 
-    /** 候选打分：关键词命中越多越像同类，命中黑名单直接判死 */
-    public static int score(String name, List<String> keys) {
+    /** 候选打分：关键词命中越多越像同类，命中黑名单直接判死；集数从「更新至80集」这类备注里抠 */
+    public static int score(String name, String remarks, List<String> keys) {
         if (isBanned(name)) return -100;
         int score = 0;
         for (String key : keys) if (!key.isEmpty() && name.contains(key)) score += 3;
         if (isShortMark(name)) score += 3;
-        int episodes = parseEpisodes(name);
+        int episodes = parseEpisodes(remarks);
         if (episodes >= 40) score += 2;
         else if (episodes > 0 && episodes < 8) score -= 2;
         return score;
+    }
+
+    /**
+     * 从当前剧命中的题材词里选下一部要搜的族：优先最近没刷过的族，都刷过就取第一个，
+     * 一个题材词都没有返回 -1（调用方按画像/大模型兜底）。最近列表按新→旧传进来。
+     */
+    public static int pickFamily(List<String> tags, List<Integer> recentFamilies) {
+        List<Integer> families = new ArrayList<>();
+        for (String tag : tags) {
+            int family = familyOf(tag);
+            if (family >= 0 && !families.contains(family)) families.add(family);
+        }
+        if (families.isEmpty()) return -1;
+        if (recentFamilies != null) for (int family : families) if (!recentFamilies.contains(family)) return family;
+        return families.get(0);
     }
 }

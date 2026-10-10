@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.playback.PlaybackResult;
+import com.fongmi.android.tv.setting.BingeSetting;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.webdav.SyncManager;
 
@@ -197,6 +198,17 @@ public class VodPlaybackController {
         host.renderEpisodeSelection(item);
         if (host.isFullscreenForPlayback()) host.showEpisodeReady(item);
         playEpisode(item);
+        maybePrepareBinge(); // 还剩没几集就提前备下一部，播完秒接
+    }
+
+    /** 刷剧预加载：还剩 PREPARE_AHEAD 集时就提前把下一部搜好备着，播完直接接上 */
+    private void maybePrepareBinge() {
+        if (!state.hasFlags()) return;
+        History history = state.getHistory();
+        if (history != null && history.isRevPlay()) return; // 倒着看别提前备，方向是反的
+        Flag flag = state.getFlag();
+        int remaining = flag.getEpisodes().size() - flag.getPosition() - 1;
+        if (remaining <= BingeSetting.PREPARE_AHEAD) bingePolicy.prepare();
     }
 
     private void playEpisode(Episode item) {
