@@ -1,22 +1,28 @@
 package com.fongmi.android.tv.playback.vod;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Vod;
+import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.BingeSetting;
 import com.fongmi.android.tv.utils.AiGuard;
 import com.fongmi.android.tv.utils.AiJudge;
 import com.fongmi.android.tv.utils.DebugLog;
+import com.fongmi.android.tv.utils.Task;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** 刷剧：一部短剧播完后，跨站搜同题材的下一部，一部接一部往下播 */
 class VodBingePolicy {
@@ -28,6 +34,8 @@ class VodBingePolicy {
     private final List<Vod> pool = new ArrayList<>();
     private final Set<String> tried = new HashSet<>();
     private final Runnable timeoutTask = this::onTimeout;
+    private final Runnable pickTask = this::pickNow;
+    private final Runnable probeTimeoutTask = this::onProbeTimeout;
 
     private final Random random = new Random();
     private final List<Integer> recentFamilies = new ArrayList<>(); // 最近几部刷过的题材族（新→旧），防一路死磕一族
@@ -42,6 +50,13 @@ class VodBingePolicy {
     private boolean waitingDetail; // 已选中一部、正在等详情回来校验
     private boolean preparing; // 预加载中：搜索照旧跑，但 pick 只备货不切换
     private Vod pending; // 提前备好的下一部，真播完直接接上
+
+    /** 切过去之前先验货：后台拉一次详情，确认真能播再切，播不了的当场丢掉，不切、不留历史 */
+    private static final ExecutorService PROBE = Executors.newSingleThreadExecutor();
+    private int epoch; // 每次作废重来（interrupt/reset/forceNext）都 +1，迟到的异步回调据此自行作废
+    private boolean probing; // 正在后台验货
+    private Vod probingItem; // 正在验的这一部
+    private int probingEpoch;
 
     VodBingePolicy(VodPlaybackController controller, VodPlaybackState state, VodPlaybackHost host) {
         this.controller = controller;
@@ -63,7 +78,10 @@ class VodBingePolicy {
         active = false;
         preparing = false;
         pending = null; // 备的货也不要了，免得跟换源抢结果
-        App.removeCallbacks(timeoutTask);
+        probing = false; // 验货也停，回来的结果一律作废
+        probingItem = null;
+        epoch++;
+        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask);
     }
 
     /** 没有下一集了：刷剧开着的又是短剧，就去找下一部；返回 true 表示接管了 */
@@ -89,7 +107,7 @@ class VodBingePolicy {
             return true;
         }
         if (preparing) preparing = false; // 等不到备好了：正在搜的结果直接拿来接，不再只备货
-        if (active) return true; // 搜索正在进行，搜到即接
+        if (active || probing) return true; // 搜索或验货正在进行，好了直接接
         begin();
         return true;
     }
@@ -130,12 +148,15 @@ class VodBingePolicy {
             host.onBingeEnd();
             return;
         }
-        App.removeCallbacks(timeoutTask);
+        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask);
         pool.clear();
         active = false;
         waitingDetail = false;
         preparing = false;
         pending = null;
+        probing = false;
+        probingItem = null;
+        epoch++; // 上一轮没回来的验货结果一律作废
         begin();
     }
 
@@ -184,14 +205,21 @@ class VodBingePolicy {
                 AiJudge.suggest(name, typeName, region, null); // 先问着，不用等
             }
         }
+        // 动态漫要不要推，看画像：他确实爱看（或这部本身就是漫剧）就照推，
+        // 看不出喜好（没基础数据）时才把它压到最后——不是永远最低（马先生 2026-10-11 澄清）
+        boolean comicOk = BingeTags.isComic(name) || BingeProfile.comicPreferred();
+        if (comicOk && !base.contains("漫剧")) base.add("漫剧"); // 就好这口的话，漫剧也算一路搜索词
+        Set<Integer> blocked = new HashSet<>(recentFamilies);
+        if (!comicOk) blocked.add(BingeTags.comicFamily());
         int family;
         if (random.nextDouble() < epsilon()) {
-            family = BingeProfile.coldestFamily(new HashSet<>(recentFamilies), random); // 探索：试试画像里比较冷的族
+            family = BingeProfile.coldestFamily(blocked, random); // 探索：试试画像里比较冷的族
             if (family >= 0) DebugLog.d("Binge", "探索新题材 " + BingeTags.familyHead(family));
         } else {
             family = BingeTags.pickFamily(tags, recentFamilies); // 利用：当前剧的族里优先换最近没刷过的
-            if (family < 0) family = BingeProfile.hottestFamily(new HashSet<>(recentFamilies)); // 抠不出族：按画像最热的来
+            if (family < 0) family = BingeProfile.hottestFamily(blocked); // 抠不出族：按画像最热的来
         }
+        if (family == BingeTags.comicFamily() && !comicOk) family = BingeProfile.hottestFamily(blocked);
         recordFamily(family);
         if (family < 0) return base;
         List<String> keys = new ArrayList<>();
@@ -202,6 +230,15 @@ class VodBingePolicy {
         if (alt != null && keys.size() < 4) keys.add(alt); // 族里再补一个没搜过的词，族内也换口味
         for (String key : base) if (!keys.contains(key)) keys.add(key);
         return keys;
+    }
+
+    /**
+     * 动态漫扣多少分：正在看漫剧（下一部还是漫剧很正常）或画像里就爱看漫剧 → 一分不扣，正常排队；
+     * 看不出喜好（画像里漫剧没数据）→ 扣到队尾，优先给真人短剧。
+     */
+    private int comicPenalty() {
+        if (BingeTags.isComic(host.getVodName())) return 0;
+        return BingeProfile.comicPreferred() ? 0 : BingeTags.COMIC_PENALTY;
     }
 
     /** 探索比例：初始 25%，按画像累计完播数指数衰减（0.99^n），地板 5%（工业典型 0.05~0.20，冷启动取偏上） */
@@ -233,13 +270,27 @@ class VodBingePolicy {
         return sites;
     }
 
-    /** 搜索是逐站回来的，每次都往池子里补，凑到第一个就给提示 */
+    /** 搜索是逐站回来的，每次都往池子里补，攒一小会儿再挑最好的 */
     void onSearchResult(Result result) {
         if (!active || result == null) return;
         List<Vod> items = filter(result.getList());
         if (items.isEmpty()) return;
         pool.addAll(items);
-        pick();
+        schedulePick();
+    }
+
+    /**
+     * 先攒再挑。以前是"谁先回来就切谁"，挑到差的切过去才发现播不了，又换一部——
+     * 用户看到的就是连跳两三部，历史里还留下一堆压根没看过的剧。
+     */
+    private void schedulePick() {
+        if (probing || pool.isEmpty()) return; // 正在验货就别插队
+        if (pool.size() >= BingeSetting.PICK_BATCH) { // 攒够了不用再等
+            App.removeCallbacks(pickTask);
+            pickNow();
+            return;
+        }
+        App.post(pickTask, BingeSetting.PICK_DELAY);
     }
 
     private List<Vod> filter(List<Vod> list) {
@@ -282,7 +333,7 @@ class VodBingePolicy {
             if (tried.contains(name) || contains(pool, name)) return;
             DebugLog.d("Binge", "大模型认下合集 " + name);
             pool.add(item);
-            pick();
+            schedulePick();
         });
         return false;
     }
@@ -300,27 +351,91 @@ class VodBingePolicy {
         }
     }
 
-    /** 选中就换过去，不等确认：不想看了用户自己按返回。预加载模式下只备货，等真播完再接 */
-    private void pick() {
-        if (!active || pool.isEmpty()) return; // 已经选中一部在等详情了，不许再选，防止双跳
-        pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), b.getRemarks(), keywords), BingeTags.score(a.getName(), a.getRemarks(), keywords)));
+    /** 挑一部最像的出来验货，验过了才切；预加载模式下验过了先存着，等真播完再接 */
+    private void pickNow() {
+        if (!active || probing || pool.isEmpty()) return; // 已经在验一部了，不许再挑，防止双切
+        final int penalty = comicPenalty();
+        pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), b.getRemarks(), keywords, penalty), BingeTags.score(a.getName(), a.getRemarks(), keywords, penalty)));
         Vod item = pool.remove(0);
         tried.add(item.getName());
-        if (preparing) { // 快播完提前搜的：存起来，onNoNext 直接用
-            pending = item;
+        probe(item);
+    }
+
+    /**
+     * 切过去之前先拉一次详情验货：集数够不够一部接一部刷、产地对不对。
+     * 验不过就地丢掉换下一部，一部都不切、历史里一条都不留——
+     * 以前是先切过去再看，播不了的再换，用户就看到连跳，历史里还留下没看过的剧。
+     */
+    private void probe(Vod item) {
+        probing = true;
+        probingItem = item;
+        probingEpoch = epoch;
+        App.post(probeTimeoutTask, BingeSetting.PROBE_TIMEOUT);
+        PROBE.execute(() -> {
+            boolean ok = false;
+            try {
+                Result result = SiteApi.detailContent(item.getSiteKey(), item.getId());
+                ok = playable(result == null ? null : result.getVod(), item);
+            } catch (Throwable ignored) {
+                ok = false; // 拿不到详情的一律当播不了，换一部比跳过去强
+            }
+            final boolean pass = ok;
+            App.post(() -> onProbed(item, pass, probingEpoch));
+        });
+    }
+
+    private void onProbed(Vod item, boolean ok, int myEpoch) {
+        App.removeCallbacks(probeTimeoutTask);
+        if (myEpoch != epoch || !probing || probingItem != item) return; // 这一轮已经作废或换了候选
+        probing = false;
+        probingItem = null;
+        if (ok) {
+            if (preparing) { // 快播完提前搜的：存起来，onNoNext 直接用
+                pending = item;
+                active = false;
+                preparing = false;
+                App.removeCallbacks(timeoutTask);
+                DebugLog.d("Binge", "下一部已备好 " + item.getName() + " 来自 " + item.getSiteName());
+                return;
+            }
+            DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
+            host.showBingeNext(item);
+            serial++;
+            waitingDetail = true;
             active = false;
-            preparing = false;
             App.removeCallbacks(timeoutTask);
-            DebugLog.d("Binge", "下一部已备好 " + item.getName() + " 来自 " + item.getSiteName());
+            controller.selectSource(item);
             return;
         }
-        DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
-        host.showBingeNext(item);
-        serial++;
-        waitingDetail = true;
-        active = false;
-        App.removeCallbacks(timeoutTask);
-        controller.selectSource(item);
+        DebugLog.d("Binge", "验货没过，不切，换一部：" + item.getName());
+        next();
+    }
+
+    private void onProbeTimeout() {
+        if (!probing) return;
+        Vod item = probingItem;
+        probing = false;
+        probingItem = null;
+        if (item == null) return;
+        DebugLog.d("Binge", "验货超时，不切，换一部：" + item.getName());
+        next();
+    }
+
+    /** 详情到手：集数够不够一部接一部刷；只有一集的话，得是整部压成合集那种才算数 */
+    private boolean playable(Vod detail, Vod item) {
+        if (detail == null || item == null) return false;
+        String name = item.getName();
+        if (BingeTags.isBanned(name)) return false;
+        String info = String.valueOf(detail.getArea()) + detail.getTypeName() + name;
+        if (!BingeTags.sameRegion(region, info)) return false; // 详情里写明是别国的剧，别跳过去
+        List<Flag> flags = detail.getFlags();
+        int max = 0;
+        if (flags != null) for (Flag flag : flags) {
+            if (flag != null && flag.getEpisodes() != null) max = Math.max(max, flag.getEpisodes().size());
+        }
+        if (max >= BingeTags.MIN_PLAYABLE) return true;
+        if (max <= 0) return false; // 连一条播放列表都没有，切过去也是白切
+        return BingeTags.hasCompileMark(name) || BingeTags.parseEpisodes(item.getRemarks()) >= BingeTags.MIN_PLAYABLE || BingeTags.isShortMark(name);
     }
 
     /** 换过去的详情回来了：外剧、电影/单集这类接不下去的，换下一部 */
@@ -336,6 +451,7 @@ class VodBingePolicy {
             if (!BingeTags.sameRegion(region, info)) { // 详情里写明是别的国籍，换下一部
                 DebugLog.d("Binge", "跳过 " + item.getName() + "，产地不符（当前" + region + "）");
                 tried.add(item.getName());
+                dropHistory(item.getName()); // 别在历史里留一部压根没看过的剧
                 next();
                 return;
             }
@@ -351,7 +467,31 @@ class VodBingePolicy {
             return;
         }
         tried.add(host.getVodName());
+        dropHistory(host.getVodName()); // 接不下去的这部擦掉，历史里只留真看过的
         next();
+    }
+
+    /**
+     * 兜底：切过去才发现接不下去（跟验货时看到的不一样），把刚写进历史的那条擦掉。
+     * 只擦这一部自己的一条，而且它本来就不该在历史里——filter 早把看过的排除掉了。
+     */
+    private void dropHistory(String name) {
+        try {
+            List<History> items = History.findByName(name);
+            if (items == null || items.isEmpty()) return;
+            for (History item : items) {
+                int cid = item.getCid();
+                String key = item.getKey();
+                if (key == null || key.isEmpty()) continue;
+                Task.executeSerial(() -> {
+                    try {
+                        AppDatabase.get().getHistoryDao().delete(cid, key);
+                    } catch (Throwable ignored) {
+                    }
+                });
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 当前这部是不是「整部短剧压成一个视频」的合集版：本地判得准就本地定，拿不准看大模型有没有结论 */
@@ -376,7 +516,7 @@ class VodBingePolicy {
             return;
         }
         active = true;
-        if (!pool.isEmpty()) pick();
+        if (!pool.isEmpty()) pickNow();
         else if (keywordIndex >= keywords.size()) end();
         else search();
     }
@@ -390,7 +530,9 @@ class VodBingePolicy {
     private void end() {
         DebugLog.d("Binge", "刷剧结束，没有更多候选");
         active = false;
-        App.removeCallbacks(timeoutTask);
+        probing = false;
+        probingItem = null;
+        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask);
         if (preparing) { // 只是提前备货没备到，别打扰用户，播完时会重新搜
             preparing = false;
             return;
@@ -399,7 +541,7 @@ class VodBingePolicy {
     }
 
     void reset() {
-        App.removeCallbacks(timeoutTask);
+        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask);
         pool.clear();
         tried.clear();
         keywords.clear();
@@ -413,5 +555,8 @@ class VodBingePolicy {
         waitingDetail = false;
         preparing = false;
         pending = null;
+        probing = false;
+        probingItem = null;
+        epoch++; // 上一轮没回来的验货结果一律作废
     }
 }

@@ -111,6 +111,25 @@ public class BingeProfile {
     }
 
     /**
+     * 动态漫是不是他的菜。画像里漫剧权重够高（看完过漫剧，且是最爱之一或占了不小份额）就照推；
+     * 一部漫剧都没看完过、或者只是偶尔看一部 → 算「没有基础数据」，按马先生的意思压到最后。
+     * 权重带 14 天半衰期：很久不看漫剧，这个偏好会自己淡回去，又变回"没数据"。
+     */
+    public static boolean comicPreferred() {
+        load();
+        double comicWeight = familyWeight(BingeTags.comicFamily());
+        if (comicWeight <= 0) return false; // 一部漫剧都没看完过：没有任何基础数据
+        double total = 0;
+        double max = 0;
+        for (int i = 0; i < BingeTags.FAMILIES.length; i++) {
+            double weight = familyWeight(i);
+            total += weight;
+            if (weight > max) max = weight;
+        }
+        return BingeTags.comicPreferredOf(comicWeight, max, total);
+    }
+
+    /**
      * 探索用：有正权重的族里挑最冷、且最近没刷过的（冷的才值得试探）；
      * 画像还没有任何正权重族，就随机挑一族开开眼界。
      */
