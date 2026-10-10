@@ -26,6 +26,14 @@
             android:text="@string/play_prev" />
 
         <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/binge"
+            style="@style/Control"
+            android:layout_marginEnd="8dp"
+            android:text="@string/play_binge_btn"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
             android:id="@+id/parse"
             style="@style/Control"
             android:layout_marginEnd="8dp"

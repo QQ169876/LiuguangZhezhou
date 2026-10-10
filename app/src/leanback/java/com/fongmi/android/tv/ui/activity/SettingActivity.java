@@ -24,6 +24,7 @@ import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.impl.ConfigListener;
 import com.fongmi.android.tv.impl.LiveListener;
 import com.fongmi.android.tv.impl.SiteListener;
+import com.fongmi.android.tv.setting.BingeSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.moontv.MoonSetting;
@@ -92,6 +93,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void setOtherText() {
         mBinding.dohText.setText(getDohList()[getDohIndex()]);
+        mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
         mBinding.incognitoText.setText(Setting.getSwitch(Setting.isIncognito()));
         mBinding.debugText.setText(Setting.getSwitch(DebugLog.isEnabled()));
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
@@ -143,6 +145,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.live.setOnLongClickListener(this::onLiveEdit);
         mBinding.liveHome.setOnClickListener(this::onLiveHome);
         mBinding.wall.setOnLongClickListener(this::onWallEdit);
+        mBinding.binge.setOnClickListener(this::setBinge);
         mBinding.incognito.setOnClickListener(this::setIncognito);
         mBinding.debug.setOnClickListener(this::setDebug);
         mBinding.vodHistory.setOnClickListener(this::onVodHistory);
@@ -302,6 +305,11 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
     private boolean onWallHistory(View view) {
         HistoryDialog.create().wall().show(this);
         return true;
+    }
+
+    private void setBinge(View view) {
+        BingeSetting.putEnabled(!BingeSetting.isEnabled());
+        mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
     }
 
     private void setIncognito(View view) {

@@ -57,6 +57,10 @@
     <string name="play_track_video">視軌</string>
     <string name="play_forward_hint">已切換正序播放</string>
     <string name="play_backward_hint">已切換倒序播放</string>
+    <string name="play_binge_search">正在找同類劇集「<xliff:g name="name">%1$s</xliff:g>」…</string>
+    <string name="play_binge_next">下一部：《<xliff:g name="name">%1$s</xliff:g>》· <xliff:g name="site">%2$s</xliff:g></string>
+    <string name="play_binge_end">暫時沒有更多同類劇集</string>
+    <string name="play_binge_btn">下一部</string>
     <string name="play_ready">準備播放：<xliff:g name="name">%s</xliff:g></string>
     <string name="play_switch_flag">正在切換線路至「<xliff:g name="name">%s</xliff:g>」</string>
     <string name="play_switch_site">正在切換站源至「<xliff:g name="name">%s</xliff:g>」</string>
@@ -263,6 +267,7 @@
     <string name="setting_wall">壁紙</string>
     <string name="setting_player">播放設定</string>
     <string name="setting_danmaku">彈幕設定</string>
+    <string name="setting_binge">刷劇</string>
     <string name="setting_incognito">無痕模式</string>
     <string name="setting_debug">除錯模式（記錄操作日誌）</string>
     <string name="setting_upload_log">上傳日誌（測試用）</string>

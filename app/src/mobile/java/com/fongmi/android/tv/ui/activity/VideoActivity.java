@@ -334,6 +334,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.play.setOnClickListener(view -> checkPlay());
         mBinding.control.next.setOnClickListener(view -> checkNext());
         mBinding.control.prev.setOnClickListener(view -> checkPrev());
+        View binge = mBinding.control.getRoot().findViewById(R.id.binge);
+        if (binge != null) binge.setOnClickListener(view -> mVod.bingeNext());
         mBinding.control.setting.setOnClickListener(view -> onSetting());
         mBinding.control.title.setOnLongClickListener(view -> onChange());
         mBinding.control.right.lock.setOnClickListener(view -> onLock());
@@ -551,6 +553,23 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     @Override
+    public void requestBingeSearch(List<Site> sites, String keyword) {
+        mQuickAdapter.clear();
+        mViewModel.searchContent(sites, keyword, false);
+        Notify.show(getString(R.string.play_binge_search, keyword));
+    }
+
+    @Override
+    public void showBingeNext(Vod item) {
+        Notify.show(getString(R.string.play_binge_next, item.getName(), item.getSiteName()));
+    }
+
+    @Override
+    public void onBingeEnd() {
+        Notify.show(R.string.play_binge_end);
+    }
+
+    @Override
     public void prepareSource(Vod item) {
         getIntent().putExtra("key", item.getSiteKey());
         getIntent().putExtra("pic", item.getPic());
@@ -649,6 +668,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void renderFlags(List<Flag> items) {
         mBinding.flag.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
+        View binge = mBinding.control.getRoot().findViewById(R.id.binge);
+        if (binge != null) binge.setVisibility(mVod.canBinge() ? View.VISIBLE : View.GONE);
         mFlagAdapter.addAll(items);
     }
 

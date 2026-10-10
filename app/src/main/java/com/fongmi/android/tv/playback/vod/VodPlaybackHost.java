@@ -59,6 +59,12 @@ public interface VodPlaybackHost {
 
     void requestSearch(List<Site> sites, String keyword);
 
+    void requestBingeSearch(List<Site> sites, String keyword);
+
+    void showBingeNext(Vod item);
+
+    void onBingeEnd();
+
     void prepareSource(Vod item);
 
     void stopPlaybackForRefresh();

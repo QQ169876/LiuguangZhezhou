@@ -38,6 +38,7 @@ class VodFallbackPolicy {
     }
 
     void search(String keyword, boolean autoFallback) {
+        controller.interruptBinge(); // 换源要搜了，刷剧先停手
         state.setSearchKeyword(keyword);
         state.setAutoFallback(autoFallback);
         state.setSelectFirstSource(autoFallback);

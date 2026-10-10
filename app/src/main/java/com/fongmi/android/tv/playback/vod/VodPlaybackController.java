@@ -27,6 +27,7 @@ public class VodPlaybackController {
     private final VodPlaybackState state;
     private final VodHistoryPolicy historyPolicy;
     private final VodFallbackPolicy fallbackPolicy;
+    private final VodBingePolicy bingePolicy;
     private History lastHistory;
 
     public VodPlaybackController(VodPlaybackHost host, VodPlaybackState state) {
@@ -34,11 +35,13 @@ public class VodPlaybackController {
         this.state = state;
         this.historyPolicy = new VodHistoryPolicy();
         this.fallbackPolicy = new VodFallbackPolicy(this, state, host);
+        this.bingePolicy = new VodBingePolicy(this, state, host);
     }
 
     public void reset() {
         clearPreload();
         state.reset();
+        bingePolicy.reset();
     }
 
     public void checkId() {
@@ -148,9 +151,25 @@ public class VodPlaybackController {
         host.startPlayback(result, state.isUseParse(), startPositionMs, metadata);
     }
 
+    /** 手动点「下一部」按钮 */
+    public void bingeNext() {
+        bingePolicy.forceNext();
+    }
+
+    /** 「下一部」按钮要不要显示 */
+    public boolean canBinge() {
+        return bingePolicy.canBingeNow();
+    }
+
     public void onSearchResult(Result result) {
         if (late()) return; // 退出后才回来的搜索结果，不许再自动换源
-        fallbackPolicy.onSearchResult(result);
+        if (bingePolicy.isHandling()) bingePolicy.onSearchResult(result); // 刷剧搜出的只归刷剧，丢了也不许进换源
+        else fallbackPolicy.onSearchResult(result);
+    }
+
+    /** 换源搜索开始前先让刷剧停手，两边不抢结果 */
+    public void interruptBinge() {
+        bingePolicy.interrupt();
     }
 
     public void selectFlag(Flag item) {
@@ -300,7 +319,8 @@ public class VodPlaybackController {
         if (!state.hasEpisode()) return;
         Episode item = getRelativeEpisode(1);
         if (!item.isSelected()) selectEpisode(item);
-        else if (notify) host.showNoNext(reversed);
+        else if (!notify) return;
+        else if (!bingePolicy.onNoNext(reversed)) host.showNoNext(reversed);
     }
 
     private void prevEpisode(boolean notify, boolean reversed) {
@@ -435,6 +455,7 @@ public class VodPlaybackController {
         host.renderFlags(flags);
         host.renderHistory(history);
         host.onDetailFallbackCancelled();
+        bingePolicy.onDetailLoaded(item);
         return history;
     }
 

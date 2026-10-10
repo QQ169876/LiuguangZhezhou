@@ -306,6 +306,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.control.action.opening.setDownListener(this::onOpeningSub);
         mBinding.control.action.next.setOnClickListener(view -> checkNext());
         mBinding.control.action.prev.setOnClickListener(view -> checkPrev());
+        mBinding.control.action.binge.setOnClickListener(view -> mVod.bingeNext());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
@@ -509,6 +510,23 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     @Override
+    public void requestBingeSearch(List<Site> sites, String keyword) {
+        mQuickAdapter.clear();
+        mViewModel.searchContent(sites, keyword, false);
+        Notify.show(getString(R.string.play_binge_search, keyword));
+    }
+
+    @Override
+    public void showBingeNext(Vod item) {
+        Notify.show(getString(R.string.play_binge_next, item.getName(), item.getSiteName()));
+    }
+
+    @Override
+    public void onBingeEnd() {
+        Notify.show(R.string.play_binge_end);
+    }
+
+    @Override
     public void prepareSource(Vod item) {
         getIntent().putExtra("key", item.getSiteKey());
         getIntent().putExtra("pic", item.getPic());
@@ -602,6 +620,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void renderFlags(List<Flag> items) {
         mBinding.flag.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
+        mBinding.control.action.binge.setVisibility(mVod.canBinge() ? View.VISIBLE : View.GONE);
         mFlagAdapter.addAll(items);
     }
 
