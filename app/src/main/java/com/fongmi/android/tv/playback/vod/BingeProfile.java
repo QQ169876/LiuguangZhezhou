@@ -110,23 +110,38 @@ public class BingeProfile {
         return best;
     }
 
-    /**
-     * 动态漫是不是他的菜。画像里漫剧权重够高（看完过漫剧，且是最爱之一或占了不小份额）就照推；
-     * 一部漫剧都没看完过、或者只是偶尔看一部 → 算「没有基础数据」，按马先生的意思压到最后。
-     * 权重带 14 天半衰期：很久不看漫剧，这个偏好会自己淡回去，又变回"没数据"。
-     */
-    public static boolean comicPreferred() {
+    /** 动态漫那几个说法的兴趣权重之和（看完一部动态漫才会往上攒） */
+    public static double dynamicWeight() {
         load();
-        double comicWeight = familyWeight(BingeTags.comicFamily());
-        if (comicWeight <= 0) return false; // 一部漫剧都没看完过：没有任何基础数据
-        double total = 0;
+        double sum = 0;
+        for (String word : BingeTags.DYNAMIC_MARKS) sum += weight(word);
+        return sum;
+    }
+
+    /** 画像里最热的一个题材词有多热 */
+    public static double maxWordWeight() {
+        load();
         double max = 0;
-        for (int i = 0; i < BingeTags.FAMILIES.length; i++) {
-            double weight = familyWeight(i);
-            total += weight;
-            if (weight > max) max = weight;
-        }
-        return BingeTags.comicPreferredOf(comicWeight, max, total);
+        for (String key : MAP.keySet()) max = Math.max(max, weight(key));
+        return max;
+    }
+
+    /** 全部题材词的兴趣权重之和 */
+    public static double totalWordWeight() {
+        load();
+        double total = 0;
+        for (String key : MAP.keySet()) total += weight(key);
+        return total;
+    }
+
+    /**
+     * 动态漫是不是他的菜。画像里动态漫的权重够高（看完过动态漫，且是最爱之一或占了不小份额）就照推；
+     * 一部动态漫都没看完过、或者只是偶尔看一部 → 算「没有基础数据」，按马先生的意思压到最后。
+     * 权重带 14 天半衰期：很久不看动态漫，这个偏好会自己淡回去，又变回"没数据"。
+     * 注意只看动态漫那几个词，**漫剧 / 动漫 / 二次元这些不算在这儿**（马先生：漫剧是漫剧，动态漫是动态漫）。
+     */
+    public static boolean dynamicPreferred() {
+        return BingeTags.dynamicPreferredOf(dynamicWeight(), maxWordWeight(), totalWordWeight());
     }
 
     /**

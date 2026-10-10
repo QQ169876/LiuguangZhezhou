@@ -205,12 +205,12 @@ class VodBingePolicy {
                 AiJudge.suggest(name, typeName, region, null); // 先问着，不用等
             }
         }
-        // 动态漫要不要推，看画像：他确实爱看（或这部本身就是漫剧）就照推，
-        // 看不出喜好（没基础数据）时才把它压到最后——不是永远最低（马先生 2026-10-11 澄清）
-        boolean comicOk = BingeTags.isComic(name) || BingeProfile.comicPreferred();
-        if (comicOk && !base.contains("漫剧")) base.add("漫剧"); // 就好这口的话，漫剧也算一路搜索词
+        // 动态漫要不要推，看画像：他确实爱看（或这部本身就是动态漫）就照推，
+        // 看不出喜好（没基础数据）时才把它压到最后——不是永远最低（马先生 2026-10-11 澄清）。
+        // 只管动态漫：漫剧族照常参与选族，不排除（漫剧是漫剧，动态漫是动态漫）。
+        boolean dynamicOk = BingeTags.isDynamic(name) || BingeProfile.dynamicPreferred();
+        if (dynamicOk && !base.contains("动态漫")) base.add("动态漫"); // 就好这口的话，动态漫也算一路搜索词
         Set<Integer> blocked = new HashSet<>(recentFamilies);
-        if (!comicOk) blocked.add(BingeTags.comicFamily());
         int family;
         if (random.nextDouble() < epsilon()) {
             family = BingeProfile.coldestFamily(blocked, random); // 探索：试试画像里比较冷的族
@@ -219,7 +219,6 @@ class VodBingePolicy {
             family = BingeTags.pickFamily(tags, recentFamilies); // 利用：当前剧的族里优先换最近没刷过的
             if (family < 0) family = BingeProfile.hottestFamily(blocked); // 抠不出族：按画像最热的来
         }
-        if (family == BingeTags.comicFamily() && !comicOk) family = BingeProfile.hottestFamily(blocked);
         recordFamily(family);
         if (family < 0) return base;
         List<String> keys = new ArrayList<>();
@@ -233,12 +232,13 @@ class VodBingePolicy {
     }
 
     /**
-     * 动态漫扣多少分：正在看漫剧（下一部还是漫剧很正常）或画像里就爱看漫剧 → 一分不扣，正常排队；
-     * 看不出喜好（画像里漫剧没数据）→ 扣到队尾，优先给真人短剧。
+     * 动态漫扣多少分：正在看动态漫（下一部还是动态漫很正常）或画像里就爱看动态漫 → 一分不扣，正常排队；
+     * 看不出喜好（画像里动态漫没数据）→ 扣到队尾，优先给真人短剧。
+     * ⚠️ 只针对动态漫：**漫剧、动漫、二次元这些一概不扣**（马先生：漫剧是漫剧，动态漫是动态漫）。
      */
-    private int comicPenalty() {
-        if (BingeTags.isComic(host.getVodName())) return 0;
-        return BingeProfile.comicPreferred() ? 0 : BingeTags.COMIC_PENALTY;
+    private int dynamicPenalty() {
+        if (BingeTags.isDynamic(host.getVodName())) return 0;
+        return BingeProfile.dynamicPreferred() ? 0 : BingeTags.DYNAMIC_PENALTY;
     }
 
     /** 探索比例：初始 25%，按画像累计完播数指数衰减（0.99^n），地板 5%（工业典型 0.05~0.20，冷启动取偏上） */
@@ -354,7 +354,7 @@ class VodBingePolicy {
     /** 挑一部最像的出来验货，验过了才切；预加载模式下验过了先存着，等真播完再接 */
     private void pickNow() {
         if (!active || probing || pool.isEmpty()) return; // 已经在验一部了，不许再挑，防止双切
-        final int penalty = comicPenalty();
+        final int penalty = dynamicPenalty();
         pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), b.getRemarks(), keywords, penalty), BingeTags.score(a.getName(), a.getRemarks(), keywords, penalty)));
         Vod item = pool.remove(0);
         tried.add(item.getName());

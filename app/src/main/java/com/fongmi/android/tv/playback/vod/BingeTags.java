@@ -34,8 +34,8 @@ public class BingeTags {
         // 乡村 / 种田 / 女频成长
         {"乡村", "种田", "致富", "守寡", "和离", "休妻", "入赘", "继妹", "闺蜜", "渣男", "失忆", "大女主", "女强", "团宠"},
         // AI 漫剧 / 动态漫题材
-        {"漫剧", "动态漫", "沙雕漫", "二次元", "国漫", "动漫", "漫画", "漫改",
-         "诡异", "异兽", "升级", "卡牌", "废土", "机甲", "星际", "虫族", "兽人", "血族", "狼人", "御兽"}
+        {        "漫剧", "动态漫", "沙雕漫", "动态漫画", "条漫", "AI漫剧", "二次元", "国漫", "动漫", "漫画", "漫改",
+        "诡异", "异兽", "升级", "卡牌", "废土", "机甲", "星际", "虫族", "兽人", "血族", "狼人", "御兽"}
     };
 
     /** 产地：跟着当前这部剧走，刷国产一路国产，刷韩剧一路韩剧 */
@@ -111,11 +111,11 @@ public class BingeTags {
     /** 单集时长上限：短剧/漫剧一般 1~4 分钟，放宽到 5 分钟 */
     public static final long SHORT_EPISODE_MS = 300_000L;
     /** 动态漫的扣分：正常候选得分也就 0~10 分，扣这么多等于排队尾，只有没别人了才轮到它 */
-    public static final int COMIC_PENALTY = 30;
-    /** 画像里漫剧权重到最强族的这个比例，就算「他就是爱看漫剧」，不再压它 */
-    public static final double COMIC_PREFER_RATIO = 0.5;
-    /** 或者漫剧占了总兴趣的这个比例，也算明确偏好 */
-    public static final double COMIC_PREFER_SHARE = 0.25;
+    public static final int DYNAMIC_PENALTY = 30;
+    /** 画像里动态漫权重到最强题材的这个比例，就算「他就是爱看动态漫」，不再压它 */
+    public static final double DYNAMIC_PREFER_RATIO = 0.5;
+    /** 或者动态漫占了总兴趣的这个比例，也算明确偏好 */
+    public static final double DYNAMIC_PREFER_SHARE = 0.25;
 
     /** 能不能一部接一部刷：多集即可，短剧/漫剧优先，别卡死门槛 */
     public static boolean canBinge(int episodes, long duration, String name) {
@@ -183,19 +183,30 @@ public class BingeTags {
     }
 
     /**
-     * 动态漫 / AI 漫剧的标记词。这类是动画不是真人剧，马先生的意思很明确：
-     * 刷真人短剧时下一部不要优先跳到动态漫，优先级压到最低——只有实在没别的候选了才轮到它。
+     * 「动态漫」的说法。⚠️ 只有这一类要降级——马先生 2026-10-11 特意纠正：
+     * **漫剧是漫剧，动态漫是动态漫，两码事，别混成一个词表。**
      */
-    private static final String[] COMIC_MARKS = {
-        "动态漫", "沙雕漫", "漫剧", "动态漫画", "条漫", "漫改", "AI漫剧", "ai漫剧",
-        "动漫", "漫画", "二次元", "国漫", "日漫", "韩漫"
+    public static final String[] DYNAMIC_MARKS = {
+        "动态漫", "动态漫画", "沙雕漫", "条漫", "AI漫剧", "AI 漫剧", "ai漫剧"
     };
 
-    /** 名字上是动态漫/AI漫剧一类（动画，不是真人剧） */
+    /** 广义「漫剧」的说法（不含动态漫那几个词，动态漫另算）：漫剧、动漫、漫画、二次元这些都算 */
+    private static final String[] COMIC_MARKS = {
+        "漫剧", "动漫", "漫画", "二次元", "国漫", "日漫", "韩漫", "漫改"
+    };
+
+    /** 是不是动态漫：只有这类在没有偏好数据时才压到最后 */
+    public static boolean isDynamic(String name) {
+        if (name == null || name.isEmpty()) return false;
+        for (String mark : DYNAMIC_MARKS) if (name.contains(mark)) return true;
+        return false;
+    }
+
+    /** 是不是漫剧大类（动态漫也算漫剧，但降级只降动态漫，不降漫剧） */
     public static boolean isComic(String name) {
         if (name == null || name.isEmpty()) return false;
         for (String mark : COMIC_MARKS) if (name.contains(mark)) return true;
-        return false;
+        return isDynamic(name);
     }
 
     /** 漫剧在 FAMILIES 里是最后一族：只有当前这部本身就是漫剧时才往这边跳 */
@@ -204,12 +215,12 @@ public class BingeTags {
     }
 
     /**
-     * 画像里漫剧的权重够不够算「他就爱看动态漫」：到最强族的一半，或者占了总兴趣的四分之一，就算。
-     * 纯函数，好单测。判不出来（权重 0 = 一部漫剧都没看完过）就按「没有基础数据」处理。
+     * 画像里动态漫的权重够不够算「他就爱看动态漫」：到最强题材的一半，或者占了总兴趣的四分之一，就算。
+     * 纯函数，好单测。判不出来（权重 0 = 一部动态漫都没看完过）就按「没有基础数据」处理。
      */
-    public static boolean comicPreferredOf(double comicWeight, double maxWeight, double totalWeight) {
-        if (comicWeight <= 0 || maxWeight <= 0) return false;
-        return comicWeight >= maxWeight * COMIC_PREFER_RATIO || comicWeight >= totalWeight * COMIC_PREFER_SHARE;
+    public static boolean dynamicPreferredOf(double dynamicWeight, double maxWeight, double totalWeight) {
+        if (dynamicWeight <= 0 || maxWeight <= 0) return false;
+        return dynamicWeight >= maxWeight * DYNAMIC_PREFER_RATIO || dynamicWeight >= totalWeight * DYNAMIC_PREFER_SHARE;
     }
 
     /** 名字上就写着是短剧/微剧/AI漫剧的标记，命中即按短剧对待 */
@@ -357,11 +368,12 @@ public class BingeTags {
 
     /**
      * 候选打分：关键词命中越多越像同类，命中黑名单直接判死；集数从「更新至80集」这类备注里抠。
-     * `comicPenalty` 是动态漫的扣分，由调用方按用户画像给：
-     * **没有偏好数据时扣 COMIC_PENALTY（压到最低），画像显示他就爱看漫剧时不扣**（马先生的原话：
-     * 不是始终最低，是没有基础数据、看不出喜好的时候才最低；一直看漫剧就直接推漫剧）。
+     * `dynamicPenalty` 是动态漫的扣分，由调用方按用户画像给：
+     * **没有偏好数据时扣 DYNAMIC_PENALTY（压到最低），画像显示他就爱看动态漫时不扣**（马先生的原话：
+     * 不是始终最低，是没有基础数据、看不出喜好的时候才最低；一直看动态漫就直接推动态漫）。
+     * 注意只降动态漫，漫剧/动漫/二次元这些不跟着降。
      */
-    public static int score(String name, String remarks, List<String> keys, int comicPenalty) {
+    public static int score(String name, String remarks, List<String> keys, int dynamicPenalty) {
         if (isBanned(name)) return -100;
         int score = 0;
         for (String key : keys) if (!key.isEmpty() && name.contains(key)) score += 3;
@@ -369,7 +381,7 @@ public class BingeTags {
         int episodes = parseEpisodes(remarks);
         if (episodes >= 40) score += 2;
         else if (episodes > 0 && episodes < 8) score -= 2;
-        if (isComic(name)) score -= comicPenalty;
+        if (isDynamic(name)) score -= dynamicPenalty; // 只降动态漫，漫剧不降
         return score;
     }
 
