@@ -104,6 +104,26 @@ public class BingeTags {
         return "";
     }
 
+    /**
+     * 剧种：刷剧一路只刷同一种，**不许串**（马先生 2026-10-12：看正剧就一路正剧，看短剧/广剧/AI漫剧就照这个类型往下刷）。
+     * 红果那边的分法也是真人剧、漫剧各走各的池子，串着推会让"我明明在刷短剧，忽然跳一部 45 分钟的正剧"。
+     */
+    public static final int KIND_UNKNOWN = 0;
+    public static final int KIND_SHORT = 1; // 真人短剧（广剧也算这一类，投放渠道不同而已）
+    public static final int KIND_COMIC = 2; // 漫剧 / AI漫剧 / 动态漫
+    public static final int KIND_LONG = 3;  // 正剧：横屏、三四十集、一集四五十分钟
+
+    /** 单集到这个时长基本就是正剧了（短剧一般 1~5 分钟，长一点的也就十来分钟） */
+    public static final long LONG_EPISODE_MS = 15 * 60 * 1000L;
+
+    /**
+     * 名字/分类上明写着正剧那一挂。⚠️ 只留**证据硬**的几个：
+     * 「港剧/台剧」是产地词不是剧种词（刷港剧短剧会被误判成正剧），「网剧/网络剧」短剧站也爱这么叫，都不收。
+     */
+    private static final String[] LONG_MARKS = {"电视剧", "国产剧", "正剧", "连续剧", "剧情片"};
+    /** 广剧：短剧按投放渠道分出来的叫法，归到短剧这一类 */
+    private static final String[] AD_MARKS = {"广剧"};
+
     /** 低于这个集数基本是电影、单集综艺，没法一部接一部刷 */
     public static final int MIN_PLAYABLE = 8;
     /** 集数够这么多就刷，只是判据之一，不是门槛 */
@@ -319,7 +339,7 @@ public class BingeTags {
     }
 
     /** 从标题（+分类名）里联想出搜索关键词：产地词 → 题材词 → 主标题 → 分类 → 兜底"短剧" */
-    public static List<String> keywords(String title, String typeName, String region) {
+    public static List<String> keywords(String title, String typeName, String region, int kind) {
         List<String> keys = new ArrayList<>();
         String word = regionWord(region);
         if (!word.isEmpty()) keys.add(word);
@@ -334,8 +354,52 @@ public class BingeTags {
         String type = clean(typeName);
         if (!type.isEmpty() && !keys.contains(type)) keys.add(type);
         if (isComic(title) && !keys.contains("漫剧")) keys.add("漫剧"); // 只有当前这部本身就是漫剧才接着搜漫剧
-        if (word.isEmpty() && !keys.contains("短剧")) keys.add("短剧"); // 刷外剧就别用"短剧"兜底，容易搜回国剧
+        String kindWord = kindWord(kind);
+        if (!kindWord.isEmpty()) {
+            // 认准了剧种就按剧种兜底：刷正剧搜"电视剧"、刷漫剧搜"漫剧"、刷短剧搜"短剧"，别串
+            if (!keys.contains(kindWord)) keys.add(kindWord);
+        } else if (word.isEmpty() && !keys.contains("短剧")) {
+            keys.add("短剧"); // 看不出剧种：还是按短剧兜底（刷外剧除外，"短剧"容易搜回国剧）
+        }
         return keys;
+    }
+
+    /**
+     * 判剧种：漫剧 → 短剧标记 → 单集时长 → 分类/名字里的正剧字样 → 集数，都判不出返回 UNKNOWN。
+     * 顺序有讲究：**先看漫剧**（"AI漫剧"里也带"剧"字，别被后面的规则抢走），
+     * 再看时长（这是最硬的证据：一集 45 分钟怎么都是正剧），最后才看分类和集数。
+     */
+    public static int kindOf(String name, String typeName, int episodes, long duration) {
+        if (isComic(name) || isComic(typeName)) return KIND_COMIC;
+        if (isAdDrama(name) || isAdDrama(typeName)) return KIND_SHORT; // 广剧是短剧的一支
+        if (isShortMark(name)) return KIND_SHORT; // 名字写着短剧/微剧/竖屏/泡面番
+        if (duration >= LONG_EPISODE_MS) return KIND_LONG;
+        if (hasLongMark(name) || hasLongMark(typeName)) return KIND_LONG;
+        if (duration > 0 && duration <= SHORT_EPISODE_MS) return KIND_SHORT;
+        if (episodes >= 60) return KIND_SHORT; // 六十集往上基本是短剧的集数
+        return KIND_UNKNOWN;
+    }
+
+    /** 剧种对应的兜底搜索词：刷什么就搜什么，别拿"短剧"去兜正剧 */
+    public static String kindWord(int kind) {
+        if (kind == KIND_COMIC) return "漫剧";
+        if (kind == KIND_SHORT) return "短剧";
+        if (kind == KIND_LONG) return "电视剧";
+        return "";
+    }
+
+    /** 是不是广剧（短剧里按投放渠道分出来的一支） */
+    public static boolean isAdDrama(String text) {
+        if (text == null || text.isEmpty()) return false;
+        for (String mark : AD_MARKS) if (text.contains(mark)) return true;
+        return false;
+    }
+
+    /** 名字/分类上明写着正剧那一挂（对外版：验货时拿详情的分类再判一次） */
+    public static boolean hasLongMark(String text) {
+        if (text == null || text.isEmpty()) return false;
+        for (String mark : LONG_MARKS) if (text.contains(mark)) return true;
+        return false;
     }
 
     /** 名字上明写着短剧/漫剧，按短剧对待 */
@@ -383,6 +447,43 @@ public class BingeTags {
         else if (episodes > 0 && episodes < 8) score -= 2;
         if (isDynamic(name)) score -= dynamicPenalty; // 只降动态漫，漫剧不降
         return score;
+    }
+
+    /**
+     * 剧种得分：当前的剧种和候选对不上就扣分，对得上加分。
+     * 只在**证据明确**时动手（名字上就写着"漫剧""电视剧"这种），
+     * 集数、时长这类说不准的一律不动——宁可放过，也别把好剧误杀掉。
+     */
+    public static int kindScore(String name, int kind) {
+        if (kind == KIND_UNKNOWN || name == null || name.isEmpty()) return 0;
+        boolean comic = isComic(name);
+        boolean shortMark = isShortMark(name);
+        boolean longMark = hasLongMark(name);
+        if (kind == KIND_COMIC) {
+            if (comic) return 6; // 刷漫剧：还是漫剧最对味
+            if (longMark) return -20; // 正剧不要
+            return -8; // 真人短剧：不是不能推，排后面
+        }
+        if (kind == KIND_SHORT) {
+            if (comic) return -12; // 刷真人短剧别跳漫剧去
+            if (longMark) return -20; // 正剧不要
+            if (shortMark) return 3;
+            return 0;
+        }
+        if (kind == KIND_LONG) {
+            if (comic || shortMark) return -30; // 刷正剧：短剧/漫剧一律靠后
+            if (longMark) return 4; // 明写着电视剧、国产剧这类的，正对味
+        }
+        return 0;
+    }
+
+    /** 这个候选跟当前剧种是不是明显串味（证据确凿才判，拿不准放行） */
+    public static boolean kindMismatch(String name, int kind) {
+        if (kind == KIND_UNKNOWN || name == null || name.isEmpty()) return false;
+        if (kind == KIND_LONG) return isComic(name) || isShortMark(name); // 刷正剧：名字带短剧/漫剧字样的不要
+        if (kind == KIND_COMIC) return hasLongMark(name); // 刷漫剧：明写电视剧/网剧的不要
+        if (kind == KIND_SHORT) return hasLongMark(name); // 刷短剧：明写电视剧/网剧的不要（漫剧只扣分，不硬杀）
+        return false;
     }
 
     /**

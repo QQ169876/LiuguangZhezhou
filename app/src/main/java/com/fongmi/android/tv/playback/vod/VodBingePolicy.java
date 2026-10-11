@@ -7,6 +7,7 @@ import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
+import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.setting.AiSetting;
@@ -43,6 +44,8 @@ class VodBingePolicy {
     private List<String> keywords = new ArrayList<>();
     private String region = "";
     private String typeName = ""; // 站点给的分类（如「爱情/都市」），搜同类用得上
+    private String actor = ""; // 当前这部的主演（红果那招：看《A》也推同主演的《B》）
+    private int kind = BingeTags.KIND_UNKNOWN; // 剧种：一路只刷同一种，不串
     private int keywordIndex;
     private int serial;
     private int failures;
@@ -174,12 +177,32 @@ class VodBingePolicy {
 
     private void begin() {
         region = BingeTags.regionOf(host.getVodName()); // 当前是哪一国的，后面就一路哪一国
+        kind = currentKind(); // 当前是哪一种（短剧/漫剧/正剧），后面就一路哪一种，不串剧种
         keywords = buildKeywords(host.getVodName());
-        DebugLog.d("Binge", "开始刷剧，产地=" + region + "，关键词=" + keywords + "，当前=" + host.getVodName());
+        DebugLog.d("Binge", "开始刷剧，产地=" + region + "，剧种=" + BingeTags.kindWord(kind) + "，关键词=" + keywords + "，当前=" + host.getVodName());
         active = true;
         keywordIndex = 0;
         tried.add(host.getVodName());
         search();
+    }
+
+    /** 当前这部是什么剧种：集数、单集时长、名字/分类上的标记一起看 */
+    private int currentKind() {
+        int episodes = state.hasFlags() ? state.getFlag().getEpisodes().size() : 0;
+        long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
+        return BingeTags.kindOf(host.getVodName(), typeName, episodes, duration);
+    }
+
+    /** 详情到手后按详情重判剧种：用详情自己的名字、分类和集数，别拿上一部的名字判这一部 */
+    private int kindOf(Vod item) {
+        String name = item.getName() == null ? "" : item.getName();
+        int episodes = 0;
+        List<Flag> flags = item.getFlags();
+        if (flags != null) for (Flag flag : flags) {
+            if (flag != null && flag.getEpisodes() != null) episodes = Math.max(episodes, flag.getEpisodes().size());
+        }
+        long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
+        return BingeTags.kindOf(name, item.getTypeName(), episodes, duration);
     }
 
     /**
@@ -189,8 +212,10 @@ class VodBingePolicy {
      * 还有个小比例走探索位：换到画像里比较冷的族，试试新口味，防信息茧房。
      */
     private List<String> buildKeywords(String name) {
-        List<String> base = BingeTags.keywords(name, typeName, region);
+        List<String> base = BingeTags.keywords(name, typeName, region, kind);
         List<String> tags = BingeTags.tagsOf(name);
+        // 红果那招「同主演推荐」：看《A》也推这个主演的别的剧。只带第一个主演，多了搜索就散了
+        if (!actor.isEmpty() && !base.contains(actor)) base.add(Math.min(1, base.size()), actor);
         // 本地抠不出题材词：看大模型有没有给过推荐词；没给过就先问着（下部剧用得上），这部按画像/原词表走
         if (tags.isEmpty()) {
             List<String> suggested = AiJudge.peekSuggest(name);
@@ -238,6 +263,7 @@ class VodBingePolicy {
      */
     private int dynamicPenalty() {
         if (BingeTags.isDynamic(host.getVodName())) return 0;
+        if (kind == BingeTags.KIND_COMIC) return 0; // 正在刷漫剧，下一部是动态漫很正常，别压
         return BingeProfile.dynamicPreferred() ? 0 : BingeTags.DYNAMIC_PENALTY;
     }
 
@@ -303,6 +329,7 @@ class VodBingePolicy {
             if (name.equals(current) || tried.contains(name)) continue;
             if (contains(pool, name) || state.hasFailedId(item.getId())) continue;
             if (BingeTags.isBanned(name)) continue;
+            if (BingeTags.kindMismatch(name, kind)) continue; // 别串剧种：刷短剧不跳正剧，刷正剧不跳短剧
             if (!BingeTags.sameRegion(region, name)) continue; // 别跳到别的国籍去
             int episodes = BingeTags.parseEpisodes(item.getRemarks());
             if (episodes > 0 && episodes < BingeTags.MIN_PLAYABLE) {
@@ -355,7 +382,9 @@ class VodBingePolicy {
     private void pickNow() {
         if (!active || probing || pool.isEmpty()) return; // 已经在验一部了，不许再挑，防止双切
         final int penalty = dynamicPenalty();
-        pool.sort((a, b) -> Integer.compare(BingeTags.score(b.getName(), b.getRemarks(), keywords, penalty), BingeTags.score(a.getName(), a.getRemarks(), keywords, penalty)));
+        pool.sort((a, b) -> Integer.compare(
+                BingeTags.score(b.getName(), b.getRemarks(), keywords, penalty) + BingeTags.kindScore(b.getName(), kind),
+                BingeTags.score(a.getName(), a.getRemarks(), keywords, penalty) + BingeTags.kindScore(a.getName(), kind)));
         Vod item = pool.remove(0);
         tried.add(item.getName());
         probe(item);
@@ -426,6 +455,10 @@ class VodBingePolicy {
         if (detail == null || item == null) return false;
         String name = item.getName();
         if (BingeTags.isBanned(name)) return false;
+        // 验货也看剧种：刷正剧撞上带短剧/漫剧字样的、刷短剧撞上详情写着电视剧/国产剧的，都别切过去
+        if (BingeTags.kindMismatch(name, kind)) return false;
+        if (kind != BingeTags.KIND_LONG && BingeTags.hasLongMark(detail.getTypeName())) return false;
+        if (kind == BingeTags.KIND_LONG && BingeTags.isComic(detail.getTypeName())) return false;
         String info = String.valueOf(detail.getArea()) + detail.getTypeName() + name;
         if (!BingeTags.sameRegion(region, info)) return false; // 详情里写明是别国的剧，别跳过去
         List<Flag> flags = detail.getFlags();
@@ -443,6 +476,12 @@ class VodBingePolicy {
         if (item != null) {
             String type = item.getTypeName();
             if (type != null && !type.isEmpty()) typeName = type; // 站点给的分类，搜同类用得上
+            String cast = item.getActor();
+            if (cast != null && !cast.isEmpty()) { // 主演记下来，下一部可以按人找（红果的「同主演推荐」）
+                List<String> names = Star.split(cast);
+                actor = names.isEmpty() ? "" : names.get(0);
+            }
+            kind = kindOf(item); // 切过去了：新这部说了算，后面照它的剧种刷
         }
         if (!waitingDetail) return;
         waitingDetail = false;
@@ -548,6 +587,8 @@ class VodBingePolicy {
         recentFamilies.clear();
         region = "";
         typeName = "";
+        actor = "";
+        kind = BingeTags.KIND_UNKNOWN;
         keywordIndex = 0;
         serial = 0;
         failures = 0;

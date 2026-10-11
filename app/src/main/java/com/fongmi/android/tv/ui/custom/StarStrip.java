@@ -12,6 +12,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.databinding.ViewStarStripBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.utils.AiJudge;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.textview.MaterialTextView;
@@ -32,6 +33,7 @@ public class StarStrip {
 
     private final ViewStarStripBinding binding;
     private final Action action;
+    private String askingFor = ""; // 正在问大模型的是哪一部（页面切走了就别把上一部的人名贴上来）
 
     public interface Action {
 
@@ -46,10 +48,42 @@ public class StarStrip {
 
     /** 换一部剧/详情刷新时调：重新按演员串铺一遍牌 */
     public void set(String actor) {
+        set(actor, "");
+    }
+
+    /**
+     * 换一部剧/详情刷新时调：重新按演员串铺一遍牌。
+     * 站点压根没给演员（短剧站常有的事）时，拿剧名去问一句大模型，
+     * 它想得起来就补上——牌的用法一模一样，能关注、能长按看作品。
+     * 问不到（关了开关、断网、模型不认识这部剧）就还按没有演员处理，整块不显示。
+     */
+    public void set(String actor, String vodName) {
         binding.starList.removeAllViews();
         List<String> names = Star.split(actor);
-        binding.getRoot().setVisibility(names.isEmpty() ? View.GONE : View.VISIBLE);
+        if (!names.isEmpty()) {
+            binding.getRoot().setVisibility(View.VISIBLE);
+            for (String name : names) binding.starList.addView(chip(name));
+            return;
+        }
+        binding.getRoot().setVisibility(View.GONE);
+        askingFor = vodName == null ? "" : vodName;
+        if (askingFor.isEmpty()) return;
+        List<String> cached = AiJudge.peekActors(askingFor);
+        if (cached != null) { // 问过这部了：有就铺，没有就别再问第二次
+            apply(cached, askingFor);
+            return;
+        }
+        AiJudge.actors(askingFor, "", "", cast -> apply(cast, askingFor));
+    }
+
+    /** 异步回来时页面可能已经换了剧/退了：剧名对不上或这块已经不在窗口上，就别贴了 */
+    private void apply(List<String> names, String forName) {
+        if (names == null || names.isEmpty()) return;
+        if (!binding.getRoot().isAttachedToWindow()) return;
+        if (!forName.equals(askingFor)) return;
+        binding.starList.removeAllViews();
         for (String name : names) binding.starList.addView(chip(name));
+        binding.getRoot().setVisibility(View.VISIBLE);
     }
 
     private View chip(String name) {

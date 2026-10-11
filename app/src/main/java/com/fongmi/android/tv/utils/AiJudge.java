@@ -43,16 +43,28 @@ public class AiJudge {
             + "（每个 2~8 个字，例如：重生、穿越、古装、甜宠、复仇、漫剧、动态漫；AI 漫剧、动态漫、沙雕漫这类题材也要覆盖）。"
             + "只输出 JSON，不要任何解释：{\"tags\":[\"词1\",\"词2\",\"词3\"]}";
 
+    /**
+     * 补演员：不少短剧站点压根不给演员信息，演员区就空着。这时候请大模型按剧名回忆一下主演，
+     * 想得出来就填进去（照样能关注、能长按看他的作品）。
+     * 轻度使用：只在演员确实为空时才问，同名只问一次，问不到就算了，绝不拦着你看剧。
+     */
+    private static final String SYSTEM_ACTORS = "你是影视资料助手。根据剧名回忆这部剧的主要演员，"
+            + "给出 2 到 6 个主演的人名（只要人名，中文）。只输出 JSON，不要任何解释："
+            + "{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
+
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, List<String>> SUGGEST = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> SUGGESTING = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, List<String>> ACTORS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Boolean> ACTOR_ASKING = new ConcurrentHashMap<>();
     private static final int MEMO_LIMIT = 800;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
     private static volatile OkHttpClient client;
     private static volatile boolean loaded;
     private static volatile boolean suggestLoaded;
+    private static volatile boolean actorLoaded;
 
     public interface Callback {
         void onResult(boolean ok);
@@ -60,6 +72,10 @@ public class AiJudge {
 
     public interface SuggestCallback {
         void onResult(List<String> tags);
+    }
+
+    public interface ActorsCallback {
+        void onResult(List<String> names);
     }
 
     private static OkHttpClient http() {
@@ -192,6 +208,167 @@ public class AiJudge {
             if (callback != null) callback.onResult(tags);
         } catch (Throwable ignored) {
         }
+    }
+
+    /** 大模型给过的演员，直接给；没问过返回 null。敏感剧名连缓存都不查 */
+    public static List<String> peekActors(String name) {
+        if (name == null || name.isEmpty()) return null;
+        if (AiGuard.blocked(name)) return null;
+        loadActors();
+        return ACTORS.get(name);
+    }
+
+    /**
+     * 站点没给演员时，请大模型按剧名回忆主演。结果记在本机，同剧不再重复问；
+     * 问不到（断网/超时/模型说不认识）返回 null，调用方就当没演员，整块不显示。
+     */
+    public static void actors(String name, String typeName, String site, ActorsCallback callback) {
+        if (name == null || name.isEmpty()) {
+            replyActors(callback, null);
+            return;
+        }
+        // 铁律：涉黄赌毒等违法关键词一律不送模型，一个字节都不许出去
+        if (AiGuard.blocked(name, typeName, site)) {
+            DebugLog.d("AiJudge", "命中敏感词，拒绝调用大模型：" + name);
+            replyActors(callback, null);
+            return;
+        }
+        loadActors();
+        List<String> hit = ACTORS.get(name);
+        if (hit != null) {
+            replyActors(callback, hit.isEmpty() ? null : hit); // 空列表＝问过但没结果，不再问第二次
+            return;
+        }
+        if (!AiSetting.isEnabled()) {
+            replyActors(callback, null);
+            return;
+        }
+        if (ACTOR_ASKING.putIfAbsent(name, Boolean.TRUE) != null) {
+            replyActors(callback, null); // 已经在问了，别重复烧钱
+            return;
+        }
+        POOL.execute(() -> {
+            List<String> names = null;
+            try {
+                names = requestActors(name, typeName, site);
+            } catch (Throwable e) {
+                names = null;
+                DebugLog.d("AiJudge", "补演员模型不可用：" + name);
+            }
+            ACTOR_ASKING.remove(name);
+            if (names != null) {
+                if (ACTORS.size() > MEMO_LIMIT) ACTORS.clear();
+                ACTORS.put(name, names); // 空列表也记：这部剧模型不认识，下次别再问
+                saveActors();
+            }
+            List<String> result = names == null || names.isEmpty() ? null : names;
+            App.post(() -> replyActors(callback, result));
+        });
+    }
+
+    private static void replyActors(ActorsCallback callback, List<String> names) {
+        try {
+            if (callback != null) callback.onResult(names);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static List<String> requestActors(String name, String typeName, String site) throws Exception {
+        JSONObject user = new JSONObject();
+        user.put("role", "user");
+        user.put("content", "剧名：" + name
+                + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
+                + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
+                + "\n问：这部剧的主演有哪些？只给人名。");
+
+        JSONObject body = new JSONObject();
+        body.put("model", AiSetting.getModel());
+        body.put("temperature", 0);
+        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM_ACTORS)).put(user));
+
+        Request request = new Request.Builder()
+                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
+                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
+                .post(RequestBody.create(JSON, body.toString()))
+                .build();
+
+        try (Response response = http().newCall(request).execute()) {
+            if (response.body() == null) return null;
+            String text = response.body().string();
+            JSONObject json = new JSONObject(text);
+            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+            return parseActors(content);
+        }
+    }
+
+    /** 模型吐的人名逐个过闸：太短太长都不像人名、脏词直接扔；一个能用的都没有就当没问 */
+    private static List<String> parseActors(String content) {
+        if (content == null) return null;
+        String text = content.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try {
+            JSONObject json = new JSONObject(text.substring(start, end + 1));
+            JSONArray array = json.optJSONArray("actors");
+            if (array == null) return null;
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < array.length() && names.size() < 6; i++) {
+                String name = array.optString(i, "").trim();
+                if (name.length() < 2 || name.length() > 12) continue;
+                if (AiGuard.blocked(name)) continue;
+                if (!names.contains(name)) names.add(name);
+            }
+            DebugLog.d("AiJudge", "补演员 " + names);
+            return names;
+        } catch (Exception e) {
+            return null; // 模型说了听不懂的话，就当没问
+        }
+    }
+
+    private static void loadActors() {
+        if (actorLoaded) return;
+        synchronized (AiJudge.class) {
+            if (actorLoaded) return;
+            try {
+                File file = actorFile();
+                if (file.exists()) {
+                    byte[] data = new byte[(int) file.length()];
+                    try (FileInputStream in = new FileInputStream(file)) {
+                        int read = in.read(data);
+                        JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
+                        for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
+                            String key = it.next();
+                            JSONArray array = json.optJSONArray(key);
+                            if (array == null) continue;
+                            List<String> names = new ArrayList<>();
+                            for (int i = 0; i < array.length(); i++) {
+                                String name = array.optString(i, "");
+                                if (!name.isEmpty() && !AiGuard.blocked(name)) names.add(name);
+                            }
+                            ACTORS.put(key, names); // 空的也放进去＝「问过没结果」
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            actorLoaded = true;
+        }
+    }
+
+    private static synchronized void saveActors() {
+        try {
+            JSONObject json = new JSONObject();
+            for (java.util.Map.Entry<String, List<String>> entry : ACTORS.entrySet()) json.put(entry.getKey(), new JSONArray(entry.getValue()));
+            try (FileOutputStream out = new FileOutputStream(actorFile())) {
+                out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static File actorFile() {
+        return new File(App.get().getFilesDir(), "ai_actors.json");
     }
 
     private static List<String> requestSuggest(String name, String typeName, String region) throws Exception {

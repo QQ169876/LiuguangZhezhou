@@ -852,7 +852,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
         setText(mBinding.remark, 0, item.getRemarks());
         mBinding.actor.setOnClickListener(view -> showStarDialog(item.getActor()));
-        if (mStarStrip != null) mStarStrip.set(item.getActor());
+        if (mStarStrip != null) mStarStrip.set(item.getActor(), item.getName()); // 站点没给演员的，让大模型试着补
     }
 
     private void setText(TextView view, int resId, String text) {
