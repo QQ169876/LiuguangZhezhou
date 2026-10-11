@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 演员作品列表里每一行的背景：常态透明，遥控器聚焦/手指按下时亮出来 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/shape_star_work" android:state_focused="true" />
+    <item android:drawable="@drawable/shape_star_work" android:state_pressed="true" />
+    <item android:drawable="@android:color/transparent" />
+</selector>

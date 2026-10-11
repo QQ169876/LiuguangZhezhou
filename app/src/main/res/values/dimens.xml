@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 演员作品列表：主文字 / 次要文字。TV 那边在 leanback 里覆盖成更大的字 -->
+    <dimen name="star_works_text">15sp</dimen>
+    <dimen name="star_works_sub">13sp</dimen>
+</resources>

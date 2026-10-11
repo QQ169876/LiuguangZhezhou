@@ -45,6 +45,9 @@ public interface VodPlaybackHost {
 
     boolean canPreloadNext();
 
+    /** 能不能提前把下一集的播放地址问出来（不要求能预取流数据，任何内核都行） */
+    boolean canPrefetchNext();
+
     long getPlayerPosition();
 
     long getPlayerDuration();

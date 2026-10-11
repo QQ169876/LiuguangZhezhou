@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.os.Process;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -33,10 +34,13 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import okhttp3.CacheControl;
 import okhttp3.Request;
@@ -55,25 +59,33 @@ public class Updater implements Download.Callback, UpdateListener {
     private static final int SPEED_LIMIT = 3;
     private static final int SPEED_TIMEOUT = 8000;
     private static final int SPEED_BYTES = 384 * 1024;
-    /** App 一启动就先探一次版本文件，探到的结果在这段时间内可以直接拿来用 */
-    private static final long WARM_TTL = 60 * 1000;
+    /** 启动那轮探到的结果在这段时间内可以直接拿来用 */
+    private static final long WARM_TTL = 3 * 60 * 1000;
     /** 探测总时限：线路有十条左右，不能让一条半死不活的把整体拖到十几秒 */
     private static final int PROBE_DEADLINE = 8000;
     /** 上一轮检查超过这么久还没收工，就当它卡死了，放行新一轮 */
     private static final long BUSY_TIMEOUT = 60 * 1000;
     /** 手动点「检查更新」时只挡这么久：上一轮多半是进首页的自动检查，用户等不了也该让他重来 */
     private static final long BUSY_TOL_FORCED = 3 * 1000;
-    /** 刚确认过「没有新版本」，这段时间内自动检查别反复去问 */
+    /** 启动那轮还在跑时，首页的检查最多等它这么久，等到了就不用自己再探一遍 */
+    private static final long WARM_WAIT = 3 * 1000;
+    /** 自建源亲口确认过「没有新版本」，这段时间内自动检查别反复去问 */
     private static final long WARM_NONE_TTL = 5 * 60 * 1000;
+    /** 只有 GitHub 那几条说「没新版」（可能是代理攥着旧缓存），短时间别重复问就行 */
+    private static final long WARM_NONE_SOFT_TTL = 30 * 1000;
     /** 网络一恢复就补探，但别被网络抖动反复触发 */
     private static final long WARM_RETRY_GAP = 30 * 1000;
     /** 弹框后给用户挑线路的最长等待：这段时间里每 1 秒看一眼好没好 */
     private static final int PREPARE_RETRY = 10;
 
+    private static final Object LOCK = new Object();
+
     private static volatile List<Probe> warm; // 启动时预热探到的线路结果
     private static volatile long warmAt;
-    private static volatile long warmNone; // 上次确认「没有新版本」的时刻
+    private static volatile long warmNone; // 自建源上次确认「没有新版本」的时刻
+    private static volatile long warmNoneSoft; // 只有 GitHub 说没新版的时刻（可能是代理旧缓存）
     private static volatile long warmTry;
+    private static volatile boolean warming; // 启动那轮是不是还在跑：首页撞上了就等它，别自己再探一遍
     private static volatile boolean watched;
     private static volatile boolean busy;    // 正在检查标记：连点不会叠好几轮
     private static volatile long busyAt;
@@ -114,28 +126,66 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 版本检测提前：App 一启动就先探一次版本文件（走独立线程，不跟首页的请求挤），
-     * 等首页或设置页真要检查更新时，直接拿这份新鲜结果用，弹框不用再干等网络。
-     * 探不到也无妨，原来该怎么走还怎么走。
+     * 版本检测提前：App 一启动就**把整个检查跑完**（走独立线程，不跟首页的请求排队），
+     * 等首页要检查更新时直接拿这份结果弹框，用户不用对着首页干等网络。
+     *
+     * 以前这里只探 GitHub 那几条线路，而且探到旧版本就记一笔「已知最新」，
+     * 把后面首页的自动检查**直接憋掉五分钟**——可 GitHub 那几条走的是公益加速代理，
+     * 代理攥着旧缓存是常态，于是"明明发了新版，打开 App 却一点反应都没有，
+     * 非得手动点一下版本号"。现在这轮跟真正的检查一样：自建源（自己的网盘，没有缓存）
+     * 和 GitHub 各条线路一起并发探，谁给的版本新算谁的；只有自建源亲口说"你就是最新"，
+     * 才敢长时间不去问。
      */
     public static void prewarm() {
         if (!Setting.getUpdate()) return;
         if (warm != null && System.currentTimeMillis() - warmAt < WARM_TTL) return;
+        if (warming) return;
+        warming = true;
         new Thread(() -> {
             try {
-                List<Probe> probes = probeAll(getRoutes(), getJsonUrl());
-                Probe best = newest(probes);
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); // 别跟首页抢
+                Found found = probeBoth(true, false); // 先问网盘，网盘没搭理才去试 GitHub 那几条
+                List<Probe> probes = found.probes;
+                Probe self = found.self;
+                Probe best = pick(probes, self);
                 if (best == null) return; // 一条都没通，下次再试
-                // 探到的是旧版本（多半是代理缓存），就别存：存了会让这一分钟内的检查一直拿旧结果
                 if (best.code <= BuildConfig.VERSION_CODE) {
-                    warmNone = System.currentTimeMillis();
+                    // 自建源的话可信（自己的网盘不经代理，没有缓存）；只有 GitHub 说旧，
+                    // 那多半是代理缓存，短暂歇一会儿就得了，别把自动更新憋死
+                    if (self != null) warmNone = System.currentTimeMillis();
+                    else warmNoneSoft = System.currentTimeMillis();
                     return;
                 }
-                warm = probes;
+                List<Probe> all = new ArrayList<>(probes);
+                if (self != null) all.add(self);
+                warm = all;
                 warmAt = System.currentTimeMillis();
             } catch (Throwable ignored) {
+            } finally {
+                warming = false;
+                synchronized (LOCK) {
+                    LOCK.notifyAll();
+                }
             }
         }, "update-warm").start();
+    }
+
+    /**
+     * 启动那轮还在跑就等它一会儿。首页刚起来就自己再探一遍，等于同样的网络请求发两趟，
+     * 老盒子上还会互相抢带宽，两边都变慢——不如等这一轮出结果。
+     */
+    private static void awaitWarm(long wait) {
+        if (!warming) return;
+        long deadline = System.currentTimeMillis() + wait;
+        synchronized (LOCK) {
+            while (warming && System.currentTimeMillis() < deadline) {
+                try {
+                    LOCK.wait(Math.max(1, deadline - System.currentTimeMillis()));
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        }
     }
 
     /**
@@ -172,16 +222,39 @@ public class Updater implements Download.Callback, UpdateListener {
      * 后面完全按 GitHub 的老路走。
      */
     private static Probe selfProbe() {
-        // 从上次通的那个域名开始试，省掉一次白跑
-        for (int i = 0; i < SelfHost.count(); i++) {
-            int at = (SelfHost.index() + i) % SelfHost.count();
-            Probe probe = selfProbe(at);
-            if (probe != null) {
-                SelfHost.use(at);
-                return probe;
+        int count = SelfHost.count();
+        if (count <= 1) return selfProbe(0);
+        // 两个域名**同时**发，谁先回来用谁。以前是串着试：主域名先耗满 6 秒超时，
+        // 再拿备用域名重新握手（走 CDN，冷启动实测要 3~9 秒），加起来十几秒就没了——
+        // 这也是"打开 App 要等半天才出更新提示"的一大半时间。
+        ExecutorService pool = Executors.newFixedThreadPool(count);
+        try {
+            AtomicBoolean claimed = new AtomicBoolean();
+            ExecutorCompletionService<Probe> service = new ExecutorCompletionService<>(pool);
+            for (int i = 0; i < count; i++) {
+                int at = (SelfHost.index() + i) % count; // 从上次通的那个先发，先到先得
+                service.submit(() -> claim(selfProbe(at), at, claimed));
             }
+            long deadline = System.currentTimeMillis() + SELF_ALT_TIMEOUT + 1000;
+            for (int i = 0; i < count; i++) {
+                long left = deadline - System.currentTimeMillis();
+                if (left <= 0) break;
+                Future<Probe> future = service.poll(left, TimeUnit.MILLISECONDS);
+                if (future == null) break;
+                Probe probe = future.get();
+                if (probe != null) return probe;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            pool.shutdownNow();
         }
         return null;
+    }
+
+    /** 谁先探通就用哪个域名（后面回来的那个别抢） */
+    private static Probe claim(Probe probe, int at, AtomicBoolean claimed) {
+        if (probe != null && claimed.compareAndSet(false, true)) SelfHost.use(at);
+        return probe;
     }
 
     private static Probe selfProbe(int at) {
@@ -261,11 +334,29 @@ public class Updater implements Download.Callback, UpdateListener {
         prewarm();
     }
 
-    /** 预热结果还新鲜就拿过来用，省掉一次探测 */
+    /** 启动那轮的结果还新鲜就拿过来用，省掉一次探测 */
     private static List<Probe> fresh() {
         if (warm == null) return null;
         if (System.currentTimeMillis() - warmAt > WARM_TTL) return null;
         return warm.isEmpty() ? null : warm;
+    }
+
+    /** 预热结果里已经含自建源那份的话，就不用再问一遍网盘了 */
+    private static Probe selfOf(List<Probe> probes) {
+        if (probes == null) return null;
+        for (Probe item : probes) if (SelfHost.is(item.route)) return item;
+        return null;
+    }
+
+    /**
+     * 是不是刚确认过「没有新版本」。
+     * 自建源说的最新才真算数（自己的网盘没有缓存）；只有 GitHub 那几条说最新，
+     * 很可能是代理攥着旧版本，歇一小会儿就得再问，不能把自动更新憋死。
+     */
+    private static boolean recentlyNone() {
+        long now = System.currentTimeMillis();
+        if (now - warmNone < WARM_NONE_TTL) return true;
+        return now - warmNoneSoft < WARM_NONE_SOFT_TTL;
     }
 
     private String getApk(String tag) {
@@ -276,8 +367,9 @@ public class Updater implements Download.Callback, UpdateListener {
     public Updater force() {
         forced = true;
         warm = null; // 手动点的「检查更新」必须真去问一次，不能用启动时那份
+        Setting.putUpdateSkip(""); // 手动点就是要看最新的，以前跳过的不算数
         Notify.show(R.string.update_check);
-        Setting.putUpdate(true);
+        Setting.putUpdate(true); // 手动查过一次，自动检查也顺手恢复
         return this;
     }
 
@@ -310,18 +402,31 @@ public class Updater implements Download.Callback, UpdateListener {
 
     private void doInBackground(FragmentActivity activity) {
         try {
-            List<Probe> probes = fresh(); // 启动预热探到的那份还新鲜就直接用
+            List<Probe> probes = fresh(); // 启动那轮探到的结果还新鲜就直接用
+            if (probes == null) {
+                // 启动那轮多半还在跑（首页比它快），等它一会儿，拿到了就省掉一趟重复探测
+                awaitWarm(WARM_WAIT);
+                probes = fresh();
+            }
             // 刚确认过没有新版本，自动检查就别反复去问了（手动点不受此限）
-            if (probes == null && !forced && System.currentTimeMillis() - warmNone < WARM_NONE_TTL) return;
-            if (probes == null) probes = probeAll(getRoutes(), getJsonUrl());
+            if (probes == null && !forced && recentlyNone()) return;
+            Probe self = selfOf(probes);
+            // 自建源和 GitHub 线路一起探：以前是先探完 GitHub 再探网盘，两趟串着等，慢一倍
+            if (probes == null || self == null) {
+                Found found = probeBoth(probes == null, forced); // GitHub 那份已经有了就只补探自建源
+                if (probes == null) probes = found.probes;
+                if (self == null) self = found.self;
+            }
             // 手动点的，探测全挂就自动再试一轮，别让用户干等着以为没点到
-            if (forced && (probes == null || probes.isEmpty())) probes = probeAll(getRoutes(), getJsonUrl());
-            // 自建源只问一次：自己的网盘不经公益代理，不会被缓存，拿到的一定是最新的
-            Probe self = selfProbe();
+            if (forced && (probes == null || probes.isEmpty())) {
+                Found again = probeBoth(true, true);
+                if (again.probes != null && !again.probes.isEmpty()) probes = merge(probes, again.probes);
+                if (self == null) self = again.self;
+            }
             Probe best = pick(probes, self);
             // 手动点：第一轮拿到的可能全是代理的旧缓存，换个时间戳再问一轮，哪条新用哪条
             if (forced && best != null && best.code <= BuildConfig.VERSION_CODE) {
-                List<Probe> again = probeAll(getRoutes(), getJsonUrl());
+                List<Probe> again = probeAll(getRoutes(true), getJsonUrl(), 0);
                 if (again != null && !again.isEmpty()) {
                     probes = merge(probes, again);
                     best = pick(probes, self);
@@ -336,8 +441,15 @@ public class Updater implements Download.Callback, UpdateListener {
             String desc = wrap(object.optString("desc"));
             tag = object.optString("tag");
             int code = object.optInt("code");
+            // 这一版用户点过「取消」：不再反复弹他不想装的那一版，出新版本照旧提醒
+            if (!forced && !tag.isEmpty() && tag.equals(Setting.getUpdateSkip())) return;
             if (code <= BuildConfig.VERSION_CODE) {
-                if (code > 0) warmNone = System.currentTimeMillis();
+                if (code > 0) {
+                    // 只有自建源亲口说「你就是最新」才敢长时间不去问；要是这句话来自 GitHub，
+                    // 很可能是代理攥着旧缓存，歇一小会儿就得再问（否则就是"发新版了检测不到"）
+                    if (SelfHost.is(best.route)) warmNone = System.currentTimeMillis();
+                    else warmNoneSoft = System.currentTimeMillis();
+                }
                 if (forced) App.post(() -> Notify.show(R.string.update_latest));
                 return;
             }
@@ -389,13 +501,18 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 参与探测的线路：手动锁定的那条排在最前，后面是所有候选
+     * 参与探测的线路：手动锁定的那条排在最前，后面是候选。
+     * 日常自动检查只带最快的三条（外加直连），手动点「检查更新」才把整张表拿出来。
      */
     private static List<String> getRoutes() {
+        return getRoutes(false);
+    }
+
+    private static List<String> getRoutes(boolean all) {
         List<String> routes = new ArrayList<>();
         String fixed = GhRoute.fixed();
         if (fixed != null) routes.add(fixed);
-        for (String route : GhRoute.candidates()) {
+        for (String route : all ? GhRoute.candidatesAll() : GhRoute.candidates()) {
             if (!routes.contains(route)) routes.add(route);
         }
         return routes;
@@ -441,27 +558,91 @@ public class Updater implements Download.Callback, UpdateListener {
         }
     }
 
+    /** 一轮探测的两份结果：GitHub 各条线路 + 自建源 */
+    private static class Found {
+        List<Probe> probes;
+        Probe self;
+    }
+
     /**
-     * 并发探测各条线路能不能取到版本文件，按耗时排序
+     * 自建源和 GitHub 线路的探测。
+     *
+     * 手动点「检查更新」（forced）：两边同时探，GitHub 那边连全部线路一起试，慢一点也要查准。
+     * 日常的自动检查：更新包主要放在自建网盘上，所以**先问网盘**——网盘亲口给了结论
+     * （不管是"有新包"还是"你就是最新"）就收工，一条 GitHub 代理都不用去试，省掉那几趟握手；
+     * 只有网盘没搭理、或者这台机型的包不在网盘上，才去问 GitHub 那几条线路。
+     *
+     * 以前是不管三七二十一，每次都把十几条代理挨个试一遍，光是试线路就要好几秒。
      */
-    private static List<Probe> probeAll(List<String> routes, String url) {
+    private static Found probeBoth(boolean github, boolean forced) {
+        Found found = new Found();
+        if (!github) {
+            found.self = selfProbe();
+            return found;
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // 显式写成 Callable：方法引用既能当 Callable 又能当 Runnable（返回值丢掉），不写清楚编译器分不出来
+            Callable<Probe> selfTask = Updater::selfProbe;
+            Future<Probe> self = pool.submit(selfTask);
+            boolean askGithub = forced;
+            if (!forced) {
+                try {
+                    found.self = self.get(SELF_ALT_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
+                } catch (Exception ignored) {
+                }
+                askGithub = found.self == null || found.self.apk == null || found.self.apk.isEmpty();
+            }
+            if (askGithub) {
+                Callable<List<Probe>> probeTask = () -> probeAll(getRoutes(forced), getJsonUrl(), BuildConfig.VERSION_CODE);
+                Future<List<Probe>> probes = pool.submit(probeTask);
+                try {
+                    found.probes = probes.get(PROBE_DEADLINE + PROBE_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
+                } catch (Exception ignored) {
+                }
+            }
+            if (found.self == null) {
+                try {
+                    found.self = self.get(SELF_ALT_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
+                } catch (Exception ignored) {
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        return found;
+    }
+
+    /**
+     * 并发探测各条线路能不能取到版本文件，按耗时排序。
+     *
+     * @param stopAbove 大于 0 时，任何一条线路拿到比它更新的版本就**立刻收工**
+     *                  （剩下的慢线路不等了）：检测的目的是知道有没有新版，
+     *                  不是把十条线路的耗时都量一遍。
+     */
+    private static List<Probe> probeAll(List<String> routes, String url, int stopAbove) {
         List<Probe> result = new ArrayList<>();
         if (routes.isEmpty()) return result;
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(routes.size(), 8));
-        List<Future<Probe>> futures = new ArrayList<>();
-        for (String route : routes) futures.add(pool.submit(() -> probe(route, url)));
-        // 整体设个 deadline：快的线路基本都在前几秒回来，剩下的慢的直接不等
-        long deadline = System.currentTimeMillis() + PROBE_DEADLINE;
-        for (Future<Probe> future : futures) {
-            long left = deadline - System.currentTimeMillis();
-            if (left <= 0) break;
-            try {
-                Probe item = future.get(Math.min(left, PROBE_TIMEOUT), TimeUnit.MILLISECONDS);
-                if (item != null) result.add(item);
-            } catch (Exception ignored) {
+        try {
+            ExecutorCompletionService<Probe> service = new ExecutorCompletionService<>(pool);
+            for (String route : routes) service.submit(() -> probe(route, url));
+            // 整体设个 deadline：快的线路基本都在前几秒回来，剩下的慢的直接不等
+            long deadline = System.currentTimeMillis() + PROBE_DEADLINE;
+            for (int i = 0; i < routes.size(); i++) {
+                long left = deadline - System.currentTimeMillis();
+                if (left <= 0) break;
+                Future<Probe> future = service.poll(Math.min(left, PROBE_TIMEOUT), TimeUnit.MILLISECONDS);
+                if (future == null) break;
+                Probe item = future.get();
+                if (item == null) continue;
+                result.add(item);
+                if (stopAbove > 0 && item.code > stopAbove) break; // 已经有新版了，收工
             }
+        } catch (Exception ignored) {
+        } finally {
+            pool.shutdownNow();
         }
-        pool.shutdownNow();
         result.sort((a, b) -> Long.compare(a.cost, b.cost));
         return result;
     }
@@ -497,6 +678,8 @@ public class Updater implements Download.Callback, UpdateListener {
         Probe direct = null;
         List<Probe> others = new ArrayList<>();
         for (Probe item : probes) {
+            // 自建源是另一条路：能走到这说明挑中的不是它，别拿它去测速（量不出速度还白下一截）
+            if (item == null || SelfHost.is(item.route)) continue;
             if (fixed != null && item.route.equals(fixed)) return keep(probes, item);
             if (GhRoute.isDirect(item.route)) direct = item;
             else others.add(item);
@@ -609,9 +792,24 @@ public class Updater implements Download.Callback, UpdateListener {
         App.post(() -> waitReady(view, retry + 1), 1000);
     }
 
+    /**
+     * 取消 = 这一版先不装。
+     * 以前这里是「关掉自动检查更新」，一下就把以后所有版本的提醒都关了 ——
+     * 表现就是「除非手动点版本号，否则 App 根本不检查更新」。现在只跳过这一版。
+     */
     @Override
     public void onCancel(View view) {
+        Setting.putUpdateSkip(tag);
+        Notify.show(R.string.update_skip);
+        if (download != null) download.cancel();
+        dismiss();
+    }
+
+    /** 不再提示 = 真的关掉自动检查（想恢复去设置里点版本号） */
+    @Override
+    public void onNever(View view) {
         Setting.putUpdate(false);
+        Notify.show(R.string.update_off);
         if (download != null) download.cancel();
         dismiss();
     }

@@ -16,6 +16,9 @@ import java.util.Set;
 
 public class VodPlaybackState {
 
+    /** 预读到的播放地址放这么久就作废：站点的地址有的带时效签名，放太久切过去会播失败 */
+    private static final long PRELOAD_TTL = 10 * 60 * 1000;
+
     private final Set<String> failedIds;
     private final List<Vod> sources;
     private final List<Flag> flags;
@@ -24,6 +27,7 @@ public class VodPlaybackState {
     private MediaMetadata playbackMetadata;
     private VodPlayRequest preloadRequest;
     private Result preloadResult;
+    private long preloadAt;
     private Result quality;
     private History history;
     private String detailKey;
@@ -193,15 +197,21 @@ public class VodPlaybackState {
     void beginPreload(VodPlayRequest request) {
         preloadRequest = request;
         preloadResult = null;
+        preloadAt = 0;
     }
 
     void completePreload(Result result) {
         preloadResult = result;
+        preloadAt = System.currentTimeMillis();
     }
 
     @Nullable
     Result consumePreload(String key, Flag flag, Episode episode) {
         if (preloadRequest == null || preloadResult == null || !preloadRequest.matches(key, flag, episode)) return null;
+        if (System.currentTimeMillis() - preloadAt > PRELOAD_TTL) {
+            clearPreload(); // 放太久了，地址可能已经失效，重新问一次更稳
+            return null;
+        }
         Result result = preloadResult;
         clearPreload();
         return result;
@@ -210,6 +220,7 @@ public class VodPlaybackState {
     void clearPreload() {
         preloadRequest = null;
         preloadResult = null;
+        preloadAt = 0;
     }
 
     @Nullable

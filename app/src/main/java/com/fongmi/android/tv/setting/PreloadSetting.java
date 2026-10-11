@@ -21,8 +21,18 @@ public class PreloadSetting {
         Prefers.put("preload", preload);
     }
 
+    /**
+     * 下一集预读：默认开。
+     *
+     * 这两件事要分开看：
+     * - 「预加载」总开关管的是**边播边把整片往磁盘缓存**（ExoDiskPreload），费磁盘、费带宽，所以默认关；
+     * - 「预读下一集」管的是**提前把下一集的播放地址问出来**（能预取流数据的就顺手预取一点），
+     *   只是多一趟站点请求，换来的是切集不再转圈，这是默认就该有的体验。
+     * 以前这两件事被捆在一个开关上，总开关一关，下一集预读跟着一起没了——表现出来就是
+     * 「调下一集要等一会儿」。现在解耦：预读只看自己这个开关。
+     */
     public static boolean isNextEpisodeEnabled() {
-        return Prefers.getBoolean("preload_next_episode");
+        return Prefers.getBoolean("preload_next_episode", true);
     }
 
     public static void putNextEpisodeEnabled(boolean enabled) {

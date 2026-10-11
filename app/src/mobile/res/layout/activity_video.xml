@@ -257,6 +257,14 @@
                         android:paddingEnd="16dp"
                         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+                    <include
+                        android:id="@+id/starStrip"
+                        layout="@layout/view_star_strip"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="8dp" />
+
                     <androidx.appcompat.widget.LinearLayoutCompat
                         android:id="@+id/content_layout"
                         android:layout_width="match_parent"

@@ -157,6 +157,21 @@ public class VodPlaybackController {
         bingePolicy.forceNext();
     }
 
+    /**
+     * 当前播的是不是这部剧的第一集。
+     * 倒序播放的（从后往前看）按「倒着数的第一集」算，也就是列表里最后一集。
+     * position 可能是 -1（刚进来还没选定播哪集），拿不准的时候一律说不是，免得误伤。
+     */
+    public boolean isFirstEpisode() {
+        if (!state.hasEpisode()) return false;
+        Flag flag = state.getFlag();
+        List<Episode> episodes = flag.getEpisodes();
+        if (episodes == null || episodes.isEmpty()) return false;
+        boolean rev = state.getHistory() != null && state.getHistory().isRevPlay();
+        int position = flag.getPosition();
+        return rev ? position == episodes.size() - 1 : position == 0;
+    }
+
     /** 「下一部」按钮要不要显示 */
     public boolean canBinge() {
         return bingePolicy.canBingeNow();
@@ -403,12 +418,19 @@ public class VodPlaybackController {
         else clearPreload();
     }
 
+    /**
+     * 预读结果到手。分两层用：
+     * 1. 播放地址先存下来——不管什么内核，切集时都能直接拿它开播，省掉那趟解析等待；
+     * 2. 能预取流数据的内核（Exo）再顺手把开头一段取下来，切过去连缓冲都省了。
+     * 以前只有第 2 层，且做不成第 2 层就把第 1 层也一起扔了，MPV 用户等于完全没有预读。
+     */
     private void startPreload(Result result, Episode episode) {
         result.getUrl().set(state.getQualityPosition());
         long startPositionMs = getPreloadStartPositionMs(result);
         MediaMetadata metadata = VodPlaybackMedia.metadata(state.getHistory(), episode);
-        if (host.preloadPlayback(result, startPositionMs, metadata)) state.completePreload(result);
-        else clearPreload();
+        state.completePreload(result);
+        if (host.preloadPlayback(result, startPositionMs, metadata)) return;
+        host.clearPreload(); // 只清播放器那边的流数据预取，state 里的地址留着切集时用
     }
 
     public void setOpening(long opening) {
@@ -528,7 +550,7 @@ public class VodPlaybackController {
     }
 
     private Episode findNextEpisodeToPreload() {
-        if (!state.hasEpisode() || !host.canPreloadNext()) return null;
+        if (!state.hasEpisode() || !host.canPrefetchNext()) return null;
         History history = state.getHistory();
         int offset = history != null && history.isRevPlay() ? -1 : 1;
         Episode episode = getRelativeEpisode(offset);
@@ -541,7 +563,7 @@ public class VodPlaybackController {
     }
 
     private boolean isPreloadable(VodPlayRequest request, Result result, Episode episode) {
-        return episode != null && host.canPreloadNext() && request.accepts(result) && !result.hasMsg() && !result.needParse() && !result.isUseParse() && result.getDrm() == null && !result.getRealUrl().isEmpty();
+        return episode != null && host.canPrefetchNext() && request.accepts(result) && !result.hasMsg() && !result.needParse() && !result.isUseParse() && result.getDrm() == null && !result.getRealUrl().isEmpty();
     }
 
     private long getPreloadStartPositionMs(Result result) {

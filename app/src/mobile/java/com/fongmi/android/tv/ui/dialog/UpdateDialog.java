@@ -64,7 +64,7 @@ public class UpdateDialog extends BaseAlertDialog {
 
     @Override
     protected MaterialAlertDialogBuilder getBuilder() {
-        return builder().setTitle(title).setView(getBinding().getRoot()).setPositiveButton(R.string.update_confirm, null).setNegativeButton(R.string.dialog_negative, null).setCancelable(false);
+        return builder().setTitle(title).setView(getBinding().getRoot()).setPositiveButton(R.string.update_confirm, null).setNegativeButton(R.string.dialog_negative, null).setNeutralButton(R.string.update_never, null).setCancelable(false);
     }
 
     @Override
@@ -79,8 +79,10 @@ public class UpdateDialog extends BaseAlertDialog {
         if (dialog == null) return;
         Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
         Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button neutral = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
         if (negative != null) negative.setOnClickListener(view -> { if (listener != null) listener.onCancel(view); });
         if (positive != null) positive.setOnClickListener(view -> { if (listener != null) listener.onConfirm(view); });
+        if (neutral != null) neutral.setOnClickListener(view -> { if (listener != null) listener.onNever(view); });
     }
 
     public void setProgress(int progress) {

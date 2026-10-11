@@ -29,20 +29,25 @@ public class GhRoute {
     /** 本地 SOCKS5 前缀 */
     public static final String SOCKS5 = "socks5://";
 
-    // 只保留实测能用的（能取到 raw 版本文件 + 能对 Release APK 做 Range 断点续传）。
-    // 自动模式会并发探测全部线路并测速，通得快就走谁，列表里多几台不影响体验，挂掉的会被自动跳过。
-    // 2026-10-02 实测：上面 6 台全通；gh.llkk.cc / ghproxy.cc / ghps.cc / mirror.ghproxy.com /
-    // hub.gitmirror.com / ghp.ci / gh.monster / gh.flyinbug.top 等已挂，不再占位。
+    // 2026-10-11 实测（串行，取版本 json 的延迟 + Release 包前 2MB 的下载速度）：
+    //   gh.qninq.cn        197ms   1.94MB/s  ← 自动 1
+    //   edgeone.gh-proxy   591ms   0.41MB/s  ← 自动 2
+    //   v6.gh-proxy.org   1008ms   0.32MB/s  ← 自动 3
+    //   gh-proxy.org      1173ms   0.21MB/s
+    //   自建 CORS(us.kg)  1668ms   0.14MB/s（自己的，兜底用）
+    // 淘汰：ghproxy.net / hk.gh-proxy.org / cdn.gh-proxy.org / gh-proxy.com 都能通但下 2MB 要 90~160 秒，
+    //       实测等于废的；ghfast.top / gh.zwy.one 已超时不通；gh.idayer.com 一直 429。
+    // 每次更新要并发试一遍线路，条数越多越慢，所以只留这几台真能用的。
     private static final String[] ACCEL = {
-            "https://p.169876.us.kg/proxy/",
-            "https://gh-proxy.com/",
-            "https://ghproxy.net/",
-            "https://gh.idayer.com/",
-            "https://ghfast.top/",
-            "https://gh.zwy.one/",
             "https://gh.qninq.cn/",
+            "https://edgeone.gh-proxy.org/",
+            "https://v6.gh-proxy.org/",
             "https://gh-proxy.org/",
+            "https://p.169876.us.kg/proxy/",
     };
+
+    /** 自动模式只跑实测最快的三台，别把时间浪费在挨个试线路上 */
+    private static final int AUTO_COUNT = 3;
 
     static {
         // SOCKS5 的用户名密码由 java.net.Authenticator 提供，只认我们配的那台代理
@@ -179,12 +184,24 @@ public class GhRoute {
     }
 
     /**
-     * 自动模式下的候选顺序：直连 → 公益加速 → 本地 SOCKS5
+     * 自动模式下的候选顺序：直连 → 实测最快的三台加速 → 本地 SOCKS5。
+     *
+     * 更新主要走自建网盘，GitHub 只是兜底，日常还要挨个试十几条线路太不值当——
+     * 现在自动只探这三台（外加直连），剩下的留在列表里给用户手动挑。
      */
     public static List<String> candidates() {
+        return candidates(AUTO_COUNT);
+    }
+
+    /** 手动点「检查更新」时用完整的线路表，慢一点也要查准 */
+    public static List<String> candidatesAll() {
+        return candidates(ACCEL.length);
+    }
+
+    private static List<String> candidates(int count) {
         List<String> result = new ArrayList<>();
         result.add("");
-        for (String host : ACCEL) result.add(host);
+        for (int i = 0; i < ACCEL.length && i < count; i++) result.add(ACCEL[i]);
         for (String socks : Setting.getRouteCustoms()) if (validSocks(socks)) result.add(SOCKS5 + socks);
         String socks = Setting.getSocks();
         if (validSocks(socks)) result.add(SOCKS5 + socks);

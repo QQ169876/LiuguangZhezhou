@@ -28,10 +28,18 @@
 
     <!-- Star -->
     <string name="star">Follow actor</string>
+    <string name="star_hint">Tap to follow · Long-press for works</string>
     <string name="star_add">Followed</string>
     <string name="star_del">Unfollowed</string>
     <string name="star_follow">Follow</string>
     <string name="star_followed">Following</string>
+    <string name="star_works">Works</string>
+    <string name="tmdb_works">Works of %1$s</string>
+    <string name="tmdb_loading">Looking up the works…</string>
+    <string name="tmdb_movie">Movies</string>
+    <string name="tmdb_tv">TV Series</string>
+    <string name="tmdb_none">No works found. Try searching the name directly.</string>
+    <string name="tmdb_direct_search">Search “%1$s” everywhere</string>
 
     <!-- Play -->
     <string name="play">Play</string>
@@ -566,6 +574,9 @@
     <string name="update_latest">Already up to date</string>
     <string name="update_check_fail">Can\'t reach the update server. Check the network and try again.</string>
     <string name="update_checking">Still checking, please wait…</string>
+    <string name="update_never">Don\'t remind me</string>
+    <string name="update_skip">Skipped this version, you\'ll be told when the next one is out</string>
+    <string name="update_off">Auto check is off, tap the version in settings to turn it back on</string>
     <string name="update_prepare_fail">Download route not ready yet, tap update again.</string>
     <string name="update_install_fail">Can\'t open the installer. Please install it manually.</string>
     <string name="update_bad_package">The downloaded package is incomplete. Please update again.</string>

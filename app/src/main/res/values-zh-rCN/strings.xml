@@ -28,10 +28,18 @@
 
     <!-- Star -->
     <string name="star">关注演员</string>
+    <string name="star_hint">点一下关注 · 长按看他的作品</string>
     <string name="star_add">已关注该演员</string>
     <string name="star_del">已取消关注</string>
     <string name="star_follow">关注</string>
     <string name="star_followed">已关注</string>
+    <string name="star_works">作品</string>
+    <string name="tmdb_works">%1$s 的作品</string>
+    <string name="tmdb_loading">正在查这位演员的作品…</string>
+    <string name="tmdb_movie">电影</string>
+    <string name="tmdb_tv">剧集</string>
+    <string name="tmdb_none">没查到这位演员的作品，可以直接搜他的名字</string>
+    <string name="tmdb_direct_search">直接全站搜「%1$s」</string>
 
     <!-- Play -->
     <string name="play">播放</string>
@@ -566,6 +574,9 @@
     <string name="update_latest">当前已是最新版</string>
     <string name="update_check_fail">没连上更新服务器，请检查网络后再试</string>
     <string name="update_checking">正在检查中，请稍候…</string>
+    <string name="update_never">不再提示</string>
+    <string name="update_skip">已跳过这一版，下次出新版本再提醒你</string>
+    <string name="update_off">已关闭自动检查更新，想恢复就在设置里点一下版本号</string>
     <string name="update_prepare_fail">下载线路还没准备好，请再点一次更新</string>
     <string name="update_install_fail">拉不起安装器，请把包手动装上</string>
     <string name="update_bad_package">下载的安装包不完整，已删掉，请重新点更新</string>

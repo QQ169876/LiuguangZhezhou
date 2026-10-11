@@ -73,6 +73,9 @@ import com.fongmi.android.tv.ui.adapter.QualityAdapter;
 import com.fongmi.android.tv.ui.adapter.QuickAdapter;
 import com.fongmi.android.tv.ui.custom.CustomKeyDownVod;
 import com.fongmi.android.tv.ui.custom.CustomMovement;
+import com.fongmi.android.tv.bean.TmdbWork;
+import com.fongmi.android.tv.ui.custom.StarStrip;
+import com.fongmi.android.tv.ui.custom.StarWorks;
 import com.fongmi.android.tv.ui.dialog.ChapterDialog;
 import com.fongmi.android.tv.ui.dialog.ContentDialog;
 import com.fongmi.android.tv.ui.dialog.DanmakuDialog;
@@ -81,6 +84,7 @@ import com.fongmi.android.tv.ui.dialog.ParseDialog;
 import com.fongmi.android.tv.ui.dialog.PlayerEngineDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.StarDialog;
+import com.fongmi.android.tv.ui.dialog.StarWorksDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.DebugLog;
@@ -118,6 +122,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private QuickAdapter mQuickAdapter;
     private ViewGroup.LayoutParams mFrameParams;
     private CustomKeyDownVod mKeyDown;
+    private StarStrip mStarStrip;
     private Clock mClock;
     private View mFocus1;
     private View mFocus2;
@@ -287,8 +292,38 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setRecyclerView();
         setVideoView();
         setViewModel();
+        setStarStrip();
         checkCast();
         checkId();
+    }
+
+    /** 详情页下方那块演员区域：点一下关注/取消，长按看他的作品（TMDB 列名单，点片名再回 APP 搜） */
+    private void setStarStrip() {
+        mStarStrip = new StarStrip(mBinding.starStrip, this::showStarWorks);
+    }
+
+    /** 演员的作品列表：TMDB 把片名列准，点哪一个再拿片名走全站搜索 */
+    private void showStarWorks(String name) {
+        StarWorksDialog.create().actor(name).action(worksAction()).show(this);
+    }
+
+    /** 关注列表里点「作品」也走同一条路 */
+    private void showStarDialog(String actor) {
+        StarDialog.create().actor(actor).works(worksAction()).show(this);
+    }
+
+    private StarWorks.Action worksAction() {
+        return new StarWorks.Action() {
+            @Override
+            public void onPick(TmdbWork work) {
+                CollectActivity.start(VideoActivity.this, work.getName());
+            }
+
+            @Override
+            public void onDirect(String actor) {
+                CollectActivity.start(VideoActivity.this, actor);
+            }
+        };
     }
 
     @Override
@@ -471,6 +506,11 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public boolean canPreloadNext() {
         return service() != null && isOwner() && player().canPreloadNext();
+    }
+
+    @Override
+    public boolean canPrefetchNext() {
+        return service() != null && isOwner() && player().canPrefetchNext();
     }
 
     @Override
@@ -811,7 +851,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setText(mBinding.director, R.string.detail_director, item.getDirector());
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
         setText(mBinding.remark, 0, item.getRemarks());
-        mBinding.actor.setOnClickListener(view -> StarDialog.create().actor(item.getActor()).show(this));
+        mBinding.actor.setOnClickListener(view -> showStarDialog(item.getActor()));
+        if (mStarStrip != null) mStarStrip.set(item.getActor());
     }
 
     private void setText(TextView view, int resId, String text) {

@@ -184,8 +184,21 @@ public class PlayerManager implements ParseCallback {
         return spec != null;
     }
 
+    /**
+     * 能不能提前把下一集的**流数据**取下来：只有 Exo 那套有这个能力（DefaultPreloadManager），
+     * MPV/IJK 做不到。注意这里不看「预加载」总开关——那个管的是整片往磁盘缓存，
+     * 跟「下一集预读」是两码事，别再捆在一起。
+     */
     public boolean canPreloadNext() {
-        return PreloadSetting.isEnabled() && PreloadSetting.isNextEpisodeEnabled() && engine != null && engine.getType() == PlayerEngine.Type.EXO;
+        return canPrefetchNext() && engine != null && engine.getType() == PlayerEngine.Type.EXO;
+    }
+
+    /**
+     * 能不能提前把下一集的**播放地址**问出来。不管用哪个内核都行：问地址只是多一趟站点请求，
+     * 切集时就能省掉那两三秒的解析等待，这是最划算的一步。
+     */
+    public boolean canPrefetchNext() {
+        return PreloadSetting.isNextEpisodeEnabled() && !isLive();
     }
 
     public boolean isPortrait() {

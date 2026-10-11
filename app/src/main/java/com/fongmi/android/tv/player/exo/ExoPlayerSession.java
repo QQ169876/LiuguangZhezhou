@@ -25,7 +25,12 @@ final class ExoPlayerSession {
 
     private static final String TAG = ExoPlayerSession.class.getSimpleName();
     private static final int MAX_PRELOAD_BUFFER_BYTES = 64 * 1024 * 1024;
-    private static final long PRELOAD_DURATION_MS = 10_000;
+    /**
+     * 下一集提前取多少：以前只取 10 秒，切过去的头几秒还是得现场缓冲，感觉就是"卡一下"。
+     * 短剧单集才两三分钟、码率也不高，取 20 秒（几 MB）足够盖住起播那一瞬，
+     * 又不至于跟正在播的这集抢太多带宽。
+     */
+    private static final long PRELOAD_DURATION_MS = 20_000;
 
     private final DecodeTrackSelectorFactory trackSelectorFactory;
     private final DefaultPreloadManager preloadManager;

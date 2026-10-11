@@ -57,7 +57,8 @@ public class SettingPreloadActivity extends BaseActivity {
         boolean exo = PlayerSetting.isExo();
         boolean preload = PreloadSetting.isEnabled();
         mBinding.preloadTime.setVisibility(preload ? View.VISIBLE : View.GONE);
-        mBinding.preloadNext.setVisibility(preload && exo ? View.VISIBLE : View.GONE);
+        // 下一集预读不依赖总开关、也不挑内核（问地址谁都行，只是非 Exo 预取不了流数据），常驻可改
+        mBinding.preloadNext.setVisibility(View.VISIBLE);
         mBinding.preloadSize.setVisibility(preload && exo ? View.VISIBLE : View.GONE);
         mBinding.preloadThread.setVisibility(preload && exo ? View.VISIBLE : View.GONE);
     }

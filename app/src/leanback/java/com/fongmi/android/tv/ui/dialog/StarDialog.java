@@ -10,6 +10,8 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Star;
+import com.fongmi.android.tv.ui.custom.StarWorks;
+import com.fongmi.android.tv.ui.dialog.StarWorksDialog;
 import com.fongmi.android.tv.databinding.DialogStarBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.utils.Notify;
@@ -26,6 +28,7 @@ import java.util.List;
 public class StarDialog extends BaseAlertDialog {
 
     private DialogStarBinding binding;
+    private StarWorks.Action works;
     private String actor;
 
     public static StarDialog create() {
@@ -34,6 +37,12 @@ public class StarDialog extends BaseAlertDialog {
 
     public StarDialog actor(String actor) {
         this.actor = actor;
+        return this;
+    }
+
+    /** 点「作品」之后往哪跳：TV 走 CollectActivity、手机走 SearchActivity，由外面给 */
+    public StarDialog works(StarWorks.Action works) {
+        this.works = works;
         return this;
     }
 
@@ -59,10 +68,9 @@ public class StarDialog extends BaseAlertDialog {
             LinearLayout row = new LinearLayout(requireContext());
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            row.setPadding(pad, pad, pad, pad);
-            row.setFocusable(true);
-            row.setFocusableInTouchMode(true);
-            row.setBackgroundResource(R.drawable.selector_vod);
+            // 左右两块各自可聚焦：遥控器左半边切关注、右半边看作品，别让整行一个焦点说不清点的是啥
+            LinearLayout main = focusable(new LinearLayout(requireContext()));
+            main.setPadding(pad, pad, pad, pad);
             MaterialTextView nameView = new MaterialTextView(requireContext());
             nameView.setText(name);
             nameView.setTextColor(ContextCompat.getColor(requireContext(), R.color.white));
@@ -72,11 +80,33 @@ public class StarDialog extends BaseAlertDialog {
             stateView.setTextColor(ContextCompat.getColor(requireContext(), R.color.white));
             stateView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             setState(stateView, name);
-            row.addView(nameView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            row.addView(stateView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            row.setOnClickListener(view -> onToggle(name, stateView));
+            main.addView(nameView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            main.addView(stateView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            main.setOnClickListener(view -> onToggle(name, stateView));
+            MaterialTextView worksView = focusable(new MaterialTextView(requireContext()));
+            worksView.setText(R.string.star_works);
+            worksView.setTextColor(ContextCompat.getColor(requireContext(), R.color.white));
+            worksView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            worksView.setPadding(pad, pad, pad, pad);
+            worksView.setOnClickListener(view -> onWorks(name));
+            row.addView(main, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(worksView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             binding.actors.addView(row);
         }
+    }
+
+    /** 行内的两块都做成可聚焦 + 聚焦有框（这页把系统默认焦点框关掉了，不自己配背景就看不出选中） */
+    private <T extends android.view.View> T focusable(T view) {
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
+        view.setBackgroundResource(R.drawable.selector_star_work);
+        return view;
+    }
+
+    private void onWorks(String name) {
+        dismissAllowingStateLoss();
+        FragmentActivity activity = getActivity();
+        if (activity != null && works != null) StarWorksDialog.create().actor(name).action(works).show(activity);
     }
 
     private void setState(MaterialTextView view, String name) {

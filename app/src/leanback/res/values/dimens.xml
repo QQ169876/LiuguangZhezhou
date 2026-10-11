@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TV 上隔得远，演员作品列表的字比手机大一号（main 里那份是 15/13） -->
+    <dimen name="star_works_text">18sp</dimen>
+    <dimen name="star_works_sub">15sp</dimen>
+</resources>

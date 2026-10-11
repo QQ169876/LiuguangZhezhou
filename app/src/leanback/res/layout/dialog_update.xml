@@ -71,10 +71,28 @@
             android:focusableInTouchMode="true"
             android:gravity="center"
             android:minHeight="52dp"
+            android:nextFocusDown="@id/never"
             android:nextFocusLeft="@id/confirm"
             android:stateListAnimator="@animator/dialog_focus"
             android:text="@string/dialog_negative"
             android:textColor="@color/selector_dialog_action_text" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 取消只是「这一版先不装」，真不想再被打扰才点这个 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/never"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/selector_dialog_action"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:gravity="center"
+        android:minHeight="44dp"
+        android:nextFocusUp="@id/cancel"
+        android:stateListAnimator="@animator/dialog_focus"
+        android:text="@string/update_never"
+        android:textColor="@color/selector_dialog_action_text"
+        android:textSize="14sp" />
 </androidx.appcompat.widget.LinearLayoutCompat>

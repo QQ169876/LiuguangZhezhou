@@ -19,12 +19,15 @@ import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Star;
+import com.fongmi.android.tv.bean.TmdbWork;
 import com.fongmi.android.tv.databinding.ActivityKeepBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.ui.adapter.KeepAdapter;
 import com.fongmi.android.tv.ui.adapter.StarAdapter;
 import com.fongmi.android.tv.ui.base.BaseActivity;
+import com.fongmi.android.tv.ui.custom.StarWorks;
+import com.fongmi.android.tv.ui.dialog.StarWorksDialog;
 import com.fongmi.android.tv.ui.dialog.SyncDialog;
 import com.fongmi.android.tv.utils.Notify;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -164,9 +167,22 @@ public class KeepActivity extends BaseActivity implements KeepAdapter.OnClickLis
         });
     }
 
+    /** 点关注的演员：先用 TMDB 把他演过的片列出来，点片名再回 APP 搜（查不到也能直接搜名字） */
     @Override
     public void onItemClick(Star item) {
-        SearchActivity.start(this, item.getName());
+        StarWorksDialog dialog = StarWorksDialog.create().actor(item.getName());
+        dialog.action(new StarWorks.Action() {
+            @Override
+            public void onPick(TmdbWork work) {
+                SearchActivity.start(KeepActivity.this, work.getName());
+            }
+
+            @Override
+            public void onDirect(String actor) {
+                SearchActivity.start(KeepActivity.this, actor);
+            }
+        });
+        dialog.show(this);
     }
 
     @Override

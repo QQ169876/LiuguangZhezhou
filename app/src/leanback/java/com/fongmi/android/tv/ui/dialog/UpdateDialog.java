@@ -74,6 +74,7 @@ public class UpdateDialog extends BaseAlertDialog {
     protected void initEvent() {
         binding.confirm.setOnClickListener(this::onConfirm);
         binding.cancel.setOnClickListener(this::onCancel);
+        binding.never.setOnClickListener(this::onNever);
     }
 
     @Override
@@ -92,5 +93,9 @@ public class UpdateDialog extends BaseAlertDialog {
 
     private void onCancel(View view) {
         if (listener != null) listener.onCancel(view);
+    }
+
+    private void onNever(View view) {
+        if (listener != null) listener.onNever(view);
     }
 }

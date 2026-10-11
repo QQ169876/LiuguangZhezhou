@@ -118,12 +118,29 @@ public class Setting {
         Prefers.put("incognito", incognito);
     }
 
+    /**
+     * 要不要自动检查更新。默认开。
+     *
+     * 换了 key：老 key 会被「更新框上点一下取消」直接写成 false，而那一下的本意多半只是
+     * 「这版先不装」，结果自动更新就此永久关掉——只有手动去设置里点版本号才再检查一次，
+     * 这正是「打开 App 半天没更新提示，非得手动点」的根因。新 key 让所有人（包括已经
+     * 被误关的）升级后回到默认开启；真不想被打扰，更新框上有「不再提示」。
+     */
     public static boolean getUpdate() {
-        return Prefers.getBoolean("update", true);
+        return Prefers.getBoolean("update_auto", true);
     }
 
     public static void putUpdate(boolean update) {
-        Prefers.put("update", update);
+        Prefers.put("update_auto", update);
+    }
+
+    /** 被跳过的版本号：点了「取消」的那一版不再反复弹，新版本照常提醒 */
+    public static String getUpdateSkip() {
+        return Prefers.getString("update_skip");
+    }
+
+    public static void putUpdateSkip(String tag) {
+        Prefers.put("update_skip", tag == null ? "" : tag);
     }
 
     public static boolean isRouteAuto() {
