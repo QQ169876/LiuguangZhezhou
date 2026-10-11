@@ -1632,6 +1632,20 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else mVod.prevEpisode(true);
     }
 
+    /** 刷剧模式下手指在屏幕中间往上拖 = 下一集 */
+    @Override
+    public void onSwipeUp() {
+        if (mEpisodeAdapter.getItemCount() == 1) onRefresh();
+        else mVod.nextEpisode(true);
+    }
+
+    /** 刷剧模式下手指在屏幕中间往下拖 = 上一集 */
+    @Override
+    public void onSwipeDown() {
+        if (mEpisodeAdapter.getItemCount() == 1) onRefresh();
+        else mVod.prevEpisode(true);
+    }
+
     @Override
     public void onSeeking(long time) {
         mBinding.widget.action.setImageResource(time > 0 ? R.drawable.ic_widget_forward : R.drawable.ic_widget_rewind);

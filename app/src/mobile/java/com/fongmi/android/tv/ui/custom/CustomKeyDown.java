@@ -12,6 +12,7 @@ import android.view.WindowManager;
 import androidx.annotation.NonNull;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.setting.BingeSetting;
 import com.fongmi.android.tv.setting.LiveSetting;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Util;
@@ -31,6 +32,8 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
     private boolean changeSpeed;
     private boolean changeScale;
     private boolean changeTime;
+    private boolean changeEpisode; // 刷剧模式下上下拖着切集（一次手势只切一次）
+    private boolean episodeDone;
     private boolean multiTouch;
     private boolean animating;
     private boolean touch;
@@ -101,6 +104,8 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
         changeSpeed = false;
         changeBright = false;
         changeVolume = false;
+        changeEpisode = false;
+        episodeDone = false;
         bright = Util.getBrightness(activity);
         volume = manager.getStreamVolume(AudioManager.STREAM_MUSIC);
     }
@@ -128,6 +133,7 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
         if (changeTime) listener.onSeeking(time = (long) (deltaX * 50));
         if (changeBright) setBright(deltaY);
         if (changeVolume) setVolume(deltaY);
+        if (changeEpisode) checkEpisode(deltaY);
         return true;
     }
 
@@ -156,7 +162,23 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
         if ((float) Math.sqrt(distanceX * distanceX + distanceY * distanceY) < ResUtil.dp2px(20)) return;
         if (distanceX >= distanceY) changeTime = true;
         else if (isSide(e2)) checkSide(e2);
+        else if (BingeSetting.isEnabled()) changeEpisode = true; // 刷剧模式：屏幕中间上下拖 = 上下集
         touch = false;
+    }
+
+    /**
+     * 刷剧模式下上下拖着切集。屏幕左右两边仍然是音量/亮度，只有中间这块归它。
+     * 一次手势只切一次（抬手前再怎么拖都不重复切），免得轻轻一划连跳好几集。
+     */
+    private void checkEpisode(float deltaY) {
+        if (episodeDone) return;
+        int height = videoView.getMeasuredHeight();
+        if (height <= 0) height = ResUtil.getScreenHeight(activity);
+        float threshold = Math.max(ResUtil.dp2px(60), height * 0.1f);
+        if (Math.abs(deltaY) < threshold) return;
+        episodeDone = true;
+        if (deltaY > 0) listener.onSwipeUp();   // 手指往上：下一集（跟抖音一个方向）
+        else listener.onSwipeDown();            // 手指往下：上一集
     }
 
     private void checkFunc(MotionEvent e1, MotionEvent e2) {
@@ -237,6 +259,13 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
         void onFlingUp();
 
         void onFlingDown();
+
+        /** 刷剧模式下在屏幕中间上下拖：往上拖下一集、往下拖上一集。直播页不用管 */
+        default void onSwipeUp() {
+        }
+
+        default void onSwipeDown() {
+        }
 
         void onSingleTap();
 
