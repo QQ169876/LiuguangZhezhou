@@ -9,6 +9,8 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Diffable;
 import com.fongmi.android.tv.webdav.SyncManager;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 
@@ -17,6 +19,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 关注的演员（收藏里的「人」）。跟着同步走，几台设备共用一份。
@@ -99,21 +103,73 @@ public class Star implements Diffable<Star> {
         return true;
     }
 
+    /** [a=cr:{"id":"..","name":".."}] 这种壳；另一个是没壳、直接给 JSON 的站点 */
+    private static final Pattern SHELL = Pattern.compile("\\[[^\\[\\]]*\\{[^{}]*}[^\\[\\]]*\\]");
+    private static final Pattern JSON = Pattern.compile("\\{[^{}]*}");
+
     /**
      * 站点给的演员串（"张三,李四，王五"）拆成一个个名字。
      * 分隔符各家不一（逗号、顿号、斜杠、分号都见过），全认；去重、去空、限制个数防刷屏。
      * ⚠️ 不按空格拆：「Tom Hanks」会被拆成两个人，比漏拆更糟。
+     * ⚠️ 有的站点把演员包在壳里：[a=cr:{"id":"吴越","name":"吴越"}]，里面那个逗号是 JSON 的，
+     *    不先把它还原成名字，就会拆出 `"name":"吴越"}` 这种碎片挂到牌子上。
      */
     public static List<String> split(String actor) {
         List<String> names = new ArrayList<>();
         if (actor == null) return names;
-        for (String part : actor.split("[,，、/|;；]+")) {
+        for (String part : unwrap(actor).split("[,，、/|;；]+")) {
             String name = fix(part);
-            if (name.isEmpty() || names.contains(name)) continue;
+            if (name.isEmpty() || names.contains(name) || dirty(name)) continue;
             names.add(name);
             if (names.size() >= 30) break;
         }
         return names;
+    }
+
+    /** 把 [a=cr:{"id":"..","name":".."}]（以及光秃秃的 {"id":..,"name":..}）还原成名字，认不出的整块抹掉 */
+    private static String unwrap(String actor) {
+        return replace(replace(actor, SHELL), JSON);
+    }
+
+    private static String replace(String text, Pattern pattern) {
+        Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) return text;
+        StringBuffer buffer = new StringBuffer();
+        matcher.reset();
+        while (matcher.find()) {
+            String name = pick(matcher.group());
+            // 认得出就补个逗号（两块挨着也不会粘成一个名字），认不出就当这里压根没演员、整块去掉
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(name.isEmpty() ? "," : name + ","));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    /** 从一小段 JSON 里取名字：优先 name，其次 actor/star，最后才拿 id（纯数字的 id 不算名字） */
+    private static String pick(String block) {
+        try {
+            JsonObject object = JsonParser.parseString(block).getAsJsonObject();
+            for (String key : new String[]{"name", "actor", "star"}) {
+                if (object.has(key) && object.get(key).isJsonPrimitive()) return fix(object.get(key).getAsString());
+            }
+            if (object.has("id") && object.get("id").isJsonPrimitive()) {
+                String id = fix(object.get("id").getAsString());
+                if (!id.matches("\\d+")) return id;
+            }
+        } catch (Throwable ignored) {
+            // 不是规整 JSON（缺引号、被截断），落到下面按文本抠一把
+        }
+        Matcher matcher = Pattern.compile("\"?(?:name|actor|star)\"?\\s*[:=]\\s*\"?([^\"{},]+)").matcher(block);
+        return matcher.find() ? fix(matcher.group(1)) : "";
+    }
+
+    /** 拆分后还带着 JSON 残渣（{ } " [ ]）的，不是人名 —— 宁可少一个，也不能把乱码挂到牌子上 */
+    private static boolean dirty(String name) {
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '{' || c == '}' || c == '"' || c == '[' || c == ']') return true;
+        }
+        return false;
     }
 
     /** 取消关注。压根没关注过返回 false */
