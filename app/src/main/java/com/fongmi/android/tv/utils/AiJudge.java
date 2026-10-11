@@ -3,6 +3,7 @@ package com.fongmi.android.tv.utils;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
+import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.fongmi.android.tv.setting.AiSetting;
 
 import org.json.JSONArray;
@@ -69,6 +70,7 @@ public class AiJudge {
                             .connectTimeout(5, TimeUnit.SECONDS)
                             .readTimeout(8, TimeUnit.SECONDS)
                             .retryOnConnectionFailure(true)
+                            .addInterceptor(new FailoverInterceptor()) // 中继域名连不上时换备用域名（169876.xyz ↔ 12356.cool）
                             .build();
                 }
             }

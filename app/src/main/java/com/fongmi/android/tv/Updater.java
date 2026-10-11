@@ -49,6 +49,8 @@ import okhttp3.Response;
 public class Updater implements Download.Callback, UpdateListener {
 
     private static final int PROBE_TIMEOUT = 6000;
+    /** 自建源的备用域名（12356.cool，走 CDN）首连慢，探测给它多一倍时间 */
+    private static final int SELF_ALT_TIMEOUT = 12000;
     /** 测速线路上限：多了既费流量又拖慢老设备 */
     private static final int SPEED_LIMIT = 3;
     private static final int SPEED_TIMEOUT = 8000;
@@ -166,25 +168,41 @@ public class Updater implements Download.Callback, UpdateListener {
 
     /**
      * 问自建网盘要版本文件。这一步不走 GhRoute 的任何线路，直连自己的服务器；
-     * 域名挂了会自动换备用域名（OkHttp 里那条兜底拦截器管这事），再不行就返回 null，
+     * 两个域名一一试（169876.xyz 主、12356.cool 备），哪个通就用哪个，都不通返回 null，
      * 后面完全按 GitHub 的老路走。
      */
     private static Probe selfProbe() {
+        // 从上次通的那个域名开始试，省掉一次白跑
+        for (int i = 0; i < SelfHost.count(); i++) {
+            int at = (SelfHost.index() + i) % SelfHost.count();
+            Probe probe = selfProbe(at);
+            if (probe != null) {
+                SelfHost.use(at);
+                return probe;
+            }
+        }
+        return null;
+    }
+
+    private static Probe selfProbe(int at) {
         try {
-            Request request = new Request.Builder().url(SelfHost.json())
+            // 备用域名走 CDN，冷启动握手实测要 3~9 秒，6 秒的默认超时不够用，给它放宽
+            long timeout = at == 0 ? PROBE_TIMEOUT : SELF_ALT_TIMEOUT;
+            Request request = new Request.Builder().url(SelfHost.json(at))
                     .header("Authorization", SelfHost.auth())
                     .header("Cache-Control", "no-cache")
                     .cacheControl(CacheControl.FORCE_NETWORK)
                     .get().build();
-            try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
+            try (Response res = OkHttp.client(timeout).newCall(request).execute()) {
                 if (!res.isSuccessful() || res.body() == null) return null;
                 String body = res.body().string();
                 JSONObject json = new JSONObject(body);
                 int code = json.optInt("code");
                 if (code <= 0) return null;
                 JSONObject map = json.optJSONObject("apk");
-                String apk = map == null ? "" : map.optString(SelfHost.key());
-                DebugLog.d("Update", "自建源 code=" + code + (apk.isEmpty() ? "（本机型的包不在网盘上，走 GitHub）" : " 有包"));
+                // 版本文件里写的是主域名，备用域名探通时得换成备用域名，不然下载还会去撞墙
+                String apk = map == null ? "" : SelfHost.rewrite(map.optString(SelfHost.key()));
+                DebugLog.d("Update", "自建源 " + SelfHost.host(at) + " code=" + code + (apk.isEmpty() ? "（本机型的包不在网盘上，走 GitHub）" : " 有包"));
                 return new Probe(SelfHost.ROUTE, 0, body, code, apk);
             }
         } catch (Exception e) {
