@@ -97,6 +97,7 @@ import com.fongmi.android.tv.ui.dialog.ParseDialog;
 import com.fongmi.android.tv.ui.dialog.PlayerEngineDialog;
 import com.fongmi.android.tv.ui.dialog.ReceiveDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
+import com.fongmi.android.tv.ui.dialog.StarDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.DebugLog;
@@ -126,6 +127,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private EpisodeAdapter mEpisodeAdapter;
     private QualityAdapter mQualityAdapter;
     private QuickAdapter mQuickAdapter;
+    private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
     private CustomKeyDown mKeyDown;
@@ -327,6 +329,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.director.setOnClickListener(view -> onDirector());
         mBinding.name.setOnLongClickListener(view -> onChange());
         mBinding.content.setOnLongClickListener(view -> onCopy());
+        mBinding.actor.setOnLongClickListener(view -> onActorFollow());
         mBinding.control.back.setOnClickListener(view -> onBack());
         mBinding.control.cast.setOnClickListener(view -> onCast());
         mBinding.control.info.setOnClickListener(view -> onInfo());
@@ -850,6 +853,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void setText(Vod item) {
+        mActor = item.getActor();
         setText(mBinding.site, R.string.detail_site, getSite().getName());
         setText(mBinding.director, R.string.detail_director, item.getDirector());
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
@@ -939,6 +943,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void onActor() {
         mBinding.actor.setMaxLines(mBinding.actor.getMaxLines() == 1 ? Integer.MAX_VALUE : 1);
+    }
+
+    /** 长按演员那一行：弹出关注列表（单击还是展开/收起，别抢） */
+    private boolean onActorFollow() {
+        if (mActor == null || mActor.isEmpty()) return false;
+        StarDialog.create().actor(mActor).show(this);
+        return true;
     }
 
     private void onDirector() {

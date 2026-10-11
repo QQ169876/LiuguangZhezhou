@@ -26,6 +26,11 @@ public class RefreshEvent {
         EventBus.getDefault().post(new RefreshEvent(Type.KEEP));
     }
 
+    /** 关注的演员变了：收藏页那个「演员」分类要跟着刷新 */
+    public static void star() {
+        EventBus.getDefault().post(new RefreshEvent(Type.STAR));
+    }
+
     public static void size() {
         EventBus.getDefault().post(new RefreshEvent(Type.SIZE));
     }
@@ -85,6 +90,6 @@ public class RefreshEvent {
     }
 
     public enum Type {
-        HOME, CATEGORY, HISTORY, KEEP, SIZE, THEME, LIVE, DETAIL, PLAYER, SUBTITLE, DANMAKU, VOD
+        HOME, CATEGORY, HISTORY, KEEP, STAR, SIZE, THEME, LIVE, DETAIL, PLAYER, SUBTITLE, DANMAKU, VOD
     }
 }

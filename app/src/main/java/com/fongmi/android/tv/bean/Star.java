@@ -7,14 +7,15 @@ import androidx.room.PrimaryKey;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.impl.Diffable;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -27,7 +28,7 @@ import java.util.Objects;
  * 这台取消了，别的设备同步过来也会跟着取消；不然按并集一合，刚取消的又活了。
  */
 @Entity
-public class Star {
+public class Star implements Diffable<Star> {
 
     @NonNull
     @PrimaryKey
@@ -83,6 +84,36 @@ public class Star {
         AppDatabase.get().getStarDao().insertOrUpdate(item);
         SyncManager.touch();
         return true;
+    }
+
+    /**
+     * 关注 / 取消关注切换。返回切换后是不是「关注着」（true=关注上了，false=取消了）。
+     * 详情页点一下就是这个：不用先判断再决定调 add 还是 remove。
+     */
+    public static boolean toggle(String name) {
+        if (exist(name)) {
+            remove(name);
+            return false;
+        }
+        add(name);
+        return true;
+    }
+
+    /**
+     * 站点给的演员串（"张三,李四，王五"）拆成一个个名字。
+     * 分隔符各家不一（逗号、顿号、斜杠、分号都见过），全认；去重、去空、限制个数防刷屏。
+     * ⚠️ 不按空格拆：「Tom Hanks」会被拆成两个人，比漏拆更糟。
+     */
+    public static List<String> split(String actor) {
+        List<String> names = new ArrayList<>();
+        if (actor == null) return names;
+        for (String part : actor.split("[,，、/|;；]+")) {
+            String name = fix(part);
+            if (name.isEmpty() || names.contains(name)) continue;
+            names.add(name);
+            if (names.size() >= 30) break;
+        }
+        return names;
     }
 
     /** 取消关注。压根没关注过返回 false */
@@ -152,11 +183,14 @@ public class Star {
         this.deleted = deleted;
     }
 
-    /** 列表上显示用的首字母（没有头像数据，只能拿名字做文章） */
-    public String getInitial() {
-        String key = getName() == null ? "" : getName().trim();
-        if (key.isEmpty()) return "";
-        return key.substring(0, 1).toUpperCase(Locale.getDefault());
+    @Override
+    public boolean isSameItem(Star other) {
+        return other != null && Objects.equals(getName(), other.getName());
+    }
+
+    @Override
+    public boolean isSameContent(Star other) {
+        return isSameItem(other) && getDeleted() == other.getDeleted() && getUpdateTime() == other.getUpdateTime();
     }
 
     @Override

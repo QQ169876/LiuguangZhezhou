@@ -23,6 +23,15 @@
     <string name="keep">Keep</string>
     <string name="keep_add">Added</string>
     <string name="keep_del">Removed</string>
+    <string name="tab_vod">Videos</string>
+    <string name="tab_star">Actors</string>
+
+    <!-- Star -->
+    <string name="star">Follow actor</string>
+    <string name="star_add">Followed</string>
+    <string name="star_del">Unfollowed</string>
+    <string name="star_follow">Follow</string>
+    <string name="star_followed">Following</string>
 
     <!-- Play -->
     <string name="play">Play</string>
