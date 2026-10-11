@@ -103,9 +103,57 @@ public class Star implements Diffable<Star> {
         return true;
     }
 
-    /** [a=cr:{"id":"..","name":".."}] 这种壳；另一个是没壳、直接给 JSON 的站点 */
-    private static final Pattern SHELL = Pattern.compile("\\[[^\\[\\]]*\\{[^{}]*}[^\\[\\]]*\\]");
-    private static final Pattern JSON = Pattern.compile("\\{[^{}]*}");
+    /**
+     * [a=cr:{"id":"..","name":".."}] 这种壳；另一个是没壳、直接给 JSON 的站点。
+     *
+     * ⚠️ 2026-10-12 手机实测崩溃（api36 / Xiaomi）：原来写成 `[^{}]`，花括号没转义，
+     *    Android 的正则实际是 ICU 引擎（`com.android.icu.util.regex.PatternNative`），
+     *    它在字符类里也不接受裸 `{`，直接抛 PatternSyntaxException；PC 上 Java 自带引擎容忍，所以编译期看不出来。
+     *    而这两个是 static final 字段，一炸就是 Star 类初始化失败（ExceptionInInitializerError），
+     *    之后每次碰 Star 都变成 NoClassDefFoundError —— 进详情页必崩。
+     *    所以：① 花括号一律转义；② 改成懒编译 + 出错降级，正则再有脾气也只当没这层壳，绝不带崩 App。
+     */
+    private static volatile Pattern shell;
+    private static volatile Pattern json;
+    private static volatile Pattern loose;
+    private static volatile boolean broken; // 有一台机器的引擎认不了就认不了，别反复试
+
+    private static Pattern shell() {
+        Pattern p = shell;
+        if (p != null) return p;
+        if (broken) return null;
+        try {
+            return (shell = Pattern.compile("\\[[^\\[\\]\\{\\}]*\\{[^\\{\\}]*\\}[^\\[\\]\\{\\}]*\\]"));
+        } catch (Throwable e) {
+            broken = true;
+            return null;
+        }
+    }
+
+    private static Pattern json() {
+        Pattern p = json;
+        if (p != null) return p;
+        if (broken) return null;
+        try {
+            return (json = Pattern.compile("\\{[^\\{\\}]*\\}"));
+        } catch (Throwable e) {
+            broken = true;
+            return null;
+        }
+    }
+
+    /** 不规整 JSON 时按文本抠名字的那把；同一台机器上前面通过它也不会有问题，但还是单独兜一层 */
+    private static Pattern loose() {
+        Pattern p = loose;
+        if (p != null) return p;
+        if (broken) return null;
+        try {
+            return (loose = Pattern.compile("\"?(?:name|actor|star)\"?\\s*[:=]\\s*\"?([^\"\\{\\},]+)"));
+        } catch (Throwable e) {
+            broken = true;
+            return null;
+        }
+    }
 
     /**
      * 站点给的演员串（"张三,李四，王五"）拆成一个个名字。
@@ -128,7 +176,12 @@ public class Star implements Diffable<Star> {
 
     /** 把 [a=cr:{"id":"..","name":".."}]（以及光秃秃的 {"id":..,"name":..}）还原成名字，认不出的整块抹掉 */
     private static String unwrap(String actor) {
-        return replace(replace(actor, SHELL), JSON);
+        String text = actor;
+        Pattern shell = shell();
+        if (shell != null) text = replace(text, shell);
+        Pattern json = json();
+        if (json != null) text = replace(text, json);
+        return text;
     }
 
     private static String replace(String text, Pattern pattern) {
@@ -159,7 +212,9 @@ public class Star implements Diffable<Star> {
         } catch (Throwable ignored) {
             // 不是规整 JSON（缺引号、被截断），落到下面按文本抠一把
         }
-        Matcher matcher = Pattern.compile("\"?(?:name|actor|star)\"?\\s*[:=]\\s*\"?([^\"{},]+)").matcher(block);
+        Pattern pattern = loose();
+        if (pattern == null) return "";
+        Matcher matcher = pattern.matcher(block);
         return matcher.find() ? fix(matcher.group(1)) : "";
     }
 
