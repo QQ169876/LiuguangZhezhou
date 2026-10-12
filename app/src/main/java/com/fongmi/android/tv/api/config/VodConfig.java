@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Rule;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.event.ConfigEvent;
+import com.fongmi.android.tv.playback.vod.BingeTypes;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.server.Server;
@@ -251,6 +252,7 @@ public class VodConfig extends BaseConfig {
         Map<String, Site> items = Site.findAll().stream().collect(Collectors.toMap(Site::getKey, Function.identity()));
         getSites().forEach(site -> site.sync(items.get(site.getKey())));
         setHome(config, getSites().isEmpty() ? new Site() : getSites().stream().filter(item -> item.getKey().equals(config.getHome())).findFirst().orElse(getSites().get(0)), false);
+        BingeTypes.clear(); // 站点列表换了，剧种分类表的缓存跟着作废，别拿旧站的表判新站的剧
     }
 
     private void initParse(Config config, JsonObject object) {

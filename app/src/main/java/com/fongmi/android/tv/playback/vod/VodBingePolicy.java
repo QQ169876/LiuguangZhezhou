@@ -3,6 +3,7 @@ package com.fongmi.android.tv.playback.vod;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.bean.Class;
 import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
@@ -18,6 +19,7 @@ import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Task;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -40,6 +42,9 @@ class VodBingePolicy {
 
     private final Random random = new Random();
     private final List<Integer> recentFamilies = new ArrayList<>(); // 最近几部刷过的题材族（新→旧），防一路死磕一族
+    private final Set<String> fromType = new HashSet<>(); // 从站点「短剧/漫剧/正剧」分类里捞出来的剧名，剧种有保障
+    private volatile boolean typePending; // 分类池子正在路上
+    private long typeWaitUntil; // 最多等到这个时候，过了就不再为它等
 
     private List<String> keywords = new ArrayList<>();
     private String region = "";
@@ -56,6 +61,14 @@ class VodBingePolicy {
 
     /** 切过去之前先验货：后台拉一次详情，确认真能播再切，播不了的当场丢掉，不切、不留历史 */
     private static final ExecutorService PROBE = Executors.newSingleThreadExecutor();
+    /** 按站点分类拉池子用的：跟验货分开跑，别互相堵着 */
+    private static final ExecutorService CATEGORY = Executors.newSingleThreadExecutor();
+    /** 分类池子已经在路上时，最多再等这么久再挑——等它一到，挑中的大概率就是正经短剧 */
+    private static final long TYPE_GRACE = 1200L;
+    /** 等分类池子的总上限：站点分类表头一回拉可能要好几秒，不能让用户一直干等着 */
+    private static final long TYPE_WAIT_MAX = 3000L;
+    /** 从「短剧分类」里捞出来的候选加这么多分：站点自己分的类，比名字猜靠谱得多 */
+    private static final int TYPE_BONUS = 8;
     private int epoch; // 每次作废重来（interrupt/reset/forceNext）都 +1，迟到的异步回调据此自行作废
     private boolean probing; // 正在后台验货
     private Vod probingItem; // 正在验的这一部
@@ -183,7 +196,73 @@ class VodBingePolicy {
         active = true;
         keywordIndex = 0;
         tried.add(host.getVodName());
+        typePending = false; // 上一轮没回来的分类池别再挡着这一轮
+        searchByType(); // 先开一路：直接去站点的「短剧」分类里端一盘出来，比关键词搜索准
         search();
+    }
+
+    /**
+     * 按站点分类拉候选（LunaTV 那招）：拉站点的分类表 → 找到「短剧/漫剧/正剧」那一类 → 整类拉一页下来。
+     * 分类是站点自己分的，里面的剧种天然统一，不用我们再拿名字去猜、去排除。
+     * 只在认得出剧种时才走；分类表拉不到（或这站压根没短剧分类）就什么也不做，照旧靠搜索。
+     */
+    private void searchByType() {
+        if (kind == BingeTags.KIND_UNKNOWN) return;
+        final int myEpoch = epoch;
+        final List<Site> sites = typeSites();
+        if (sites.isEmpty()) return;
+        typePending = true;
+        typeWaitUntil = System.currentTimeMillis() + TYPE_WAIT_MAX;
+        CATEGORY.execute(() -> {
+            int got = 0; // 已经端回来多少部：够挑一阵子就收手，别把四个站全翻一遍
+            try {
+                for (Site site : sites) {
+                    if (myEpoch != epoch || host.isHostFinishing()) return;
+                    List<Class> types = BingeTypes.load(site);
+                    if (types == null) continue;
+                    String tid = BingeTypes.tidOf(site.getKey(), kind, random);
+                    if (tid == null) continue; // 这站没有本剧种的分类，换下一个站
+                    String page = String.valueOf(1 + random.nextInt(3)); // 别每次都翻第一页，不然老是那几部
+                    Result result = SiteApi.categoryContent(site.getKey(), tid, page, false, new HashMap<>());
+                    List<Vod> list = result == null ? null : result.getList();
+                    if (list == null || list.isEmpty()) continue;
+                    for (Vod item : list) if (item != null) item.setSite(site); // ⚠️ 分类接口不像搜索那样自带站点，不补上后面详情都拉不到
+                    List<String> names = new ArrayList<>();
+                    for (Vod item : list) if (item != null && item.getName() != null) names.add(item.getName());
+                    DebugLog.d("Binge", "分类池 " + site.getName() + " tid=" + tid + " 第" + page + "页：" + names.size() + " 部");
+                    App.post(() -> onTypeResult(result, names, myEpoch));
+                    got += names.size();
+                    if (got >= BingeSetting.PICK_BATCH * 3) break;
+                }
+            } catch (Throwable e) {
+                DebugLog.d("Binge", "分类池拉取失败：" + e.getMessage());
+            } finally {
+                App.post(() -> { // 不管拉没拉到，都别再让挑片干等了
+                    if (myEpoch != epoch) return;
+                    typePending = false;
+                    if (active && !probing && !pool.isEmpty()) pickNow();
+                });
+            }
+        });
+    }
+
+    /** 分类结果回来：记下这些是从分类里捞的（挑片时加分），再走原来那套过滤 */
+    private void onTypeResult(Result result, List<String> names, int myEpoch) {
+        if (myEpoch != epoch || !isHandling()) return;
+        fromType.addAll(names);
+        onSearchResult(result);
+    }
+
+    /** 去哪些站的分类里捞：能搜的站，最多 4 个，够用了，拉多了反而慢 */
+    private List<Site> typeSites() {
+        List<Site> sites = new ArrayList<>();
+        Site home = VodConfig.get().getHome();
+        if (home != null && home.isSearchable()) sites.add(home);
+        for (Site site : VodConfig.get().getSites()) {
+            if (site != null && site.isSearchable() && !sites.contains(site)) sites.add(site);
+            if (sites.size() >= 4) break;
+        }
+        return sites;
     }
 
     /** 当前这部是什么剧种：集数、单集时长、名字/分类上的标记一起看 */
@@ -316,7 +395,10 @@ class VodBingePolicy {
             pickNow();
             return;
         }
-        App.post(pickTask, BingeSetting.PICK_DELAY);
+        // 分类池子马上到，稍等一下：它里面的剧种是站点自己分的，比搜出来的靠谱。
+        // 但只等到 typeWaitUntil，站点分类表头一回拉可能要好几秒，不能让用户干等着不出下一部
+        boolean wait = typePending && System.currentTimeMillis() < typeWaitUntil;
+        App.post(pickTask, wait ? TYPE_GRACE : BingeSetting.PICK_DELAY);
     }
 
     private List<Vod> filter(List<Vod> list) {
@@ -330,6 +412,7 @@ class VodBingePolicy {
             if (contains(pool, name) || state.hasFailedId(item.getId())) continue;
             if (BingeTags.isBanned(name)) continue;
             if (BingeTags.kindMismatch(name, kind)) continue; // 别串剧种：刷短剧不跳正剧，刷正剧不跳短剧
+            if (wrongType(item)) continue; // 站点自己标了分类、又明摆着是别的剧种，一样丢掉
             if (!BingeTags.sameRegion(region, name)) continue; // 别跳到别的国籍去
             int episodes = BingeTags.parseEpisodes(item.getRemarks());
             if (episodes > 0 && episodes < BingeTags.MIN_PLAYABLE) {
@@ -342,6 +425,21 @@ class VodBingePolicy {
             items.add(item);
         }
         return items;
+    }
+
+    /**
+     * 按站点给的分类再筛一道（LunaTV 的用法：搜索结果按分类 ID 过一遍，不在短剧分类里的丢掉）。
+     * 只在**站点确实分了剧种**时才动手——这站连"短剧"分类都没有，它那"国产剧"里很可能就混着短剧，
+     * 这时候硬筛反而误杀；分了的话，标着"电视剧""国产剧"的就不是我们要的，直接丢。
+     */
+    private boolean wrongType(Vod item) {
+        if (kind == BingeTags.KIND_UNKNOWN) return false;
+        String key = item.getSiteKey();
+        String type = item.getTypeName();
+        if (key == null || key.isEmpty() || type == null || type.isEmpty()) return false; // 没给分类，不猜
+        if (!BingeTypes.hasKind(key, kind)) return false; // 这站没按剧种分过类，它的分类不作数
+        int other = BingeTypes.kindOfType(type);
+        return other != BingeTags.KIND_UNKNOWN && other != kind;
     }
 
     /**
@@ -382,12 +480,18 @@ class VodBingePolicy {
     private void pickNow() {
         if (!active || probing || pool.isEmpty()) return; // 已经在验一部了，不许再挑，防止双切
         final int penalty = dynamicPenalty();
-        pool.sort((a, b) -> Integer.compare(
-                BingeTags.score(b.getName(), b.getRemarks(), keywords, penalty) + BingeTags.kindScore(b.getName(), kind),
-                BingeTags.score(a.getName(), a.getRemarks(), keywords, penalty) + BingeTags.kindScore(a.getName(), kind)));
+        pool.sort((a, b) -> Integer.compare(scoreOf(b, penalty), scoreOf(a, penalty)));
         Vod item = pool.remove(0);
         tried.add(item.getName());
         probe(item);
+    }
+
+    /** 候选总分：关键词命中 + 剧种对不对 + 是不是从站点的分类池里捞的（这个最可信，加成最大） */
+    private int scoreOf(Vod item, int penalty) {
+        int score = BingeTags.score(item.getName(), item.getRemarks(), keywords, penalty);
+        score += BingeTags.kindScore(item.getName(), kind);
+        if (fromType.contains(item.getName())) score += TYPE_BONUS;
+        return score;
     }
 
     /**
@@ -459,6 +563,12 @@ class VodBingePolicy {
         if (BingeTags.kindMismatch(name, kind)) return false;
         if (kind != BingeTags.KIND_LONG && BingeTags.hasLongMark(detail.getTypeName())) return false;
         if (kind == BingeTags.KIND_LONG && BingeTags.isComic(detail.getTypeName())) return false;
+        // 详情里把分类写明白了的，按分类再判一次剧种。只在站点确实分过剧种时才认——
+        // 这站压根没"短剧"分类、什么都往"国产剧"里塞，那就不能拿它的分类当证据，不然整站都刷不动
+        if (kind != BingeTags.KIND_UNKNOWN && BingeTypes.hasKind(item.getSiteKey(), kind)) {
+            int detailKind = BingeTypes.kindOfType(detail.getTypeName());
+            if (detailKind != BingeTags.KIND_UNKNOWN && detailKind != kind) return false;
+        }
         String info = String.valueOf(detail.getArea()) + detail.getTypeName() + name;
         if (!BingeTags.sameRegion(region, info)) return false; // 详情里写明是别国的剧，别跳过去
         List<Flag> flags = detail.getFlags();
@@ -583,6 +693,8 @@ class VodBingePolicy {
         App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask);
         pool.clear();
         tried.clear();
+        fromType.clear();
+        typePending = false;
         keywords.clear();
         recentFamilies.clear();
         region = "";
