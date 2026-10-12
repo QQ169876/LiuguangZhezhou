@@ -123,6 +123,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private ViewGroup.LayoutParams mFrameParams;
     private CustomKeyDownVod mKeyDown;
     private StarStrip mStarStrip;
+    private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
     private Clock mClock;
     private View mFocus1;
     private View mFocus2;
@@ -299,7 +300,21 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     /** 详情页下方那块演员区域：点一下关注/取消，长按看他的作品（TMDB 列名单，点片名再回 APP 搜） */
     private void setStarStrip() {
-        mStarStrip = new StarStrip(mBinding.starStrip, this::showStarWorks);
+        mStarStrip = new StarStrip(mBinding.starStrip, new StarStrip.Action() {
+            @Override
+            public void onSearch(String name) {
+                showStarWorks(name);
+            }
+
+            /** 站点没给演员、大模型补出来的：上面那行「演员」也跟着填上（点它弹的那个框也用新名单） */
+            @Override
+            public void onFilled(List<String> names) {
+                if (mDetail == null || names == null || names.isEmpty()) return;
+                String actor = TextUtils.join("、", names);
+                mDetail.setActor(actor);
+                setText(mBinding.actor, R.string.detail_actor, actor);
+            }
+        });
     }
 
     /** 演员的作品列表：TMDB 把片名列准，点哪一个再拿片名走全站搜索 */
@@ -843,6 +858,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void setText(Vod item) {
+        mDetail = item;
         mBinding.content.setTag(item.getContent());
         setText(mBinding.year, R.string.detail_year, item.getYear());
         setText(mBinding.area, R.string.detail_area, item.getArea());

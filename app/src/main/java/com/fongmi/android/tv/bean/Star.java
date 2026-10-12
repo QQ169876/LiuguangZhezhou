@@ -157,22 +157,39 @@ public class Star implements Diffable<Star> {
 
     /**
      * 站点给的演员串（"张三,李四，王五"）拆成一个个名字。
-     * 分隔符各家不一（逗号、顿号、斜杠、分号都见过），全认；去重、去空、限制个数防刷屏。
-     * ⚠️ 不按空格拆：「Tom Hanks」会被拆成两个人，比漏拆更糟。
+     * 分隔符各家不一，全认（2026-10-12 马先生点名：还有 and、星号、@ 这些，一并拆开）：
+     * 逗号顿号斜杠竖线分号、&、*、@、·、•、+，以及英文「and」（"张三 and 李四"）。
+     * 去重、去空、去占位词（"未知/暂无"这类）、限制个数防刷屏。
+     * ⚠️ 不按空格拆：「Tom Hanks」会被拆成两个人，比漏拆更糟；只有 and / & 这种明确的连接词才拆。
      * ⚠️ 有的站点把演员包在壳里：[a=cr:{"id":"吴越","name":"吴越"}]，里面那个逗号是 JSON 的，
      *    不先把它还原成名字，就会拆出 `"name":"吴越"}` 这种碎片挂到牌子上。
      */
     public static List<String> split(String actor) {
         List<String> names = new ArrayList<>();
         if (actor == null) return names;
-        for (String part : unwrap(actor).split("[,，、/|;；]+")) {
+        String text = unwrap(actor);
+        text = text.replaceAll("(?i)^\\s*(主演|演员|cast)\\s*[:：]?\\s*", ""); // 「主演：张三」这种前缀
+        text = text.replaceAll("(?i)\\s+and\\s+", "，");                       // 张三 and 李四
+        for (String part : text.split("[,，、/／|｜;；&*＊@·•+]+")) {
             String name = fix(part);
-            if (name.isEmpty() || names.contains(name) || dirty(name)) continue;
+            if (name.isEmpty() || names.contains(name) || dirty(name) || placeholder(name)) continue;
             names.add(name);
             if (names.size() >= 30) break;
         }
         return names;
     }
+
+    /** 站点偷懒填的占位词，不是人名 —— 有这些就当这一栏没有演员 */
+    private static boolean placeholder(String name) {
+        String lower = name.toLowerCase(java.util.Locale.US);
+        for (String word : PLACEHOLDER) if (lower.equals(word)) return true;
+        return false;
+    }
+
+    private static final String[] PLACEHOLDER = {
+            "未知", "暂无", "无", "不详", "内详", "见详情", "未知演员", "未收录",
+            "n/a", "na", "none", "null", "unknown", "unknown actor"
+    };
 
     /** 把 [a=cr:{"id":"..","name":".."}]（以及光秃秃的 {"id":..,"name":..}）还原成名字，认不出的整块抹掉 */
     private static String unwrap(String actor) {

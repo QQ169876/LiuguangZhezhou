@@ -38,6 +38,14 @@ public class StarStrip {
     public interface Action {
 
         void onSearch(String name);
+
+        /**
+         * 站点没给演员、大模型补出来之后回调一次（2026-10-12 马先生：夸克网盘这类站源没演员，
+         * 补出来之后详情页上面那行「演员」也得跟着显示，不然看着还是空的）。
+         * 站点自己给了演员的不回调。
+         */
+        default void onFilled(List<String> names) {
+        }
     }
 
     public StarStrip(ViewStarStripBinding binding, Action action) {
@@ -84,6 +92,10 @@ public class StarStrip {
         binding.starList.removeAllViews();
         for (String name : names) binding.starList.addView(chip(name));
         binding.getRoot().setVisibility(View.VISIBLE);
+        try {
+            if (action != null) action.onFilled(names); // 让外面把上面那行「演员」也补上
+        } catch (Throwable ignored) {
+        }
     }
 
     private View chip(String name) {

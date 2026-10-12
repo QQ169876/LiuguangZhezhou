@@ -40,10 +40,14 @@ public final class PlaybackIntent {
                 list.add(key);
                 list.add(value);
             });
-            Uri data = url.startsWith("file://") || url.startsWith("/") ? FileUtil.getShareUri(url) : Uri.parse(url);
+            boolean local = url.startsWith("file://") || url.startsWith("/");
+            Uri data = local ? FileUtil.getShareUri(url) : Uri.parse(url);
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.setDataAndType(data, "video/*");
+            // 本地文件走的是 FileProvider，而下面又要过 chooser —— chooser 会把 flag 带的授权吃掉，
+            // 外部播放器拿到 URI 一样读不到（小米上就是 Permission Denial）。显式授权 + ClipData 带上。
+            if (local && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) FileUtil.grant(data, intent);
             intent.putExtra("title", title).putExtra("return_result", isVod);
             intent.putExtra("headers", list.toArray(String[]::new));
             if (isVod) intent.putExtra("position", (int) position);

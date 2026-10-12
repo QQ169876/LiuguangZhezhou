@@ -3,6 +3,7 @@ package com.fongmi.android.tv.utils;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.bean.Star;
 import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.fongmi.android.tv.setting.AiSetting;
 
@@ -44,13 +45,17 @@ public class AiJudge {
             + "只输出 JSON，不要任何解释：{\"tags\":[\"词1\",\"词2\",\"词3\"]}";
 
     /**
-     * 补演员：不少短剧站点压根不给演员信息，演员区就空着。这时候请大模型按剧名回忆一下主演，
-     * 想得出来就填进去（照样能关注、能长按看他的作品）。
+     * 补演员：不少站点（夸克网盘这类站源尤其常见）压根不给演员信息，演员区就空着。
+     * 这时候请大模型按剧名回忆一下主演，想得出来就填进去（照样能关注、能长按看他的作品）。
+     *
+     * 2026-10-12 马先生点名要的「按关注的演员筛选检索」：提问时把本机关注的演员名单一起给模型，
+     * 让它先判断名单里哪些人参演了这部剧（有的排在最前），再补上它记得的其他主演。
      * 轻度使用：只在演员确实为空时才问，同名只问一次，问不到就算了，绝不拦着你看剧。
      */
     private static final String SYSTEM_ACTORS = "你是影视资料助手。根据剧名回忆这部剧的主要演员，"
-            + "给出 2 到 6 个主演的人名（只要人名，中文）。只输出 JSON，不要任何解释："
-            + "{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
+            + "给出 2 到 6 个主演的人名（只要人名，中文）。"
+            + "如果给了「用户关注的演员」名单，先判断其中哪些人参演了这部剧，把他们排在前面；没参演的不要写进去。"
+            + "只输出 JSON，不要任何解释：{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
 
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
@@ -215,7 +220,7 @@ public class AiJudge {
         if (name == null || name.isEmpty()) return null;
         if (AiGuard.blocked(name)) return null;
         loadActors();
-        return ACTORS.get(name);
+        return ACTORS.get(cleanTitle(name)); // 缓存按洗干净的剧名记：同一个片子换个文件名也认得
     }
 
     /**
@@ -233,8 +238,9 @@ public class AiJudge {
             replyActors(callback, null);
             return;
         }
+        String key = cleanTitle(name); // 网盘站源常拿文件名当剧名，洗干净再问，命中率高得多
         loadActors();
-        List<String> hit = ACTORS.get(name);
+        List<String> hit = ACTORS.get(key);
         if (hit != null) {
             replyActors(callback, hit.isEmpty() ? null : hit); // 空列表＝问过但没结果，不再问第二次
             return;
@@ -243,22 +249,22 @@ public class AiJudge {
             replyActors(callback, null);
             return;
         }
-        if (ACTOR_ASKING.putIfAbsent(name, Boolean.TRUE) != null) {
+        if (ACTOR_ASKING.putIfAbsent(key, Boolean.TRUE) != null) {
             replyActors(callback, null); // 已经在问了，别重复烧钱
             return;
         }
         POOL.execute(() -> {
             List<String> names = null;
             try {
-                names = requestActors(name, typeName, site);
+                names = requestActors(key, typeName, site);
             } catch (Throwable e) {
                 names = null;
-                DebugLog.d("AiJudge", "补演员模型不可用：" + name);
+                DebugLog.d("AiJudge", "补演员模型不可用：" + key);
             }
-            ACTOR_ASKING.remove(name);
+            ACTOR_ASKING.remove(key);
             if (names != null) {
                 if (ACTORS.size() > MEMO_LIMIT) ACTORS.clear();
-                ACTORS.put(name, names); // 空列表也记：这部剧模型不认识，下次别再问
+                ACTORS.put(key, names); // 空列表也记：这部剧模型不认识，下次别再问
                 saveActors();
             }
             List<String> result = names == null || names.isEmpty() ? null : names;
@@ -273,12 +279,58 @@ public class AiJudge {
         }
     }
 
+    /**
+     * 网盘站源给的「剧名」常常就是文件名：xxx.2024.1080p.国语中字.mp4、带 [4K] 方括号、
+     * 带「第01集」……直接问模型它认不出来。先洗干净再问，命中率高一大截。
+     * 洗完为空（整串都是噪声）就退回原名，别把问题问成空气。
+     */
+    private static String cleanTitle(String name) {
+        if (name == null) return "";
+        String s = name.trim();
+        s = s.replaceAll("(?i)\\.(mp4|mkv|avi|mov|rmvb|flv|wmv|ts|m3u8|webm|iso)$", "");
+        s = s.replaceAll("\\[[^\\]]*]", " ");
+        s = s.replaceAll("[（(【][^）)】]*[）)】]", " ");
+        // 分辨率/编码这些必须是「独立的一段」才删：不加边界的话 hd、sd 这类短词会把剧名里的字母也吃掉
+        s = s.replaceAll("(?i)(^|[\\s._\\-\\[\\]()（）【】])(4k|2160p|1080p|720p|480p|hd|sd|hdr|bluray|blu-ray|webrip|web-dl|hdrip|x264|x265|h264|h265|hevc|aac|ac3|dts)(?=$|[\\s._\\-\\[\\]()（）【】])", " ");
+        s = s.replaceAll("(国语|粤语|中字|高清|超清|蓝光|抢先版|正式版)", " ");
+        s = s.replaceAll("第\\s*\\d{1,3}\\s*[集期话]", " ");
+        s = s.replaceAll("[._]+", " ");
+        s = s.replaceAll("\\s+", " ").trim();
+        return s.isEmpty() ? name.trim() : s;
+    }
+
+    /**
+     * 本机关注的演员名单（最多 20 个），交给模型去这部剧里筛一遍 —— 马先生要的「按关注的演员检索」。
+     * 只在后台线程调（要读库），这儿是 requestActors 里用的，符合。
+     */
+    private static String followed() {
+        try {
+            List<Star> all = Star.getAll();
+            if (all == null || all.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            int count = 0;
+            for (Star item : all) {
+                if (item == null || item.getDeleted() != 0) continue;
+                String name = item.getName();
+                if (name == null || name.trim().isEmpty()) continue;
+                if (sb.length() > 0) sb.append("、");
+                sb.append(name.trim());
+                if (++count >= 20) break;
+            }
+            return sb.toString();
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
     private static List<String> requestActors(String name, String typeName, String site) throws Exception {
+        String stars = followed();
         JSONObject user = new JSONObject();
         user.put("role", "user");
         user.put("content", "剧名：" + name
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
+                + (stars.isEmpty() ? "" : "\n用户关注的演员：" + stars + "（其中参演了这部剧的，请排在最前面）")
                 + "\n问：这部剧的主演有哪些？只给人名。");
 
         JSONObject body = new JSONObject();

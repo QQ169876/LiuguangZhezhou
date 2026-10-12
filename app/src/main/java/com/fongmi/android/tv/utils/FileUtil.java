@@ -63,7 +63,12 @@ public class FileUtil {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            intent.setDataAndType(openUri(file), getMimeType(file.getName()));
+            Uri uri = openUri(file);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); // 少了这句，对方应用一样 Permission Denial
+                grant(uri, intent);
+            }
+            intent.setDataAndType(uri, getMimeType(file.getName()));
             Intent target = intent;
             if (chooser) {
                 target = Intent.createChooser(intent, ResUtil.getString(R.string.push_open_with));
@@ -187,12 +192,62 @@ public class FileUtil {
         intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            intent.setDataAndType(getShareUri(file), APK_MIME);
+            Uri uri = getShareUri(file);
+            intent.setDataAndType(uri, APK_MIME);
+            grant(uri, intent); // 小米这关必须过：光靠 flag 它读不到
         } else {
             intent.setDataAndType(Uri.fromFile(file), APK_MIME);
         }
         return intent;
     }
+
+    /**
+     * 把「读这个 apk」的权限**显式**发给所有可能接手的安装器。
+     *
+     * 2026-10-12 小米（MIUI）实测报错：
+     *   Permission Denial: opening provider androidx.core.content.FileProvider from
+     *   ProcessRecord{... com.miui.packageinstaller ...} that is not exported from UID ...
+     * 原因：`FLAG_GRANT_READ_URI_PERMISSION` 只授权给 startActivity 直接拉起的那一个包；
+     * MIUI 的「安装包扫描」是安装器自己进程里再往下传一道，传递过程中授权丢了，于是读不到。
+     * 所以这里对候选列表逐个 `grantUriPermission`（进程级授权，重启前一直有效），
+     * 再把各家安装器的包名也一并授上（有的 ROM 它压根不出现在 query 结果里）。
+     *
+     * 另外挂一份 ClipData 到 intent 上：走 chooser/中转 Activity 时 URI 授权靠它才带得过去。
+     */
+    public static void grant(Uri uri, Intent intent) {
+        java.util.Set<String> pkgs = new java.util.HashSet<>();
+        try {
+            java.util.List<android.content.pm.ResolveInfo> list = App.get().getPackageManager().queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            if (list != null) for (android.content.pm.ResolveInfo info : list) {
+                if (info.activityInfo != null && info.activityInfo.packageName != null) pkgs.add(info.activityInfo.packageName);
+            }
+        } catch (Throwable ignored) {
+        }
+        for (String pkg : INSTALLERS) pkgs.add(pkg);
+        for (String pkg : pkgs) {
+            try {
+                App.get().grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Throwable ignored) {
+            }
+        }
+        try {
+            intent.setClipData(android.content.ClipData.newUri(App.get().getContentResolver(), "apk", uri));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 各家 ROM 的安装器包名：不出现在候选里也一并授权，免得又撞「not exported」 */
+    private static final String[] INSTALLERS = {
+            "com.miui.packageinstaller",                 // 小米（这次报错的就是它）
+            "com.android.packageinstaller",              // 原生 / 大部分 ROM
+            "com.google.android.packageinstaller",       // Pixel
+            "com.samsung.android.packageinstaller",      // 三星
+            "com.huawei.android.packageinstaller",       // 华为
+            "com.coloros.packageinstaller",              // OPPO / 一加
+            "com.vivo.packageinstaller",                 // vivo
+            "com.bbk.appstore",                          // vivo 应用商店
+            "com.miui.securitycenter",                   // 小米安全中心（有时由它接管扫描）
+    };
 
     private static boolean launch(Intent intent) {
         try {

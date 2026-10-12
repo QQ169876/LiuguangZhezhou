@@ -175,6 +175,15 @@ public class Vod implements Parcelable, Diffable<Vod> {
         return TextUtils.isEmpty(vodActor) ? "" : vodActor.trim();
     }
 
+    /**
+     * 大模型补出来的演员回写进去（2026-10-12 马先生：夸克网盘这类站源压根不给演员，
+     * 补全之后详情页上面那行「演员」也要跟着显示，不然看着还是空的）。
+     * 只填在站点确实没给的情况下，不覆盖站点自己的数据。
+     */
+    public void setActor(String vodActor) {
+        if (TextUtils.isEmpty(getActor())) this.vodActor = vodActor == null ? "" : vodActor.trim();
+    }
+
     public String getContent() {
         return TextUtils.isEmpty(vodContent) ? "" : Util.clean(vodContent);
     }

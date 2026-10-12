@@ -133,6 +133,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private QuickAdapter mQuickAdapter;
     private StarStrip mStarStrip;
     private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
+    private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
     private CustomKeyDown mKeyDown;
@@ -864,6 +865,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void setText(Vod item) {
+        mDetail = item;
         mActor = item.getActor();
         setText(mBinding.site, R.string.detail_site, getSite().getName());
         setText(mBinding.director, R.string.detail_director, item.getDirector());
@@ -959,7 +961,22 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     /** 详情页下方那块演员区域：点一下关注/取消，长按看他的作品（TMDB 列名单，点片名再回 APP 搜） */
     private void setStarStrip() {
-        mStarStrip = new StarStrip(mBinding.starStrip, this::showStarWorks);
+        mStarStrip = new StarStrip(mBinding.starStrip, new StarStrip.Action() {
+            @Override
+            public void onSearch(String name) {
+                showStarWorks(name);
+            }
+
+            /** 站点没给演员、大模型补出来的：上面那行「演员」也跟着填上，别让整页看着还是空的 */
+            @Override
+            public void onFilled(List<String> names) {
+                if (mDetail == null || names == null || names.isEmpty()) return;
+                String actor = TextUtils.join("、", names);
+                mDetail.setActor(actor);
+                mActor = actor;
+                setText(mBinding.actor, R.string.detail_actor, actor);
+            }
+        });
     }
 
     /** 演员的作品列表：TMDB 把片名列准，点哪一个再拿片名走全站搜索 */

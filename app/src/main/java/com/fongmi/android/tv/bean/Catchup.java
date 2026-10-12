@@ -14,8 +14,10 @@ import java.util.regex.Pattern;
 
 public class Catchup {
 
-    private static final Pattern TOKEN_PATTERN = Pattern.compile("(\\$?\\{[^}]*\\})");
-    private static final Pattern TAG_PATTERN = Pattern.compile("\\{([^}]+)\\}");
+    // 花括号一律转义：Android 的正则其实是 ICU 引擎，比 PC 上 Java 自带那套严
+    // （Star 那次就是字符类里裸 `{` 直接 PatternSyntaxException，类初始化失败→整页崩，见 656）
+    private static final Pattern TOKEN_PATTERN = Pattern.compile("(\\$?\\{[^\\}]*\\})");
+    private static final Pattern TAG_PATTERN = Pattern.compile("\\{([^\\}]+)\\}");
 
     @SerializedName("type")
     private String type;
