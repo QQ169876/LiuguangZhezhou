@@ -12,6 +12,7 @@ import com.fongmi.android.tv.ui.dialog.ReceiveFileDialog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Formatters;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.utils.Path;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -111,7 +112,15 @@ public class Local implements Process {
         if (!dir.exists() && !dir.mkdirs()) dir = Path.cache();
         File file = new File(dir, name);
         Path.copy(temp, file);
-        App.post(() -> FileUtil.installApk(file));
+        App.post(() -> FileUtil.installApkAsync(file, file.getName(), left -> {
+            if (left == null) return; // 已经交给系统了
+            if (!FileUtil.installPermissionGranted()) {
+                FileUtil.openInstallPermission();
+                Notify.show(R.string.push_install_perm);
+                return;
+            }
+            Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
+        }));
     }
 
     private void hint(int resId) {

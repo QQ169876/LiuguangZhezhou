@@ -16,8 +16,8 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 655
-        versionName rootProject.legacy ? "5.6.95-legacy" : "5.6.95"
+        versionCode 656
+        versionName rootProject.legacy ? "5.6.96-legacy" : "5.6.96"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
         javaCompileOptions {
             annotationProcessorOptions {
@@ -119,7 +119,7 @@ androidComponents {
         def mode = flavors['mode'] ?: 'mode'
         def abi = flavors['abi'] ?: 'abi'
         variant.outputs.each { output ->
-            def mark = rootProject.legacy ? "5.6.95-legacy" : "5.6.95"
+            def mark = rootProject.legacy ? "5.6.96-legacy" : "5.6.96"
             output.outputFileName.set("${mode}${mark}-${abi}.apk")
         }
     }

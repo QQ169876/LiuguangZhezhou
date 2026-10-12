@@ -871,16 +871,17 @@ public class Updater implements Download.Callback, UpdateListener {
             Notify.show(R.string.update_bad_package);
             return;
         }
-        String left = FileUtil.installApk(file, apkName());
-        if (left == null) return; // 安装界面起来了，后面交给系统
-        if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
-            FileUtil.openInstallPermission();
-            Notify.show(R.string.push_install_perm);
-            keepCopy(file);
-            return;
-        }
-        if (left.isEmpty()) Notify.show(R.string.update_install_fail);
-        else Notify.show(ResUtil.getString(R.string.update_install_manual, left));
+        FileUtil.installApkAsync(file, apkName(), result -> {
+            if (result == null) return; // 已经交给系统（会话收走了，或安装界面起来了）
+            if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
+                FileUtil.openInstallPermission();
+                Notify.show(R.string.push_install_perm);
+                keepCopy(file);
+                return;
+            }
+            if (result.isEmpty()) Notify.show(R.string.update_install_fail);
+            else Notify.show(ResUtil.getString(R.string.update_install_manual, result));
+        });
     }
 
     /**

@@ -1,8 +1,10 @@
 package com.fongmi.android.tv.utils;
 
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.PackageInstaller;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -131,13 +133,89 @@ public class FileUtil {
                 if (launch(apkIntent(target, Intent.ACTION_INSTALL_PACKAGE))) return null;
                 if (launch(apkIntent(target, Intent.ACTION_VIEW))) return null;
             } else {
-                // 先 INSTALL_PACKAGE（更明确），个别精简系统没这个 activity 就退 ACTION_VIEW
-                if (launch(apkIntent(file, Intent.ACTION_INSTALL_PACKAGE))) return null;
+                // ⚠️ 顺序是「先 VIEW 后 INSTALL_PACKAGE」，别倒过来——这是小米上能不能装的关键。
+                // 642（5.6.82）起自动更新从 ACTION_VIEW 改成了优先 ACTION_INSTALL_PACKAGE、
+                // 还带上 EXTRA_NOT_UNKNOWN_SOURCE，小米（HyperOS/MIUI）就会进「安装包扫描」那条流程，
+                // 扫描是安装器在 intent 授权链之外读我们的 FileProvider，授权对不上，于是报：
+                //   解析软件包出现问题。(11) Permission Denial: opening provider
+                //   androidx.core.content.FileProvider ... that is not exported from UID ...
+                // 早期版本（≤5.6.81）自动更新走的正是 ACTION_VIEW，在小米上一直是好的，所以恢复它打头；
+                // 个别精简系统没有 VIEW 的处理者，再退到更明确的 INSTALL_PACKAGE。
                 if (launch(apkIntent(file, Intent.ACTION_VIEW))) return null;
+                if (launch(apkIntent(file, Intent.ACTION_INSTALL_PACKAGE))) return null;
             }
             return saved != null ? saved : keep(file, name);
         } catch (Throwable e) {
             return keep(file, name);
+        }
+    }
+
+    /** 安装流程的异步回调：left 含义同 installApk(file, saveAs)（null=已交给系统；""=没戏；其他=已存到下载目录的路径） */
+    public interface Installer {
+
+        void onDone(String left);
+    }
+
+    /**
+     * 安装包：**先让系统「包安装器会话」把包收走**，不行再退回老办法去拉安装器。
+     *
+     * 为什么要多这一条路：小米（HyperOS/MIUI）上把 FileProvider 的 content:// 递给安装器，
+     * 安装器在「安装包扫描」那一步读文件时授权已经对不上，直接报——
+     *   解析软件包出现问题。(11) Permission Denial: opening provider ... that is not exported from UID ...
+     * 而会话这条路是**系统从我们进程里把包读走**（我们只管往里写），
+     * 安装器根本不碰我们的 FileProvider，也就没有 URI 授权这一关。
+     * 会话走不通（个别 ROM/精简系统）就退回原来的 launch，行为跟以前一样，不会更糟。
+     *
+     * ⚠️ 写 80MB 不能放主线程，所以整个是异步的，结果回主线程给你。
+     */
+    public static void installApkAsync(File file, String saveAs, Installer installer) {
+        final String name = TextUtils.isEmpty(saveAs) ? (file == null ? "" : file.getName()) : saveAs;
+        if (file == null || !file.exists() || file.length() <= 0) {
+            App.post(() -> installer.onDone(""));
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = sessionInstall(file);
+            App.post(() -> installer.onDone(ok ? null : installApk(file, name)));
+        }, "install-apk").start();
+    }
+
+    /** 系统包安装器会话：把包装进会话里 commit 出去，剩下的交给系统（它会弹自己的安装确认界面） */
+    private static boolean sessionInstall(File file) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false;
+        PackageInstaller.Session session = null;
+        try {
+            PackageInstaller installer = App.get().getPackageManager().getPackageInstaller();
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setSize(file.length());
+            int id = installer.createSession(params);
+            session = installer.openSession(id);
+            try (OutputStream os = session.openWrite("base.apk", 0, file.length()); InputStream is = new FileInputStream(file)) {
+                byte[] buffer = new byte[65536];
+                int len;
+                while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
+                session.fsync(os);
+            }
+            Intent result = new Intent(App.get(), com.fongmi.android.tv.receiver.ActionReceiver.class);
+            result.setAction(App.get().getPackageName() + ".install.result");
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE; // 系统要往里面回塞结果
+            PendingIntent pending = PendingIntent.getBroadcast(App.get(), id, result, flags);
+            session.commit(pending.getIntentSender());
+            DebugLog.d("Install", "已交给系统包安装器：" + file.getName());
+            return true;
+        } catch (Throwable e) {
+            DebugLog.d("Install", "会话安装走不通，退回拉安装器：" + e);
+            try {
+                if (session != null) session.abandon();
+            } catch (Throwable ignored) {
+            }
+            return false;
+        } finally {
+            try {
+                if (session != null) session.close();
+            } catch (Throwable ignored) {
+            }
         }
     }
 
@@ -188,8 +266,9 @@ public class FileUtil {
     private static Intent apkIntent(File file, String action) {
         Intent intent = new Intent(action);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.addCategory(Intent.CATEGORY_DEFAULT);
-        intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+        // 这里故意**不加** CATEGORY_DEFAULT、也不塞 EXTRA_NOT_UNKNOWN_SOURCE：
+        // 那两样是 640/642 加进来的，正是小米上装不了的开端（细见 installApk 里的注释）。
+        // 早期版本（≤5.6.81）拿 ACTION_VIEW 装一直是好的，这次就是退回那个干净的样子。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             Uri uri = getShareUri(file);
@@ -217,7 +296,11 @@ public class FileUtil {
     public static void grant(Uri uri, Intent intent) {
         java.util.Set<String> pkgs = new java.util.HashSet<>();
         try {
-            java.util.List<android.content.pm.ResolveInfo> list = App.get().getPackageManager().queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            // 拿一个单独的「带 CATEGORY_DEFAULT 的看 apk」去列候选：intent 本身没有 category，
+            // 直接拿它配 MATCH_DEFAULT_ONLY 会一个都列不出来
+            Intent query = new Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_DEFAULT);
+            query.setDataAndType(uri, APK_MIME);
+            java.util.List<android.content.pm.ResolveInfo> list = App.get().getPackageManager().queryIntentActivities(query, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
             if (list != null) for (android.content.pm.ResolveInfo info : list) {
                 if (info.activityInfo != null && info.activityInfo.packageName != null) pkgs.add(info.activityInfo.packageName);
             }
