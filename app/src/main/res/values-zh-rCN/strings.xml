@@ -173,11 +173,15 @@
     <!-- Subtitle Setting -->
     <string name="subtitle_setting">字幕设置</string>
     <string name="subtitle_search_api_title">Assrt</string>
-    <string name="subtitle_search_token_hint">Token</string>
+    <string name="subtitle_search_token_hint">伪射手 Token（可不填）</string>
+    <string name="subtitle_search_subdl_key_hint">SubDL API Key（可不填）</string>
     <string name="subtitle_source_auto">来源：自动</string>
     <string name="subtitle_source_assrt">来源：伪射手</string>
     <string name="subtitle_source_opensub">来源：OpenSubtitles</string>
-    <string name="subtitle_search_need_token">伪射手要填 Token 才能搜：点右边齿轮填上，或把来源换成「自动」「OpenSubtitles」</string>
+    <string name="subtitle_source_subdl">来源：SubDL</string>
+    <string name="subtitle_search_need_subdl_key">SubDL 的 API Key 没填或失效：点右边齿轮填一个（subdl.com 注册免费领），或把来源换成「自动」「OpenSubtitles」</string>
+    <string name="subtitle_search_need_token">伪射手 Token 没填或失效：点右边齿轮换一个，或把来源换成「自动」「SubDL」</string>
+    <string name="subtitle_search_retry_en">这家只认英文片名，正用播放地址里的英文原名再搜一次</string>
     <string name="subtitle_reset">重置</string>
     <string name="subtitle_tab_appearance">外观</string>
     <string name="subtitle_tab_adjust">调整</string>

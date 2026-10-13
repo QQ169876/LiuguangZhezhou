@@ -33,9 +33,12 @@ public class SubtitleApiDialog extends BaseAlertDialog {
 
     @Override
     protected void initView() {
+        // 两个框都只回显用户自己填的：留空就用内置的，不要把内置那串铺在界面上
         String text;
-        binding.text.setText(text = SubtitleSetting.getEffectiveToken());
+        binding.text.setText(text = SubtitleSetting.getSearchToken());
         binding.text.setSelection(TextUtils.isEmpty(text) ? 0 : text.length());
+        binding.key.setText(text = SubtitleSetting.getSearchSubdlKey());
+        binding.key.setSelection(TextUtils.isEmpty(text) ? 0 : text.length());
     }
 
     @Override
@@ -48,8 +51,9 @@ public class SubtitleApiDialog extends BaseAlertDialog {
 
     private void onPositive(DialogInterface dialog, int which) {
         CharSequence text = binding.text.getText();
+        CharSequence key = binding.key.getText();
         String token = text == null ? "" : text.toString().trim();
-        getListener().setSubtitleToken(token);
+        getListener().setSubtitleKeys(token, key == null ? "" : key.toString().trim());
         dismiss();
     }
 

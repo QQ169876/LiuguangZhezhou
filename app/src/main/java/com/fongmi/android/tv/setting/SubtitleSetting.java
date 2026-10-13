@@ -66,17 +66,38 @@ public class SubtitleSetting {
     private static final int DEFAULT_SECONDARY_TRACK = SECONDARY_SUBTITLE_OFF;
     private static final float DEFAULT_SECONDARY_POSITION = 10.0f;
 
-    /** 在线搜字幕的来源：自动（主源不行就换备用）/ 伪射手 / OpenSubtitles */
+    /** 在线搜字幕的来源：自动（主源不行就换备用）/ 伪射手 / OpenSubtitles / SubDL */
     public static final int SOURCE_AUTO = 0;
     public static final int SOURCE_ASSRT = 1;
     public static final int SOURCE_OPENSUB = 2;
+    public static final int SOURCE_SUBDL = 3;
 
     public static int getSearchSource() {
-        return Math.clamp(Prefers.getInt("subtitle_search_source", SOURCE_AUTO), SOURCE_AUTO, SOURCE_OPENSUB);
+        return Math.clamp(Prefers.getInt("subtitle_search_source", SOURCE_AUTO), SOURCE_AUTO, SOURCE_SUBDL);
     }
 
     public static void putSearchSource(int source) {
-        Prefers.put("subtitle_search_source", Math.clamp(source, SOURCE_AUTO, SOURCE_OPENSUB));
+        Prefers.put("subtitle_search_source", Math.clamp(source, SOURCE_AUTO, SOURCE_SUBDL));
+    }
+
+    /**
+     * 内置的兜底凭证：马先生自己注册的，免得 TV 端还得拿遥控器敲这一长串。
+     * 用户自己填的优先级更高（齿轮里填了就用填的），这条只是"填了也能用、不填也能用"的保底。
+     */
+    private static final String BUILTIN_SUBDL_KEY = "subdl_SHN30MlCv3Pdm5giX3tXbgk3Qxp-iIQn87HhLR0iDPk";
+    private static final String BUILTIN_ASSRT_TOKEN = "6gWhJbgDSvnjWbbUkuG1VvWMt4SXB8B2";
+
+    public static String getSearchSubdlKey() {
+        return Prefers.getString("subtitle_search_subdl_key", "");
+    }
+
+    public static void putSearchSubdlKey(String key) {
+        Prefers.put("subtitle_search_subdl_key", key == null ? "" : key.trim());
+    }
+
+    public static String getEffectiveSubdlKey() {
+        String key = getSearchSubdlKey();
+        return TextUtils.isEmpty(key) ? BUILTIN_SUBDL_KEY : key;
     }
 
     public static String getSearchToken() {
@@ -86,7 +107,8 @@ public class SubtitleSetting {
     public static String getEffectiveToken() {
         String userToken = getSearchToken();
         if (!TextUtils.isEmpty(userToken)) return userToken;
-        return VodConfig.get().getConfig().getAssrt();
+        String configToken = VodConfig.get().getConfig().getAssrt();
+        return TextUtils.isEmpty(configToken) ? BUILTIN_ASSRT_TOKEN : configToken;
     }
 
     public static void putSearchToken(String token) {

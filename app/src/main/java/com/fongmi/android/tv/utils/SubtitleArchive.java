@@ -15,14 +15,21 @@ import java.util.Locale;
 public final class SubtitleArchive {
 
     private static final String ZIP = ".zip";
+    private static final String RAR = ".rar";
     private static final String CACHE_DIR = "subtitle/";
     private static final int MAX_ENTRIES = 256;
     private static final long MAX_DOWNLOAD_BYTES = 32L * 1024 * 1024;
     private static final long MAX_EXTRACTED_BYTES = 128L * 1024 * 1024;
     private static final String[] EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".ttml", ".xml", ".dfxp"};
 
+    /**
+     * 是不是压缩包（zip / rar）。
+     *
+     * 为什么连 rar 一起认：**伪射手**那边不少字幕包压成 .rar（实测 4 条里就有 1 条），
+     * 以前只认 .zip，这些条目会被当成"不支持"直接过滤掉——用户搜得到、点下去却没反应。
+     */
     public static boolean isZip(String name, String url) {
-        return hasExtension(name, ZIP) || hasExtension(url, ZIP);
+        return hasExtension(name, ZIP) || hasExtension(url, ZIP) || hasExtension(name, RAR) || hasExtension(url, RAR);
     }
 
     public static boolean isSupported(String name, String url) {
@@ -30,7 +37,7 @@ public final class SubtitleArchive {
     }
 
     public static File getFile(String url) {
-        return Path.cache(CACHE_DIR + getKey(url) + ZIP);
+        return Path.cache(CACHE_DIR + getKey(url) + (hasExtension(url, RAR) ? RAR : ZIP));
     }
 
     public static File getDir(String url) {
@@ -43,7 +50,8 @@ public final class SubtitleArchive {
 
     public static List<File> unzip(File archive, File dir) {
         Path.clear(dir);
-        if (!FileUtil.zipDecompress(archive, dir, MAX_ENTRIES, MAX_EXTRACTED_BYTES)) Path.clear(dir);
+        boolean ok = hasExtension(archive.getName(), RAR) ? FileUtil.rarDecompress(archive, dir, MAX_ENTRIES, MAX_EXTRACTED_BYTES) : FileUtil.zipDecompress(archive, dir, MAX_ENTRIES, MAX_EXTRACTED_BYTES);
+        if (!ok) Path.clear(dir);
         return findSubtitles(dir);
     }
 

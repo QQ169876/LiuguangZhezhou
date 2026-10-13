@@ -19,6 +19,8 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.impl.Callback;
 import com.github.catvod.utils.Path;
+import com.github.junrar.Archive;
+import com.github.junrar.rarfile.FileHeader;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -422,6 +424,56 @@ public class FileUtil {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /**
+     * 解压 RAR（伪射手那边不少字幕包是 .rar，java.util.zip 只认 zip）。
+     *
+     * 用 junrar 解。它内部会碰到 java.nio.file（API 26 才有的类），
+     * Android 7.x（API 24/25）上会抛 NoClassDefFoundError——那是 Error 不是 Exception，
+     * 所以这里 catch Throwable 兜住：老设备最多是这类包解不开，绝不能把 App 带崩。
+     */
+    public static boolean rarDecompress(File target, File path, int maxEntries, long maxBytes) {
+        long[] total = new long[1];
+        int count = 0;
+        try (Archive rar = new Archive(target)) {
+            String root = path.getCanonicalPath() + File.separator;
+            for (FileHeader header : rar.getFileHeaders()) {
+                if (header == null || header.isDirectory()) continue;
+                if (++count > maxEntries) throw new IOException("Archive entry limit exceeded");
+                String name = header.getFileName();
+                if (TextUtils.isEmpty(name)) continue;
+                File out = new File(path, name.replace('\\', File.separatorChar));
+                if (!out.getCanonicalPath().startsWith(root)) continue; // 防路径穿越
+                try (OutputStream os = limited(new FileOutputStream(Path.create(out)), total, maxBytes)) {
+                    rar.extractFile(header, os);
+                }
+            }
+            return true;
+        } catch (Throwable e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /** 边写边数，超量就停，避免一个坏包把存储写满 */
+    private static OutputStream limited(OutputStream os, long[] total, long maxBytes) {
+        return new BufferedOutputStream(os) {
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                total[0] += len;
+                if (total[0] > maxBytes) throw new IOException("Archive size limit exceeded");
+                super.write(b, off, len);
+            }
+
+            @Override
+            public void write(int b) throws IOException {
+                total[0] += 1;
+                if (total[0] > maxBytes) throw new IOException("Archive size limit exceeded");
+                super.write(b);
+            }
+        };
     }
 
     public static void clearCache(Callback callback) {

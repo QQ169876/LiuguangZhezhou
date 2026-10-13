@@ -80,3 +80,11 @@
 -keep class com.google.zxing.qrcode.QRCodeReader { *; }
 -keep class com.google.zxing.qrcode.QRCodeWriter { *; }
 -keep class com.google.zxing.qrcode.decoder.ErrorCorrectionLevel { *; }
+
+# Junrar (字幕包是 RAR 时要靠它解，内部有反射，别被 R8 削掉)
+-keep class com.github.junrar.** { *; }
+-dontwarn com.github.junrar.**
+
+# SLF4J (junrar 的依赖)
+-keep class org.slf4j.** { *; }
+-dontwarn org.slf4j.**

@@ -22,6 +22,7 @@ import com.fongmi.android.tv.api.OpenSubApi;
 import com.fongmi.android.tv.api.SubtitleApi;
 import com.fongmi.android.tv.bean.Sub;
 import com.fongmi.android.tv.bean.SubtitleSearchItem;
+import com.fongmi.android.tv.api.SubdlApi;
 import com.fongmi.android.tv.bean.SubtitleSearchPage;
 import com.fongmi.android.tv.databinding.DialogSubtitleSearchBinding;
 import com.fongmi.android.tv.impl.SubtitleListener;
@@ -33,6 +34,7 @@ import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.SubtitleName;
 import com.fongmi.android.tv.utils.Util;
 
 import java.util.ArrayDeque;
@@ -50,6 +52,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     private int nextPos;
     private int setting = SubtitleSetting.getSearchSource(); // 用户选的来源（自动/伪射手/OpenSubtitles）
     private int active = SubtitleSetting.SOURCE_OPENSUB;    // 这一趟真正在查的来源（自动模式下会切到备用）
+    private boolean triedEnglish;                           // 英文片名兜底只做一次，避免来回打转
 
     public SubtitleSearchDialog() {
         this.states = new ArrayDeque<>();
@@ -136,7 +139,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
 
     /** 切换字幕来源：自动 → 伪射手 → OpenSubtitles → 自动……（「自动」= 主源不行就换备用） */
     private void onSource(View view) {
-        setting = setting == SubtitleSetting.SOURCE_OPENSUB ? SubtitleSetting.SOURCE_AUTO : setting + 1;
+        setting = setting == SubtitleSetting.SOURCE_SUBDL ? SubtitleSetting.SOURCE_AUTO : setting + 1;
         SubtitleSetting.putSearchSource(setting);
         showSource();
         // 只要搜过（哪怕结果是空的）就按新来源立刻重来一遍——最常遇到的就是「这家没搜到，换一家试试」
@@ -147,6 +150,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         binding.source.setText(switch (setting) {
             case SubtitleSetting.SOURCE_ASSRT -> R.string.subtitle_source_assrt;
             case SubtitleSetting.SOURCE_OPENSUB -> R.string.subtitle_source_opensub;
+            case SubtitleSetting.SOURCE_SUBDL -> R.string.subtitle_source_subdl;
             default -> R.string.subtitle_source_auto;
         });
     }
@@ -176,12 +180,19 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         scroller.reset();
         keyword = getKeyword();
         nextPos = 0;
+        triedEnglish = false;
         if (setting == SubtitleSetting.SOURCE_ASSRT && !SubtitleApi.hasToken()) {
             showResults(true);
             Notify.show(R.string.subtitle_search_need_token);
             return;
         }
-        active = setting == SubtitleSetting.SOURCE_AUTO ? (SubtitleApi.hasToken() ? SubtitleSetting.SOURCE_ASSRT : SubtitleSetting.SOURCE_OPENSUB) : setting;
+        if (setting == SubtitleSetting.SOURCE_SUBDL && !SubdlApi.hasKey()) {
+            showResults(true);
+            Notify.show(R.string.subtitle_search_need_subdl_key);
+            return;
+        }
+        // 「自动」：谁有凭证谁先上——伪射手（填了 token）→ SubDL（填了 key）→ OpenSubtitles（免 key 兜底）
+        active = setting == SubtitleSetting.SOURCE_AUTO ? firstSource() : setting;
         requestSearch();
     }
 
@@ -189,6 +200,13 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     public void setSubtitleToken(String token) {
         SubtitleSetting.putSearchToken(token);
         if (SubtitleApi.hasToken() && !getKeyword().isEmpty()) search();
+    }
+
+    @Override
+    public void setSubtitleKeys(String token, String subdlKey) {
+        SubtitleSetting.putSearchToken(token);
+        SubtitleSetting.putSearchSubdlKey(subdlKey);
+        if ((SubtitleApi.hasToken() || SubdlApi.hasKey()) && !getKeyword().isEmpty()) search();
     }
 
     private void detail(SubtitleSearchItem item) {
@@ -229,7 +247,22 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     private void requestSearch() {
         updateBackCallback();
         if (active == SubtitleSetting.SOURCE_ASSRT) SubtitleApi.search(keyword, nextPos, this::onSearch, this::onSearchError);
+        else if (active == SubtitleSetting.SOURCE_SUBDL) SubdlApi.search(keyword, this::onSearch, this::onSearchError);
         else OpenSubApi.search(keyword, nextPos, this::onSearch, this::onSearchError);
+    }
+
+    /** 每家"一页给你几条"，用来判断还有没有下一页 */
+    private int countOf(int source) {
+        if (source == SubtitleSetting.SOURCE_ASSRT) return SubtitleApi.SEARCH_COUNT;
+        if (source == SubtitleSetting.SOURCE_SUBDL) return SubdlApi.SEARCH_COUNT;
+        return OpenSubApi.SEARCH_COUNT;
+    }
+
+    /** 自动模式的首选来源：有凭证的优先，都没有就用免 key 的 OpenSubtitles */
+    private int firstSource() {
+        if (SubtitleApi.hasToken()) return SubtitleSetting.SOURCE_ASSRT;
+        if (SubdlApi.hasKey()) return SubtitleSetting.SOURCE_SUBDL;
+        return SubtitleSetting.SOURCE_OPENSUB;
     }
 
     private void onSearchError(Exception e) {
@@ -238,24 +271,56 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         onError(e);
     }
 
-    /** 自动模式下主源不行就换备用源从头再搜一遍；返回 true 表示已经换了 */
+    /**
+     * 用**英文片名**再搜一次。
+     *
+     * 实测（2026-10-14）：OpenSubtitles 库里只有英文/原文件名，拿「盗梦空间」「沙丘」「奥本海默」
+     * 这类中文名去搜，返回全是 0 条——而 App 里显示的偏偏就是中文名，等于外语片在线搜字幕搜不到。
+     * 好在播放地址基本都是英文压制名（Dune.Part.Two.2024.2160p...），抠出片名再搜一次就有了。
+     * 只试一次，抠不出来就照常报空，不会来回打转。
+     */
+    private boolean retryEnglish() {
+        if (triedEnglish || player == null) return false;
+        if (active != SubtitleSetting.SOURCE_OPENSUB && active != SubtitleSetting.SOURCE_SUBDL) return false;
+        String english = SubtitleName.fromUrl(player.getUrl());
+        if (TextUtils.isEmpty(english) || english.equalsIgnoreCase(keyword)) return false;
+        triedEnglish = true;
+        setKeyword(keyword = english); // 让用户看见换成了什么，不满意还能接着改
+        nextPos = 0;
+        showProgress();
+        Notify.show(R.string.subtitle_search_retry_en);
+        requestSearch();
+        return true;
+    }
+
+    /** 自动模式下主源不行就换下一家从头再搜一遍；返回 true 表示已经换了 */
     private boolean useBackup() {
         if (setting != SubtitleSetting.SOURCE_AUTO) return false;
-        if (active != SubtitleSetting.SOURCE_ASSRT) return false;
-        active = SubtitleSetting.SOURCE_OPENSUB;
+        int next = nextSource(active);
+        if (next < 0) return false;
+        active = next;
         nextPos = 0;
         requestSearch();
         return true;
     }
 
+    /** 自动模式的尝试顺序：伪射手 → SubDL（没填 key 就跳过）→ OpenSubtitles */
+    private int nextSource(int current) {
+        if (current == SubtitleSetting.SOURCE_ASSRT) return SubdlApi.hasKey() ? SubtitleSetting.SOURCE_SUBDL : SubtitleSetting.SOURCE_OPENSUB;
+        if (current == SubtitleSetting.SOURCE_SUBDL) return SubtitleSetting.SOURCE_OPENSUB;
+        return -1;
+    }
+
     private void onSearch(SubtitleSearchPage page) {
-        boolean hasMore = page.getResultCount() >= (active == SubtitleSetting.SOURCE_ASSRT ? SubtitleApi.SEARCH_COUNT : OpenSubApi.SEARCH_COUNT);
+        // SubDL 一次就给全（最多 30 条、没有翻页），它的 SEARCH_COUNT 是 MAX_VALUE，这里自然判成"没有下一页"，
+        // 否则会一直以为还有更多、反复用同一批结果去 loadMore。
+        boolean hasMore = page.getResultCount() >= countOf(active);
         nextPos += page.getResultCount();
         scroller.endLoading(hasMore);
         adapter.addAll(page.getItems());
         if (adapter.getItemCount() == 0) {
             if (hasMore) loadMore();
-            else if (!useBackup()) onEmpty();
+            else if (!useBackup() && !retryEnglish()) onEmpty();
         } else {
             showSearchResults();
         }
@@ -294,6 +359,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     private void cancelAll() {
         SubtitleApi.cancel();
         OpenSubApi.cancel();
+        SubdlApi.cancel();
     }
 
     private void saveState() {

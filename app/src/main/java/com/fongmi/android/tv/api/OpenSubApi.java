@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.api;
 
 import java.util.stream.Collectors;
+import android.net.Uri;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
@@ -20,10 +21,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import okhttp3.Call;
+import okhttp3.OkHttpClient;
 import okhttp3.Response;
 
 /**
@@ -42,18 +45,69 @@ public class OpenSubApi {
     public static final int SEARCH_COUNT = 20;
 
     private static final String TAG = OpenSubApi.class.getSimpleName();
-    private static final String SEARCH_URL = "https://rest.opensubtitles.org/search/query-";
+    private static final String SEARCH_HOST = "https://rest.opensubtitles.org";
+    private static final String SEARCH_URL = SEARCH_HOST + "/search/query-";
+    private static final int MAX_REDIRECT = 3;
     private static final AtomicInteger REQUEST_ID = new AtomicInteger();
+
+    private static volatile OkHttpClient client;
+
+    /**
+     * 本站请求固定走这个「不自动跳」的 client（跳转我们自己处理，见 follow）。
+     * 必须复用同一个实例：OkHttp.cancel(tag) 只认默认 client 的 dispatcher，
+     * 每次 newBuilder 出来的新 client 是另一套调度，取消就够不着了（关弹窗、换来源时旧请求还在跑）。
+     */
+    private static OkHttpClient client() {
+        if (client == null) client = OkHttp.noRedirect();
+        return client;
+    }
 
     public static void cancel() {
         REQUEST_ID.incrementAndGet();
-        OkHttp.cancel(TAG);
+        OkHttp.cancel(client(), TAG);
         SubtitleApi.cancel(); // 下载槽位是两家共用的，一起停掉
     }
 
     public static void search(String keyword, int pos, Consumer<SubtitleSearchPage> success, Consumer<Exception> error) {
         int requestId = begin();
-        newSearchCall(keyword).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response), pos), success, error));
+        newSearchCall(keyword).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(follow(response)), pos), success, error));
+    }
+
+    /**
+     * 自己跟着跳，别让 OkHttp 直接跳。
+     *
+     * 实测（2026-10-14）：关键字里只要带大写字母，它家 Cloudflare 就回一个 302，
+     * Location 是 https://_/search/query-inception+2010 —— 主机名被写成了一个下划线，
+     * 谁去请求这个地址都是 UnknownHostException，等于**所有英文片名（首字母大写）全搜不出来**，
+     * 外语片在线找字幕直接废掉。两层处理：
+     *   1) 拼 URL 前先把关键字转小写，CF 就不会触发那条重定向规则（已实测 200）；
+     *   2) 真遇到 3xx 也不怕：把 Location 里的主机名换回本站域名再请求一次，最多跟 3 跳。
+     */
+    private static Response follow(Response response) throws IOException {
+        Response result = response;
+        for (int i = 0; i < MAX_REDIRECT && isRedirect(result); i++) {
+            String next = fixLocation(result.header("Location"));
+            result.close();
+            if (TextUtils.isEmpty(next)) break;
+            result = OkHttp.newCall(client(), next, TAG).execute();
+        }
+        return result;
+    }
+
+    private static boolean isRedirect(Response response) {
+        int code = response.code();
+        return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+    }
+
+    /** Location 可能是 https://_/search/xxx 这种坏主机名，也可能是 /search/xxx 相对路径，统一拼回本站域名 */
+    private static String fixLocation(String location) {
+        if (TextUtils.isEmpty(location)) return "";
+        Uri uri = Uri.parse(location);
+        String path = uri.getPath();
+        if (TextUtils.isEmpty(path)) return "";
+        StringBuilder url = new StringBuilder(SEARCH_HOST).append(path);
+        if (!TextUtils.isEmpty(uri.getQuery())) url.append('?').append(uri.getQuery());
+        return url.toString();
     }
 
     /** 压缩包下载两家共用同一套：Assrt 那份实现是通用的（只认 url），这里直接借过来 */
@@ -63,14 +117,19 @@ public class OpenSubApi {
 
     private static int begin() {
         REQUEST_ID.incrementAndGet();
-        OkHttp.cancel(TAG);
+        OkHttp.cancel(client(), TAG);
         SubtitleApi.cancelArchive(); // 上次那个还没下完就别下了
         return REQUEST_ID.get();
     }
 
     private static Call newSearchCall(String keyword) {
-        String query = URLEncoder.encode(TextUtils.isEmpty(keyword) ? "" : keyword, StandardCharsets.UTF_8);
-        return OkHttp.newCall(SEARCH_URL + query, TAG);
+        return OkHttp.newCall(client(), SEARCH_URL + encode(keyword), TAG);
+    }
+
+    /** 关键字转小写：大小写对它家搜索没影响，但能绕开 CF 那条要命的重定向（见 follow 的说明） */
+    private static String encode(String keyword) {
+        String text = TextUtils.isEmpty(keyword) ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+        return URLEncoder.encode(text, StandardCharsets.UTF_8);
     }
 
     private static SubtitleSearchPage parseSearch(String text, int pos) throws IOException {

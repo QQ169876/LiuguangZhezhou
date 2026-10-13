@@ -17,6 +17,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/subtitle_search_token_hint"
+            android:imeOptions="actionNext"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/inputKey"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/key"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/subtitle_search_subdl_key_hint"
             android:imeOptions="actionDone"
             android:importantForAutofill="no"
             android:inputType="text"

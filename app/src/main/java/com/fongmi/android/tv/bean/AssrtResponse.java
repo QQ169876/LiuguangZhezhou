@@ -10,8 +10,13 @@ import com.google.gson.annotations.SerializedName;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class AssrtResponse {
+
+    /** &#123; / &#x27; 这类数字实体 */
+    private static final Pattern NUMERIC = Pattern.compile("&#(x?)([0-9a-fA-F]+);?");
 
     @SerializedName("status")
     private int status;
@@ -126,6 +131,28 @@ public final class AssrtResponse {
     }
 
     private static String clean(String text) {
-        return TextUtils.isEmpty(text) ? "" : text.trim();
+        return TextUtils.isEmpty(text) ? "" : unescape(text.trim());
+    }
+
+    /**
+     * 伪射手返回的片名带着 HTML 实体（实测 "Jodorowsky&#x27;s Dune"），
+     * 不处理列表里就会露出一串 &#x27;，看着像乱码。
+     * 没用 Html.fromHtml()——那会把名字里的尖括号当标签吞掉，这里只做实体还原。
+     */
+    private static String unescape(String text) {
+        if (text.indexOf('&') < 0) return text;
+        String result = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&#39;", "'").replace("&#x27;", "'");
+        Matcher matcher = NUMERIC.matcher(result);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            try {
+                int code = Integer.parseInt(matcher.group(2), matcher.group(1).isEmpty() ? 10 : 16);
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(String.valueOf((char) code)));
+            } catch (Exception e) {
+                matcher.appendReplacement(buffer, "");
+            }
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
     }
 }
