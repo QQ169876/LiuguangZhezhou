@@ -98,6 +98,18 @@ public class StarStrip {
         }
     }
 
+    /**
+     * TV 上把这块接进焦点链：每张牌的「上」「下」交给谁。
+     * 不设的话，遥控器从上面一行（选集）按下来会直接掠过这块，落到下一块去，演员牌根本选不中。
+     */
+    public void setNextFocus(int upId, int downId) {
+        for (int i = 0; i < binding.starList.getChildCount(); i++) {
+            View chip = binding.starList.getChildAt(i);
+            chip.setNextFocusUpId(upId);
+            chip.setNextFocusDownId(downId);
+        }
+    }
+
     private View chip(String name) {
         Context context = binding.getRoot().getContext();
         LinearLayout chip = new LinearLayout(context);

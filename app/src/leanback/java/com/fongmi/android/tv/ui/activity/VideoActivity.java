@@ -313,6 +313,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
                 String actor = TextUtils.join("、", names);
                 mDetail.setActor(actor);
                 setText(mBinding.actor, R.string.detail_actor, actor);
+                setR2Callback(); // 演员牌刚补出来，焦点顺序要重算，否则它还是接不进上下链
             }
         });
     }
@@ -869,6 +870,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setText(mBinding.remark, 0, item.getRemarks());
         mBinding.actor.setOnClickListener(view -> showStarDialog(item.getActor()));
         if (mStarStrip != null) mStarStrip.set(item.getActor(), item.getName()); // 站点没给演员的，让大模型试着补
+        setR2Callback(); // 演员区有了牌之后重排一次焦点上下关系
     }
 
     private void setText(TextView view, int resId, String text) {
@@ -927,23 +929,30 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mArrayAdapter.addAll(items);
     }
 
+    /**
+     * 从上到下的焦点顺序（跟布局里摆的顺序一致）。
+     * ⚠️ 这块别漏项：漏了哪一块，遥控器从上往下按就会直接掠过它，永远选不中
+     * —— 演员区（starStrip）就是这么被跳过去的（马先生 2026-10-13 实测：选集往下一按就跳到「倒序」那排）。
+     */
+    private static final List<Integer> ORDERS = Arrays.asList(R.id.flag, R.id.quality, R.id.episode, R.id.starStrip, R.id.array, R.id.part, R.id.quick);
+
     private int findFocusDown(int index) {
-        List<Integer> orders = Arrays.asList(R.id.flag, R.id.quality, R.id.episode, R.id.array, R.id.part, R.id.quick);
-        for (int i = 0; i < orders.size(); i++) if (i > index) if (isVisible(findViewById(orders.get(i)))) return orders.get(i);
+        for (int i = 0; i < ORDERS.size(); i++) if (i > index) if (isVisible(findViewById(ORDERS.get(i)))) return ORDERS.get(i);
         return 0;
     }
 
     private int findFocusUp(int index) {
-        List<Integer> orders = Arrays.asList(R.id.flag, R.id.quality, R.id.episode, R.id.array, R.id.part, R.id.quick);
-        for (int i = orders.size() - 1; i >= 0; i--) if (i < index) if (isVisible(findViewById(orders.get(i)))) return orders.get(i);
+        for (int i = ORDERS.size() - 1; i >= 0; i--) if (i < index) if (isVisible(findViewById(ORDERS.get(i)))) return ORDERS.get(i);
         return 0;
     }
 
     private void updateFocus() {
-        mPartAdapter.setNextFocusUp(findFocusUp(4));
+        mPartAdapter.setNextFocusUp(findFocusUp(5));
         mEpisodeAdapter.setNextFocusUp(findFocusUp(2));
         mFlagAdapter.setNextFocusDown(findFocusDown(0));
         mEpisodeAdapter.setNextFocusDown(findFocusDown(2));
+        // 演员区是后来动态铺上去的，它的上下邻居也得跟着定，不然选集按下来还是跳过它
+        if (mStarStrip != null) mStarStrip.setNextFocus(findFocusUp(3), findFocusDown(3));
         notifyItemChanged(mBinding.episode, mEpisodeAdapter);
         notifyItemChanged(mBinding.part, mPartAdapter);
         notifyItemChanged(mBinding.flag, mFlagAdapter);

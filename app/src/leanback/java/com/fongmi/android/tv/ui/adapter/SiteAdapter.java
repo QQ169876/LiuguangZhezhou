@@ -11,7 +11,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.databinding.AdapterSiteBinding;
+import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.Task;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -96,10 +98,17 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         return true;
     }
 
+    /**
+     * 全选 / 反选：以前是每个站点各写一次库，全在主线程上。
+     * 几百个源就是几百次数据库写入，点一下能卡住一秒多。
+     * 现在先把界面刷出来，写库搬到后台、一个事务批量写完（BaseDao.insertOrUpdate(List)）。
+     */
     private void setEnable(boolean enable) {
-        if (type == 1) for (Site site : mItems) site.setSearchable(enable).save();
-        if (type == 2) for (Site site : mItems) site.setChangeable(enable).save();
+        if (type == 1) for (Site site : mItems) site.setSearchable(enable);
+        if (type == 2) for (Site site : mItems) site.setChangeable(enable);
         notifyItemRangeChanged(0, getItemCount());
+        List<Site> items = new ArrayList<>(mItems);
+        Task.execute(() -> AppDatabase.get().getSiteDao().insertOrUpdate(items));
     }
 
     public class ViewHolder extends RecyclerView.ViewHolder {

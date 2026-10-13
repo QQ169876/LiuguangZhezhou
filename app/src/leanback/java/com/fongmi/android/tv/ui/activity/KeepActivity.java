@@ -38,6 +38,7 @@ public class KeepActivity extends BaseActivity implements KeepAdapter.OnClickLis
     private KeepAdapter mKeepAdapter;
     private StarAdapter mStarAdapter;
     private boolean star;
+    private boolean mTabReady;
 
     public static void start(Activity activity) {
         activity.startActivity(new Intent(activity, KeepActivity.class));
@@ -66,10 +67,21 @@ public class KeepActivity extends BaseActivity implements KeepAdapter.OnClickLis
     private void setTabs() {
         mBinding.tabVod.setOnClickListener(view -> setTab(false));
         mBinding.tabStar.setOnClickListener(view -> setTab(true));
+        // 遥控器挪上去就算选中：马先生 2026-10-13——进收藏还得再按一下确认键才有数据，太啰嗦，聚焦即刷新
+        mBinding.tabVod.setOnFocusChangeListener((view, has) -> {
+            if (has) setTab(false);
+        });
+        mBinding.tabStar.setOnFocusChangeListener((view, has) -> {
+            if (has) setTab(true);
+        });
         setTab(false);
     }
 
     private void setTab(boolean star) {
+        if (mTabReady && this.star == star) return; // 已经在这一页了（焦点来回蹭、按上键回到本页）就别反复刷
+        mTabReady = true;
+        // 从列表按「上」回到分类条时，落回当前这一页的标签，别跳到第一个标签把分类换掉
+        mBinding.recycler.setNextFocusUpId(star ? R.id.tabStar : R.id.tabVod);
         this.star = star;
         mBinding.tabVod.setSelected(!star);
         mBinding.tabStar.setSelected(star);

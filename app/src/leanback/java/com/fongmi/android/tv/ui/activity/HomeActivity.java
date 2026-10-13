@@ -480,6 +480,22 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         mClock.stop();
     }
 
+    /**
+     * 站源菜单这类弹窗盖上来时，首页窗口会失焦（弹窗是另一个窗口）。
+     * 屏幕上看着只剩中间一小块菜单，其实背后整个首页（几十上百张海报 + 壁纸）
+     * 还在跟着一起合成、一起解码图片，弹窗里按一下就一顿。
+     * 趁失焦这会儿把海报加载停一停，把算力让给弹窗；焦点回来再接着加载。
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        try {
+            if (hasFocus) com.bumptech.glide.Glide.with(this).resumeRequests();
+            else com.bumptech.glide.Glide.with(this).pauseRequests();
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     protected void onBackInvoked() {
         if (mBinding.progressLayout.isProgress()) {

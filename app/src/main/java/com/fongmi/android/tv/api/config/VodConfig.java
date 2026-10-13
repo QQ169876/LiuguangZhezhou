@@ -366,7 +366,9 @@ public class VodConfig extends BaseConfig {
         home = site;
         home.setSelected(true);
         config.setHome(home.getKey());
-        if (save) config.save();
+        // 配置里带着整份站点 JSON，写库不便宜（尤其源多的时候），别占着主线程——
+        // 换源时主线程正忙着重排首页，再等这一次写库，遥控器按下去就是一顿一顿的
+        if (save) Task.execute(config::save);
         getSites().forEach(item -> item.setSelected(home));
     }
 
