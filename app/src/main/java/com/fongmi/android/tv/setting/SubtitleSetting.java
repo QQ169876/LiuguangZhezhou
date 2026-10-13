@@ -58,6 +58,19 @@ public class SubtitleSetting {
     private static final int DEFAULT_SECONDARY_TRACK = SECONDARY_SUBTITLE_OFF;
     private static final float DEFAULT_SECONDARY_POSITION = 10.0f;
 
+    /** 在线搜字幕的来源：自动（主源不行就换备用）/ 伪射手 / OpenSubtitles */
+    public static final int SOURCE_AUTO = 0;
+    public static final int SOURCE_ASSRT = 1;
+    public static final int SOURCE_OPENSUB = 2;
+
+    public static int getSearchSource() {
+        return Math.clamp(Prefers.getInt("subtitle_search_source", SOURCE_AUTO), SOURCE_AUTO, SOURCE_OPENSUB);
+    }
+
+    public static void putSearchSource(int source) {
+        Prefers.put("subtitle_search_source", Math.clamp(source, SOURCE_AUTO, SOURCE_OPENSUB));
+    }
+
     public static String getSearchToken() {
         return Prefers.getString("subtitle_search_token", "");
     }

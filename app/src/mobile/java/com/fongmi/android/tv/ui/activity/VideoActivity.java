@@ -150,6 +150,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean fullscreen;
     private boolean useParse;
     private boolean rotate;
+    private boolean userRotated; // 刚手动按了强制转屏：这一下屏幕变化别让「自动进/退全屏」插手
 
     public static void push(FragmentActivity activity, String text) {
         Uri uri = UrlUtil.uri(text);
@@ -1082,10 +1083,23 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         showControl();
     }
 
+    /**
+     * 强制转屏：**现在横着就强制竖屏，现在竖着就强制横屏**。
+     *
+     * ⚠️ 以前这个按钮只在全屏时才露出来（小窗里根本点不到），马先生 2026-10-13 要的就是随时能按，
+     * 所以改成只要没锁就一直显示（见 showControl）。
+     * 另外这里不再靠 isRotate() 取反来猜方向——那个标记和屏幕实际朝向可能已经对不上，
+     * 直接按屏幕当前朝向算目标，转到哪儿就把标记设成哪儿，跟 getLockOrientation 的口径一致。
+     */
     private void onRotate() {
         setR1Callback();
-        setRotate(!isRotate());
-        setRequestedOrientation(PlaybackOrientation.getRotateOrientation(this));
+        boolean portrait = ResUtil.isLand(this);
+        setRotate(portrait);
+        // 手动转屏后系统也会发一次屏幕变化，下面那个「跟着传感器自动进/退全屏」得让它这一回合别插手，
+        // 否则刚强制成横屏，它立刻又按片源比例给掰回竖屏（竖屏片源尤其明显）。
+        userRotated = true;
+        App.post(() -> userRotated = false, 1500);
+        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
     }
 
     /** 竖屏/全屏都能点：未全屏点一下进全屏，全屏里点一下退回小窗 */
@@ -1315,7 +1329,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         if (service() == null || isInPictureInPictureMode()) return;
         mBinding.control.danmaku.setVisibility(isLock() || !player().haveDanmaku() ? View.GONE : View.VISIBLE);
         mBinding.control.setting.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
-        mBinding.control.right.rotate.setVisibility(isFullscreen() && !isLock() ? View.VISIBLE : View.GONE);
+        mBinding.control.right.rotate.setVisibility(isLock() ? View.GONE : View.VISIBLE); // 小窗里也要能强制转屏，只有锁定了才藏起来
         mBinding.control.right.fullscreen.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.right.fullscreen.setImageResource(isFullscreen() ? R.drawable.ic_control_fullscreen_exit : R.drawable.ic_control_fullscreen);
         mBinding.control.keep.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
@@ -1794,6 +1808,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        if (userRotated) return; // 刚按了强制转屏，这一回合别自动进/退全屏，听用户的
         if (isAutoRotate() && isPort() && newConfig.orientation == Configuration.ORIENTATION_PORTRAIT && !isRotate() && !isLock()) exitFullscreen();
         if (isAutoRotate() && isPort() && newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) enterFullscreen();
         if (isFullscreen()) Util.hideSystemUI(this);

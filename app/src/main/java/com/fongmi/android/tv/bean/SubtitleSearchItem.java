@@ -15,21 +15,31 @@ public final class SubtitleSearchItem {
     private final String name;
     private final String url;
     private final String lang;
+    private final boolean archive;
 
-    private SubtitleSearchItem(int id, String name, String url, String lang) {
+    private SubtitleSearchItem(int id, String name, String url, String lang, boolean archive) {
         this.id = id;
         this.name = name;
         this.url = url;
         this.lang = lang;
+        this.archive = archive;
     }
 
     public static SubtitleSearchItem from(int id, String name, String url, String lang) {
-        return new SubtitleSearchItem(id, name, url, lang);
+        return new SubtitleSearchItem(id, name, url, lang, false);
+    }
+
+    /**
+     * 下载地址是个压缩包，但链接上看不出扩展名（OpenSubtitles 的 zip 下载链接就是一串无后缀地址），
+     * 得单独打个标记，不然 {@link #isZip()} 认不出来，会被当成单个字幕文件直接丢给播放器。
+     */
+    public static SubtitleSearchItem archive(int id, String name, String url, String lang) {
+        return new SubtitleSearchItem(id, name, url, lang, true);
     }
 
     public static List<SubtitleSearchItem> fromFiles(List<File> files, String lang) {
         List<SubtitleSearchItem> items = new ArrayList<>();
-        for (File file : files) items.add(new SubtitleSearchItem(0, file.getName(), file.getAbsolutePath(), lang));
+        for (File file : files) items.add(new SubtitleSearchItem(0, file.getName(), file.getAbsolutePath(), lang, false));
         return items;
     }
 
@@ -59,7 +69,7 @@ public final class SubtitleSearchItem {
     }
 
     public boolean isZip() {
-        return SubtitleArchive.isZip(getName(), getUrl());
+        return archive || SubtitleArchive.isZip(getName(), getUrl());
     }
 
     public Sub toSub() {

@@ -49,6 +49,11 @@ public class SubtitleApi {
         cancelDownload();
     }
 
+    /** 只停「字幕包下载」那一摊：下载槽位是几家字幕源共用的，别的源开新搜索时也能叫它停 */
+    public static void cancelArchive() {
+        cancelDownload();
+    }
+
     public static void search(String keyword, int pos, Consumer<SubtitleSearchPage> success, Consumer<Exception> error) {
         int requestId = begin();
         newSearchCall(keyword, pos).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), success, error));
