@@ -183,6 +183,8 @@
     <string name="subtitle_tab_adjust">调整</string>
     <string name="subtitle_tab_advanced">进阶</string>
     <string name="subtitle_offset">字幕偏移</string>
+    <string name="subtitle_offset_tip">正值字幕延后出、负值字幕提前出；长按按钮可以连续调。调好的偏移会按片子记住，下次播放自动套用。</string>
+    <string name="subtitle_offset_zero">归零</string>
     <string name="subtitle_size">大小</string>
     <string name="subtitle_position">位置</string>
     <string name="subtitle_style_source">样式来源</string>

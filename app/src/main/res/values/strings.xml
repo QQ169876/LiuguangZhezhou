@@ -183,6 +183,8 @@
     <string name="subtitle_tab_adjust">Adjust</string>
     <string name="subtitle_tab_advanced">Advanced</string>
     <string name="subtitle_offset">Subtitle offset</string>
+    <string name="subtitle_offset_tip">Positive delays subtitles, negative makes them earlier. Long press a button to keep adjusting. Saved per title and reused next time.</string>
+    <string name="subtitle_offset_zero">Zero</string>
     <string name="subtitle_size">Size</string>
     <string name="subtitle_position">Position</string>
     <string name="subtitle_style_source">Style source</string>

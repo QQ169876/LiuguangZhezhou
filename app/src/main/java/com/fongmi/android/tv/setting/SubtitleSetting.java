@@ -12,6 +12,14 @@ import androidx.media3.ui.SubtitleView;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.github.catvod.utils.Prefers;
 
+import org.json.JSONArray;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 public class SubtitleSetting {
 
     public static final int STYLE_SOURCE_ORIGINAL = 0;
@@ -281,6 +289,93 @@ public class SubtitleSetting {
         subtitleView.setApplyEmbeddedFontSizes(true);
         if (isScaleApplied()) subtitleView.setTextSizeScale(getScale(context));
         if (isPositionSet()) subtitleView.setBottomPosition(getPosition() / 100.0f);
+    }
+
+    /** 字幕时间轴偏移（毫秒）：正值字幕延后出、负值字幕提前出 */
+    public static final long MIN_OFFSET_MS = -300000L;
+    public static final long MAX_OFFSET_MS = 300000L;
+    private static final String KEY_OFFSET = "subtitle_offset_ms";
+    private static final String KEY_OFFSET_HISTORY = "subtitle_offset_history";
+    private static final int MAX_OFFSET_HISTORY = 150;
+
+    private record OffsetEntry(String key, long ms, long time) {
+    }
+
+    public static long clampOffset(long offsetMs) {
+        return Math.clamp(offsetMs, MIN_OFFSET_MS, MAX_OFFSET_MS);
+    }
+
+    /** 没为某部片子调过就用这个全局值 */
+    public static long getOffsetMs() {
+        return clampOffset(Prefers.getLong(KEY_OFFSET, 0L));
+    }
+
+    public static void putOffsetMs(long offsetMs) {
+        Prefers.put(KEY_OFFSET, clampOffset(offsetMs));
+    }
+
+    /** 按片子取偏移：key 为空（直播/本地文件等）时退回全局值 */
+    public static long getOffsetMs(String key) {
+        if (TextUtils.isEmpty(key)) return getOffsetMs();
+        Long saved = readOffsetHistory().get(key);
+        return saved == null ? getOffsetMs() : clampOffset(saved);
+    }
+
+    public static void putOffsetMs(String key, long offsetMs) {
+        if (TextUtils.isEmpty(key)) {
+            putOffsetMs(offsetMs);
+            return;
+        }
+        Map<String, Long> history = readOffsetHistory();
+        history.put(key, clampOffset(offsetMs));
+        writeOffsetHistory(history);
+    }
+
+    public static void removeOffsetMs(String key) {
+        if (TextUtils.isEmpty(key)) {
+            putOffsetMs(0L);
+            return;
+        }
+        Map<String, Long> history = readOffsetHistory();
+        if (history.remove(key) != null) writeOffsetHistory(history);
+    }
+
+    public static void resetOffset() {
+        Prefers.put(KEY_OFFSET, 0L);
+        Prefers.remove(KEY_OFFSET_HISTORY);
+    }
+
+    private static LinkedHashMap<String, Long> readOffsetHistory() {
+        LinkedHashMap<String, Long> history = new LinkedHashMap<>();
+        try {
+            JSONArray array = new JSONArray(Prefers.getString(KEY_OFFSET_HISTORY, ""));
+            List<OffsetEntry> entries = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) {
+                JSONArray item = array.optJSONArray(i);
+                if (item == null || item.length() < 2) continue;
+                entries.add(new OffsetEntry(item.optString(0), item.optLong(1), item.optLong(2)));
+            }
+            entries.sort(Comparator.comparingLong(OffsetEntry::time));
+            for (OffsetEntry entry : entries) if (!TextUtils.isEmpty(entry.key())) history.put(entry.key(), entry.ms());
+        } catch (Exception ignored) {
+            // 记不住就算了，不能让一条坏数据把播放页拖崩
+        }
+        return history;
+    }
+
+    private static void writeOffsetHistory(Map<String, Long> history) {
+        List<String> keys = new ArrayList<>(history.keySet());
+        int from = Math.max(0, keys.size() - MAX_OFFSET_HISTORY);
+        long now = System.currentTimeMillis();
+        JSONArray array = new JSONArray();
+        for (int i = from; i < keys.size(); i++) {
+            JSONArray item = new JSONArray();
+            item.put(keys.get(i));
+            item.put(history.get(keys.get(i)));
+            item.put(now - (long) (keys.size() - i)); // 保住原本的先后次序，好让最老的那批被挤掉
+            array.put(item);
+        }
+        Prefers.put(KEY_OFFSET_HISTORY, array.toString());
     }
 
     public static void resetAdjust() {

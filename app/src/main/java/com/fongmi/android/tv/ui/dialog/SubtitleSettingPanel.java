@@ -4,9 +4,13 @@ import java.util.Collections;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.ContextThemeWrapper;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.media3.common.C;
@@ -19,6 +23,7 @@ import androidx.media3.ui.DefaultTrackNameProvider;
 import androidx.media3.ui.SubtitleView;
 import androidx.media3.ui.TrackNameProvider;
 
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogSubtitleSettingBinding;
 import com.fongmi.android.tv.databinding.ViewSettingSliderBinding;
@@ -49,10 +54,18 @@ final class SubtitleSettingPanel {
     private static final float STEP_OPACITY = 0.05f;
     private static final float STEP_EDGE = 0.5f;
     private static final float STEP_SECONDARY_POSITION = 1.0f;
+    private static final long OFFSET_STEP_SECOND = 1000L;
+    private static final long OFFSET_STEP_TENTH = 100L;
+    private static final long OFFSET_REPEAT_DELAY = 350L;
+    private static final long OFFSET_REPEAT_INTERVAL = 120L;
+    private static final long OFFSET_SAVE_DELAY = 400L;
 
     private final DialogSubtitleSettingBinding binding;
     private final SubtitleView subtitleView;
     private final PlayerManager player;
+    private final Handler offsetHandler = new Handler(Looper.getMainLooper());
+    private Runnable offsetRepeat;
+    private Runnable offsetSave;
     private boolean refreshAfterSystemSetting;
     private int currentTab;
 
@@ -81,6 +94,8 @@ final class SubtitleSettingPanel {
     }
 
     void release() {
+        stopOffsetRepeat();
+        flushOffsetSave();
     }
 
     private void bindAppearance() {
@@ -112,7 +127,84 @@ final class SubtitleSettingPanel {
     }
 
     private void bindOffset() {
-        setupSlider(binding.offset.timeOffset, R.string.subtitle_offset, MIN_SUBTITLE_OFFSET_MS, MAX_SUBTITLE_OFFSET_MS, STEP_SUBTITLE_OFFSET_MS, getTextOffsetMs(), this::formatOffset, this::setTextOffsetMs);
+        setupSlider(binding.offset.timeOffset, R.string.subtitle_offset, MIN_SUBTITLE_OFFSET_MS, MAX_SUBTITLE_OFFSET_MS, STEP_SUBTITLE_OFFSET_MS, getTextOffsetMs(), this::formatOffset, this::setOffsetFromSlider);
+        bindOffsetStep(binding.offset.minusSecond, -OFFSET_STEP_SECOND);
+        bindOffsetStep(binding.offset.minusTenth, -OFFSET_STEP_TENTH);
+        bindOffsetStep(binding.offset.plusTenth, OFFSET_STEP_TENTH);
+        bindOffsetStep(binding.offset.plusSecond, OFFSET_STEP_SECOND);
+        binding.offset.offsetZero.setOnClickListener(view -> setOffsetMs(0L));
+    }
+
+    private void bindOffsetStep(MaterialButton button, long stepMs) {
+        button.setOnClickListener(view -> adjustOffsetMs(stepMs));
+        button.setOnLongClickListener(view -> {
+            startOffsetRepeat(stepMs);
+            return true;
+        });
+        button.setOnKeyListener((view, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+                if (event.getAction() == KeyEvent.ACTION_UP) stopOffsetRepeat();
+            }
+            return false;
+        });
+        button.setOnTouchListener((view, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) stopOffsetRepeat();
+            return false;
+        });
+    }
+
+    private void startOffsetRepeat(long stepMs) {
+        stopOffsetRepeat();
+        offsetRepeat = new Runnable() {
+            @Override
+            public void run() {
+                if (offsetRepeat != this) return;
+                adjustOffsetMs(stepMs);
+                offsetHandler.postDelayed(this, OFFSET_REPEAT_INTERVAL);
+            }
+        };
+        offsetHandler.postDelayed(offsetRepeat, OFFSET_REPEAT_DELAY);
+    }
+
+    private void stopOffsetRepeat() {
+        if (offsetRepeat != null) offsetHandler.removeCallbacks(offsetRepeat);
+        offsetRepeat = null;
+    }
+
+    private void adjustOffsetMs(long deltaMs) {
+        setOffsetMs(Math.round(getTextOffsetMs()) + deltaMs);
+    }
+
+    private void setOffsetMs(long offsetMs) {
+        long value = SubtitleSetting.clampOffset(offsetMs);
+        setTextOffsetMs(value);
+        SliderUtil.setValue(binding.offset.timeOffset.slider, value);
+        binding.offset.timeOffset.value.setText(formatOffset(value));
+        scheduleOffsetSave(value);
+    }
+
+    private void setOffsetFromSlider(float offsetMs) {
+        long value = SubtitleSetting.clampOffset(Math.round(offsetMs));
+        setTextOffsetMs(value);
+        scheduleOffsetSave(value);
+    }
+
+    /** 连按住调的时候别每一步都落盘，停手 400ms 再记一次 */
+    private void scheduleOffsetSave(long valueMs) {
+        cancelOffsetSave();
+        offsetSave = () -> SubtitleSetting.putOffsetMs(player == null ? null : player.getKey(), valueMs);
+        App.post(offsetSave, OFFSET_SAVE_DELAY);
+    }
+
+    private void cancelOffsetSave() {
+        if (offsetSave != null) App.removeCallbacks(offsetSave);
+        offsetSave = null;
+    }
+
+    private void flushOffsetSave() {
+        Runnable task = offsetSave;
+        cancelOffsetSave();
+        if (task != null && player != null && !player.isReleased()) task.run();
     }
 
     private void bindAdvanced() {
@@ -238,6 +330,8 @@ final class SubtitleSettingPanel {
     }
 
     private void resetOffset() {
+        cancelOffsetSave();
+        SubtitleSetting.removeOffsetMs(player == null ? null : player.getKey());
         setTextOffsetMs(0.0f);
         bindOffset();
     }
@@ -249,7 +343,10 @@ final class SubtitleSettingPanel {
     }
 
     private void resetAll() {
+        stopOffsetRepeat();
+        cancelOffsetSave();
         SubtitleSetting.reset();
+        SubtitleSetting.resetOffset();
         setTextOffsetMs(0.0f);
         bindAppearance();
         bindAdjust();
@@ -667,7 +764,8 @@ final class SubtitleSettingPanel {
     }
 
     private void setTextOffsetMs(float offsetMs) {
-        if (player != null && !player.isReleased()) player.setTextOffsetMs(Math.round(offsetMs));
+        if (player == null || player.isReleased()) return;
+        player.setTextOffsetMs(SubtitleSetting.clampOffset(Math.round(offsetMs)));
     }
 
     private record SecondaryState(boolean supported, int trackId, List<SecondaryTrack> tracks) {

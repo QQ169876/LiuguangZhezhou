@@ -38,6 +38,7 @@ import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.PreloadSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
+import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.DecodeGuard;
 import com.fongmi.android.tv.utils.Notify;
@@ -448,6 +449,12 @@ public class PlayerManager implements ParseCallback {
         if (player.isCommandAvailable(Player.COMMAND_SET_TEXT_OFFSET)) player.setTextOffsetMs(offsetMs);
     }
 
+    /** 起播/换集时把这部片子记下来的字幕时间轴偏移套回去 */
+    public void applySubtitleOffset() {
+        if (player == null || !player.isCommandAvailable(Player.COMMAND_SET_TEXT_OFFSET)) return;
+        player.setTextOffsetMs(SubtitleSetting.getOffsetMs(getKey()));
+    }
+
     public long getAudioOffsetMs() {
         return player.isCommandAvailable(Player.COMMAND_GET_AUDIO_OFFSET) ? player.getAudioOffsetMs() : 0;
     }
@@ -614,6 +621,7 @@ public class PlayerManager implements ParseCallback {
         pendingPreload = null;
         initTrack = false;
         engine.start(spec, startPositionMs);
+        applySubtitleOffset(); // 这部片子以前调过字幕时间轴就先套上，别让人每集重调一遍
         notifyDanmakuSourceChanged();
         PlayWatchdog.start(engine.getType().name(), spec.getUrl()); // 播放留下痕迹，native 崩也能事后认出来
         DebugLog.d("Player", "起播 engine=" + engine.getType().name() + " url=" + spec.getUrl());
@@ -739,6 +747,7 @@ public class PlayerManager implements ParseCallback {
         public void onTracksChanged(@NonNull Tracks tracks) {
             if (tracks.isEmpty() || initTrack) return;
             setTrack(Track.find(getKey()));
+            applySubtitleOffset(); // 外挂字幕是后挂上来的，等轨道出来再套一次才稳
             callback.onTracksChanged();
             initTrack = true;
         }
