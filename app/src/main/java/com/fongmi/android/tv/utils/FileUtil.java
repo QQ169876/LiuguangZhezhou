@@ -1,10 +1,8 @@
 package com.fongmi.android.tv.utils;
 
-import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
-import android.content.pm.PackageInstaller;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -16,6 +14,7 @@ import android.text.TextUtils;
 import androidx.core.content.FileProvider;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.BuildConfig;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.impl.Callback;
 import com.github.catvod.utils.Path;
@@ -143,9 +142,17 @@ public class FileUtil {
                 //   androidx.core.content.FileProvider ... that is not exported from UID ...
                 // 早期版本（≤5.6.81）自动更新走的正是 ACTION_VIEW，在小米上一直是好的，所以恢复它打头；
                 // 个别精简系统没有 VIEW 的处理者，再退到更明确的 INSTALL_PACKAGE。
-                if (launch(apkIntent(file, Intent.ACTION_VIEW))) return null;
-                if (launch(apkIntent(file, Intent.ACTION_INSTALL_PACKAGE))) return null;
+                if (launch(apkIntent(file, Intent.ACTION_VIEW))) {
+                    DebugLog.d("Install", "ACTION_VIEW 已拉起安装器：" + name);
+                    return null;
+                }
+                if (launch(apkIntent(file, Intent.ACTION_INSTALL_PACKAGE))) {
+                    DebugLog.d("Install", "ACTION_INSTALL_PACKAGE 已拉起安装器：" + name);
+                    return null;
+                }
             }
+            // 两条路都没拉起来：记一笔（包括有没有「允许安装未知应用」），好判断是系统吞了还是没授权
+            DebugLog.d("Install", "安装器没拉起来：" + name + " 未知来源授权=" + installPermissionGranted());
             return saved != null ? saved : keep(file, name);
         } catch (Throwable e) {
             return keep(file, name);
@@ -159,16 +166,17 @@ public class FileUtil {
     }
 
     /**
-     * 安装包：**先让系统「包安装器会话」把包收走**，不行再退回老办法去拉安装器。
+     * 安装包：一律走「把 APK 交给系统去打开」这条路（ACTION_VIEW → ACTION_INSTALL_PACKAGE）。
      *
-     * 为什么要多这一条路：小米（HyperOS/MIUI）上把 FileProvider 的 content:// 递给安装器，
-     * 安装器在「安装包扫描」那一步读文件时授权已经对不上，直接报——
-     *   解析软件包出现问题。(11) Permission Denial: opening provider ... that is not exported from UID ...
-     * 而会话这条路是**系统从我们进程里把包读走**（我们只管往里写），
-     * 安装器根本不碰我们的 FileProvider，也就没有 URI 授权这一关。
-     * 会话走不通（个别 ROM/精简系统）就退回原来的 launch，行为跟以前一样，不会更糟。
+     * 走过的弯路记在这儿，别再回头：5.6.96（656）为了绕开小米的「安装包扫描」授权问题，
+     * 改成让系统**包安装器会话**把包收走。结果在小米 Android 16（api36，24129PN74C）上，
+     * 日志只有一句「已交给系统包安装器」就再没下文 —— 会话 commit 返回成功、界面却压根没弹，
+     * 用户看到的就是「下载到 100%，然后什么都没有」，我们这边还以为一切正常。
+     * 会话这条路**没法知道系统到底弹没弹窗**，赌不起；而系统打开 APK 这条，
+     * 拉不拉得起来 `launch()` 会明确给回 false，我们才知道该退到下一步。
+     * 所以按马先生的意思统一回到系统打开 APK，不分安卓版本。
      *
-     * ⚠️ 写 80MB 不能放主线程，所以整个是异步的，结果回主线程给你。
+     * ⚠️ 保持异步是因为调用方（更新流程）就按异步写的，结果回主线程给你。
      */
     public static void installApkAsync(File file, String saveAs, Installer installer) {
         final String name = TextUtils.isEmpty(saveAs) ? (file == null ? "" : file.getName()) : saveAs;
@@ -176,55 +184,32 @@ public class FileUtil {
             App.post(() -> installer.onDone(""));
             return;
         }
-        new Thread(() -> {
-            boolean ok = sessionInstall(file);
-            App.post(() -> installer.onDone(ok ? null : installApk(file, name)));
-        }, "install-apk").start();
+        App.post(() -> installer.onDone(installApk(file, name)));
     }
 
-    /** 系统包安装器会话：把包装进会话里 commit 出去，剩下的交给系统（它会弹自己的安装确认界面） */
-    private static boolean sessionInstall(File file) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false;
-        PackageInstaller.Session session = null;
-        try {
-            PackageInstaller installer = App.get().getPackageManager().getPackageInstaller();
-            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-            params.setSize(file.length());
-            int id = installer.createSession(params);
-            session = installer.openSession(id);
-            try (OutputStream os = session.openWrite("base.apk", 0, file.length()); InputStream is = new FileInputStream(file)) {
-                byte[] buffer = new byte[65536];
-                int len;
-                while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
-                session.fsync(os);
-            }
-            Intent result = new Intent(App.get(), com.fongmi.android.tv.receiver.ActionReceiver.class);
-            result.setAction(App.get().getPackageName() + ".install.result");
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE; // 系统要往里面回塞结果
-            PendingIntent pending = PendingIntent.getBroadcast(App.get(), id, result, flags);
-            session.commit(pending.getIntentSender());
-            DebugLog.d("Install", "已交给系统包安装器：" + file.getName());
-            return true;
-        } catch (Throwable e) {
-            DebugLog.d("Install", "会话安装走不通，退回拉安装器：" + e);
-            try {
-                if (session != null) session.abandon();
-            } catch (Throwable ignored) {
-            }
-            return false;
-        } finally {
-            try {
-                if (session != null) session.close();
-            } catch (Throwable ignored) {
-            }
-        }
-    }
-
-    /** 拉不起来的时候，至少在「下载」目录留一份让人手动装 */
+    /**
+     * 拉不起来的时候，至少在「下载」目录留一份让人手动装。
+     *
+     * **TV 版不留**：马先生说的对，电视上没人会去文件管理里翻「下载」目录找包，
+     * 留了也只是白占几十 MB 空间、还多一句找不着的提示，所以只有手机版才留。
+     */
     private static String keep(File file, String name) {
+        if (isTv()) return "";
         String path = saveToDownload(file, name);
         return path == null ? "" : path;
+    }
+
+    /**
+     * 是不是 TV 版（leanback 变体，含 legacy 兼容版）。
+     * 手机和 TV 在「装不上时怎么办」上不一样：手机上能去下载目录手动点，
+     * 电视上只能靠系统安装界面，所以兜底策略按这个分。
+     */
+    public static boolean isTv() {
+        try {
+            return "leanback".equals(BuildConfig.FLAVOR_mode);
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     /**

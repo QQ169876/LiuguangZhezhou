@@ -872,7 +872,7 @@ public class Updater implements Download.Callback, UpdateListener {
             return;
         }
         FileUtil.installApkAsync(file, apkName(), result -> {
-            if (result == null) return; // 已经交给系统（会话收走了，或安装界面起来了）
+            if (result == null) return; // 安装界面已经起来了，剩下的交给系统
             if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
                 FileUtil.openInstallPermission();
                 Notify.show(R.string.push_install_perm);
@@ -885,11 +885,12 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 不管系统安装器露没露面，都在「下载」目录里留一份安装包。
-     * 有些设备（模拟器、改过的盒子）点了更新死活拉不起安装界面，留了这份，
-     * 至少还能去文件管理里点一下手动装，不至于卡在旧版本。
+     * 安装界面没起来的话，在「下载」目录里留一份安装包：有些设备（模拟器、改过的盒子）
+     * 点了更新死活拉不起界面，留了这份至少还能去文件管理里手动点装，不至于卡在旧版本。
+     * **TV 版不留**：电视上没人会去翻「下载」目录找包，留了只是白占几十 MB。
      */
     private void keepCopy(File file) {
+        if (FileUtil.isTv()) return; // TV 上留了也没人找得到（见 FileUtil.keep）
         new Thread(() -> {
             String path = FileUtil.saveToDownload(file, apkName());
             App.post(() -> {
