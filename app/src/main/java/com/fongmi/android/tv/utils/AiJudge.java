@@ -54,6 +54,8 @@ public class AiJudge {
      */
     private static final String SYSTEM_ACTORS = "你是影视资料助手。根据剧名回忆这部剧的主要演员，"
             + "给出 2 到 6 个主演的人名（只要人名，中文）。"
+            + "外国演员给中文译名，人名中间的间隔号要保留（如「小罗伯特·唐尼」），"
+            + "一个人的姓和名必须放在同一个字符串里，绝不能拆成两个人。"
             + "如果给了「用户关注的演员」名单，先判断其中哪些人参演了这部剧，把他们排在前面；没参演的不要写进去。"
             + "只输出 JSON，不要任何解释：{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
 
@@ -367,7 +369,10 @@ public class AiJudge {
             List<String> names = new ArrayList<>();
             for (int i = 0; i < array.length() && names.size() < 6; i++) {
                 String name = array.optString(i, "").trim();
-                if (name.length() < 2 || name.length() > 12) continue;
+                name = name.replaceAll("^[\\d]+[.、)．]\\s*", "").trim(); // 模型偶尔带个「1. 」序号
+                // 上限放到 24：外国演员的中文译名带间隔号能到十来字，写原名的更长
+                // （「Samuel L. Jackson」17 个字符），按 12 卡会把这些人整个丢掉。
+                if (name.length() < 2 || name.length() > 24) continue;
                 if (AiGuard.blocked(name)) continue;
                 if (!names.contains(name)) names.add(name);
             }

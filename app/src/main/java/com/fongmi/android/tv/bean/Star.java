@@ -158,9 +158,12 @@ public class Star implements Diffable<Star> {
     /**
      * 站点给的演员串（"张三,李四，王五"）拆成一个个名字。
      * 分隔符各家不一，全认（2026-10-12 马先生点名：还有 and、星号、@ 这些，一并拆开）：
-     * 逗号顿号斜杠竖线分号、&、*、@、·、•、+，以及英文「and」（"张三 and 李四"）。
+     * 逗号顿号斜杠竖线分号、&、*、@、+，以及英文「and」（"张三 and 李四"）。
      * 去重、去空、去占位词（"未知/暂无"这类）、限制个数防刷屏。
      * ⚠️ 不按空格拆：「Tom Hanks」会被拆成两个人，比漏拆更糟；只有 and / & 这种明确的连接词才拆。
+     * ⚠️ 不按「·」无脑拆：外国演员的中文译名里那个点是**名字的一部分**
+     *    （小罗伯特·唐尼、莱昂纳多·迪卡普里奥），劈开就成两个人，
+     *    关注和搜作品全是错的。它到底是不是分隔符交给 {@link #splitDot} 判断。
      * ⚠️ 有的站点把演员包在壳里：[a=cr:{"id":"吴越","name":"吴越"}]，里面那个逗号是 JSON 的，
      *    不先把它还原成名字，就会拆出 `"name":"吴越"}` 这种碎片挂到牌子上。
      */
@@ -170,13 +173,50 @@ public class Star implements Diffable<Star> {
         String text = unwrap(actor);
         text = text.replaceAll("(?i)^\\s*(主演|演员|cast)\\s*[:：]?\\s*", ""); // 「主演：张三」这种前缀
         text = text.replaceAll("(?i)\\s+and\\s+", "，");                       // 张三 and 李四
-        for (String part : text.split("[,，、/／|｜;；&*＊@·•+]+")) {
-            String name = fix(part);
-            if (name.isEmpty() || names.contains(name) || dirty(name) || placeholder(name)) continue;
-            names.add(name);
+        for (String part : text.split("[,，、/／|｜;；&*＊@+]+")) {
+            for (String piece : splitDot(part)) {
+                String name = fix(piece);
+                if (name.isEmpty() || names.contains(name) || dirty(name) || placeholder(name)) continue;
+                names.add(name);
+                if (names.size() >= 30) break;
+            }
             if (names.size() >= 30) break;
         }
         return names;
+    }
+
+    /**
+     * 「·」和「•」到底是名字的一部分还是演员之间的分隔符。
+     *
+     * 外国演员的中文译名几乎都带一个间隔号（小罗伯特·唐尼、萨缪尔·杰克逊、让·雷诺），
+     * 而拿它当分隔符的站点，一串里必然连着用好几个（周润发·刘德华·梁朝伟——两个点三个人）。
+     * 所以：**只出现一个点 = 一个人的名字，原样留着；两个及以上 = 那是列表，才拆。**
+     * 偶尔会把「张三·李四」当成一个人（漏拆），但漏拆只是少一张牌，
+     * 拆错是把一个人劈成两个（关注也错、搜作品也错），后者糟得多。
+     */
+    private static List<String> splitDot(String part) {
+        List<String> out = new ArrayList<>();
+        if (part == null) return out;
+        int dot = count(part, '·');
+        int bullet = count(part, '•');
+        if (dot > 0 && bullet > 0) {
+            // 两种混着用：间隔号是「一个人一个」，分隔符是「比人数少一个」，
+            // 所以出现得少的那个才是分隔符（"A·B•C·D" → 拆成 A·B 和 C·D）
+            for (String seg : part.split(bullet <= dot ? "[•]" : "[·]")) out.add(seg);
+            return out;
+        }
+        if (dot + bullet >= 2) { // 同一种符号连着用好几个，那是列表，才拆
+            for (String seg : part.split("[·•]")) out.add(seg);
+            return out;
+        }
+        out.add(part);
+        return out;
+    }
+
+    private static int count(String text, char c) {
+        int n = 0;
+        for (int i = 0; i < text.length(); i++) if (text.charAt(i) == c) n++;
+        return n;
     }
 
     /** 站点偷懒填的占位词，不是人名 —— 有这些就当这一栏没有演员 */
