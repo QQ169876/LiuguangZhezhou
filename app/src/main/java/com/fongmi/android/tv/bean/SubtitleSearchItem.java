@@ -2,7 +2,10 @@ package com.fongmi.android.tv.bean;
 
 import android.text.TextUtils;
 
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.player.track.TrackUtil;
+import com.fongmi.android.tv.setting.SubtitleSetting;
+import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.SubtitleArchive;
 
 import java.io.File;
@@ -16,6 +19,9 @@ public final class SubtitleSearchItem {
     private final String url;
     private final String lang;
     private final boolean archive;
+
+    /** 这条是哪一家字幕站来的：「自动」模式下几家结果混在一起，标出来才挑得动 */
+    private int source;
 
     private SubtitleSearchItem(int id, String name, String url, String lang, boolean archive) {
         this.id = id;
@@ -59,9 +65,28 @@ public final class SubtitleSearchItem {
         return TextUtils.isEmpty(lang) ? "" : lang;
     }
 
+    /** 打上来源标记（几家合并展示时用），返回自己方便连着写 */
+    public SubtitleSearchItem source(int source) {
+        this.source = source;
+        return this;
+    }
+
     public String getText() {
-        if (TextUtils.isEmpty(getLang())) return getName();
-        return getName() + " - " + getLang();
+        String label = sourceLabel();
+        StringBuilder text = new StringBuilder();
+        if (!label.isEmpty()) text.append('[').append(label).append("] ");
+        text.append(getName());
+        if (!TextUtils.isEmpty(getLang())) text.append(" - ").append(getLang());
+        return text.toString();
+    }
+
+    private String sourceLabel() {
+        return switch (source) {
+            case SubtitleSetting.SOURCE_ASSRT -> ResUtil.getString(R.string.subtitle_tag_assrt);
+            case SubtitleSetting.SOURCE_OPENSUB -> ResUtil.getString(R.string.subtitle_tag_opensub);
+            case SubtitleSetting.SOURCE_SUBDL -> ResUtil.getString(R.string.subtitle_tag_subdl);
+            default -> "";
+        };
     }
 
     public boolean hasUrl() {

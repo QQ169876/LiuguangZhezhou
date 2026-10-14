@@ -27,6 +27,7 @@ import com.fongmi.android.tv.bean.SubtitleSearchPage;
 import com.fongmi.android.tv.databinding.DialogSubtitleSearchBinding;
 import com.fongmi.android.tv.impl.SubtitleListener;
 import com.fongmi.android.tv.player.PlayerManager;
+import com.fongmi.android.tv.playback.vod.BingeTags;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.ui.adapter.SubtitleAdapter;
 import com.fongmi.android.tv.ui.custom.CustomScroller;
@@ -43,6 +44,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -53,15 +55,18 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     private final CustomScroller scroller;
     private final Set<Integer> pending;    // 这一趟还在等回应的来源
     private final Set<Integer> exhausted;  // 已经翻到底（或出错）的来源
+    private final Set<Integer> broken;     // 直接报错（连不上/凭证失效）的源：自动模式下这一趟不再带上它
     private final Map<Integer, Integer> cursors; // 每家各自的翻页游标
 
     private DialogSubtitleSearchBinding binding;
     private PlayerManager player;
     private String keyword;
     private List<Integer> sources;         // 这一趟要查哪几家
+    private List<String> queries;          // 要试的几种写法：中文原名 → 去掉季号的主标题 → 播放地址里的英文原名
+    private final Map<Integer, Integer> queryIndex; // 每家用到了第几种写法
     private int setting = SubtitleSetting.getSearchSource(); // 用户选的来源（自动/伪射手/OpenSubtitles/SubDL）
     private Exception lastError;
-    private boolean triedEnglish;                            // 英文片名兜底只做一次，避免来回打转
+    private boolean queryNotified;                          // 「换了种写法再搜」只提示一次
 
     public SubtitleSearchDialog() {
         this.states = new ArrayDeque<>();
@@ -69,8 +74,11 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         this.scroller = new CustomScroller(ignored -> loadMore());
         this.pending = new HashSet<>();
         this.exhausted = new HashSet<>();
+        this.broken = new HashSet<>();
         this.cursors = new HashMap<>();
+        this.queryIndex = new HashMap<>();
         this.sources = new ArrayList<>();
+        this.queries = new ArrayList<>();
     }
 
     public static SubtitleSearchDialog create() {
@@ -195,11 +203,13 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         scroller.reset();
         keyword = getKeyword();
         lastError = null;
-        triedEnglish = false;
+        queryNotified = false;
         cancelAll();
         pending.clear();
         exhausted.clear();
         cursors.clear();
+        queryIndex.clear();
+        queries = buildQueries(keyword);
         if (setting == SubtitleSetting.SOURCE_ASSRT && !SubtitleApi.hasToken()) {
             showResults(true);
             Notify.show(R.string.subtitle_search_need_token);
@@ -218,22 +228,77 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         for (int source : sources) requestSearch(source);
     }
 
-    /** 这一趟要查哪几家：指定来源就只查它，「自动」= 有凭证的几家全上 + 免 key 的 OpenSubtitles 兜底 */
+    /**
+     * 这一趟要查哪几家：指定来源就只查它，「自动」= 有凭证的几家全上 + 免 key 的 OpenSubtitles 兜底。
+     *
+     * 报错过的（连不上、超时、凭证失效）这次先不排：自动模式每趟都带上它，等于每搜一次白等一轮失败，
+     * 结果还得等别的家。等用户换了来源或重开弹窗再给它机会。
+     */
     private List<Integer> resolveSources() {
         if (setting != SubtitleSetting.SOURCE_AUTO) return List.of(setting);
         List<Integer> list = new ArrayList<>();
-        if (SubtitleApi.hasToken()) list.add(SubtitleSetting.SOURCE_ASSRT); // 伪射手：中文片最全
-        if (SubdlApi.hasKey()) list.add(SubtitleSetting.SOURCE_SUBDL);
-        list.add(SubtitleSetting.SOURCE_OPENSUB); // OpenSubtitles：不用 key，外语片兜底
+        if (SubtitleApi.hasToken() && !broken.contains(SubtitleSetting.SOURCE_ASSRT)) list.add(SubtitleSetting.SOURCE_ASSRT); // 伪射手：中文片最全
+        if (SubdlApi.hasKey() && !broken.contains(SubtitleSetting.SOURCE_SUBDL)) list.add(SubtitleSetting.SOURCE_SUBDL);
+        if (!broken.contains(SubtitleSetting.SOURCE_OPENSUB)) list.add(SubtitleSetting.SOURCE_OPENSUB); // OpenSubtitles：不用 key，外语片兜底
+        if (list.isEmpty()) return List.of(SubtitleSetting.SOURCE_OPENSUB); // 全都报过错就再给一次机会，别让用户无从下手
         return list;
+    }
+
+    /**
+     * 要试的几种写法（按顺序逐个试，**每家各自推进**，谁先出结果谁先亮）：
+     *   1. 剧名原样（一般是中文）；
+     *   2. 去掉季号/续集后缀的主标题：「庆余年 第二季」→「庆余年」，字幕站多半按整部剧存；
+     *   3. 播放地址里抠出来的英文原名：OpenSubtitles / SubDL 的库里只有英文名——
+     *      实测（2026-10-15）拿「庆余年」「沙丘」这类中文名去搜，两家都是 0 条，不换写法就搜不到。
+     */
+    private List<String> buildQueries(String input) {
+        List<String> list = new ArrayList<>();
+        addQuery(list, input);
+        addQuery(list, BingeTags.serialMainOf(input));
+        if (player != null) addQuery(list, SubtitleName.fromUrl(player.getUrl()));
+        return list;
+    }
+
+    private void addQuery(List<String> list, String value) {
+        if (TextUtils.isEmpty(value)) return;
+        String text = value.trim();
+        if (text.length() < 2) return;
+        for (String exist : list) if (exist.equalsIgnoreCase(text)) return;
+        list.add(text);
     }
 
     private void requestSearch(int source) {
         pending.add(source);
+        String query = queryOf(source);
         int pos = cursors.getOrDefault(source, 0);
-        if (source == SubtitleSetting.SOURCE_ASSRT) SubtitleApi.search(keyword, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
-        else if (source == SubtitleSetting.SOURCE_SUBDL) SubdlApi.search(keyword, page -> onSearch(source, page), e -> onSearchError(source, e));
-        else OpenSubApi.search(keyword, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
+        if (source == SubtitleSetting.SOURCE_ASSRT) SubtitleApi.search(query, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
+        else if (source == SubtitleSetting.SOURCE_SUBDL) SubdlApi.search(query, page -> onSearch(source, page), e -> onSearchError(source, e));
+        else OpenSubApi.search(query, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
+    }
+
+    /** 这家这一趟该用哪种写法 */
+    private String queryOf(int source) {
+        if (queries.isEmpty()) return keyword;
+        int index = Math.min(queryIndex.getOrDefault(source, 0), queries.size() - 1);
+        return queries.get(index);
+    }
+
+    /** 换下一种写法再查这家；没有下一种就到此为止。换写法时提示一声，让用户看见搜的是什么 */
+    private boolean nextQuery(int source) {
+        int index = queryIndex.getOrDefault(source, 0) + 1;
+        if (index >= queries.size()) {
+            exhausted.add(source);
+            return false;
+        }
+        queryIndex.put(source, index);
+        cursors.put(source, 0); // 换了写法就从头翻
+        setKeyword(keyword = queries.get(index));
+        if (!queryNotified) {
+            queryNotified = true; // 几家可能同时换写法，提示一次就够
+            Notify.show(R.string.subtitle_search_retry_en);
+        }
+        requestSearch(source);
+        return true;
     }
 
     @Override
@@ -302,17 +367,42 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
 
     private void onSearch(int source, SubtitleSearchPage page) {
         if (binding == null || !pending.remove(source)) return; // 弹窗已经关了/换了来源，这一趟的结果就别往里塞了
+        // 这家用这个写法一条都没有：换下一种写法再来（不是"这家没有"，是真没搜着）
+        if (page.getResultCount() == 0 && nextQuery(source)) return;
         cursors.put(source, cursors.getOrDefault(source, 0) + page.getResultCount());
         if (page.getResultCount() < countOf(source)) exhausted.add(source);
-        adapter.addAll(page.getItems());
+        addItems(source, page.getItems());
         scroller.endLoading(hasMoreSources());
         if (adapter.getItemCount() > 0) showSearchResults(); // 先回来的先亮出来，别干等最慢那家
         if (pending.isEmpty()) onBatchDone();
     }
 
+    /**
+     * 把一家给的结果并进大列表：打上这家来源的标记，跟前面几家重复的丢掉。
+     * 自动模式下几家一起查，同一个字幕常常被两三家都收着，不去重就是一屏看着像很多、点开全是同一份。
+     */
+    private void addItems(int source, List<SubtitleSearchItem> items) {
+        if (items == null || items.isEmpty()) return;
+        Set<String> seen = new HashSet<>();
+        for (SubtitleSearchItem exist : adapter.getItems()) seen.add(dedupKey(exist));
+        List<SubtitleSearchItem> fresh = new ArrayList<>();
+        for (SubtitleSearchItem item : items) {
+            if (item == null) continue;
+            if (seen.add(dedupKey(item))) fresh.add(item.source(source));
+        }
+        adapter.addAll(fresh);
+    }
+
+    /** 同名（忽略大小写与标点差异）+ 同语言算同一份 */
+    private static String dedupKey(SubtitleSearchItem item) {
+        String name = item.getName().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9\\u4e00-\\u9fa5]", "");
+        return name + "|" + item.getLang().toLowerCase(Locale.ROOT);
+    }
+
     private void onSearchError(int source, Exception e) {
         if (binding == null || !pending.remove(source)) return;
         exhausted.add(source);
+        broken.add(source);
         lastError = e;
         if (pending.isEmpty()) onBatchDone(); // 一家挂了不算数，等其它家
     }
@@ -322,36 +412,12 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         scroller.endLoading(hasMoreSources());
         if (adapter.getItemCount() == 0) {
             if (hasMoreSources()) loadMore();
-            else if (!retryEnglish()) onError(lastError == null ? new IOException(ResUtil.getString(R.string.error_empty)) : lastError);
+            else onError(lastError == null ? new IOException(ResUtil.getString(R.string.error_empty)) : lastError);
         } else {
             showSearchResults();
             RecyclerView recycler = binding.recycler;
             recycler.post(() -> scroller.checkMore(recycler)); // 第一页没占满一屏就自动接着加载
         }
-    }
-
-    /**
-     * 用**英文片名**再搜一次。
-     *
-     * 实测（2026-10-14）：OpenSubtitles 库里只有英文/原文件名，拿「盗梦空间」「沙丘」「奥本海默」
-     * 这类中文名去搜，返回全是 0 条——而 App 里显示的偏偏就是中文名，等于外语片在线搜字幕搜不到。
-     * 好在播放地址基本都是英文压制名（Dune.Part.Two.2024.2160p...），抠出片名再搜一次就有了。
-     * 只试一次，抠不出来就照常报空，不会来回打转。
-     */
-    private boolean retryEnglish() {
-        if (triedEnglish || player == null) return false;
-        if (setting == SubtitleSetting.SOURCE_ASSRT) return false; // 中文源本来就该用中文名
-        String english = SubtitleName.fromUrl(player.getUrl());
-        if (TextUtils.isEmpty(english) || english.equalsIgnoreCase(keyword)) return false;
-        triedEnglish = true;
-        setKeyword(keyword = english); // 让用户看见换成了什么，不满意还能接着改
-        lastError = null;
-        exhausted.clear();
-        cursors.clear();
-        showProgress();
-        Notify.show(R.string.subtitle_search_retry_en);
-        for (int source : sources) requestSearch(source);
-        return true;
     }
 
     private void showSearchResults() {

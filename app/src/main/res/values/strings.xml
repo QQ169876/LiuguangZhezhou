@@ -185,6 +185,9 @@
     <string name="subtitle_source_assrt">来源：伪射手</string>
     <string name="subtitle_source_opensub">来源：OpenSubtitles</string>
     <string name="subtitle_source_subdl">来源：SubDL</string>
+    <string name="subtitle_tag_assrt">伪射手</string>
+    <string name="subtitle_tag_opensub">OpenSub</string>
+    <string name="subtitle_tag_subdl">SubDL</string>
     <string name="subtitle_search_need_subdl_key">SubDL 的 API Key 没填或失效：点右边齿轮填一个（subdl.com 注册免费领），或把来源换成「自动」「OpenSubtitles」</string>
     <string name="subtitle_search_need_token">伪射手 Token 没填或失效：点右边齿轮换一个，或把来源换成「自动」「SubDL」</string>
     <string name="subtitle_search_retry_en">这家只认英文片名，正用播放地址里的英文原名再搜一次</string>
