@@ -22,7 +22,6 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
-import androidx.media3.common.VideoSize;
 import androidx.media3.ui.PlayerSeekView;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.RecyclerView;
@@ -286,8 +285,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         super.initView(savedInstanceState);
         mFrameParams = mBinding.video.getLayoutParams();
         mClock = Clock.create(); // 角落时间的内容由「屏幕显示」决定，交给 PlaybackActivity 统一写
-        setScreenClock(mBinding.widget.clock);
-        setMiniProgressBar(mBinding.widget.mini);
+        setScreenOsd(mBinding.widget.osd); // 画面上所有能开关的信息都在这一层里
         mKeyDown = CustomKeyDownVod.create(this);
         mR1 = this::hideControl;
         mR2 = this::updateFocus;
@@ -306,7 +304,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     protected void onResume() {
         super.onResume();
-        if (service() != null) setWidgetTitle(player().getMetadata());
+        updateScreenOsd();
     }
 
     /** 详情页下方那块演员区域：点一下关注/取消，长按看他的作品（TMDB 列名单，点片名再回 APP 搜） */
@@ -770,15 +768,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        setWidgetTitle(metadata);
-    }
-
-    /** 顶部标题：剧名、当前集数各有一个开关，两个都关就整块不显示（设置 → 播放设置 → 屏幕显示） */
-    private void setWidgetTitle(MediaMetadata metadata) {
-        String title = ScreenSetting.title(metadata);
-        mBinding.widget.title.setText(title);
-        mBinding.widget.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
-        mBinding.widget.title.setSelected(true);
+        updateScreenOsd();
     }
 
     @Override
@@ -1224,14 +1214,12 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void showInfo() {
-        mBinding.widget.top.setVisibility(View.VISIBLE);
         mBinding.widget.center.setVisibility(View.VISIBLE);
         mBinding.widget.duration.setText(player().getDurationTime());
         mBinding.widget.position.setText(player().getPositionTime(0));
     }
 
     private void hideInfo() {
-        mBinding.widget.top.setVisibility(View.GONE);
         mBinding.widget.center.setVisibility(View.GONE);
     }
 
@@ -1414,11 +1402,6 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
             if (isFullscreen()) showInfo();
             else hideInfo();
         }
-    }
-
-    @Override
-    protected void onSizeChanged(VideoSize size) {
-        mBinding.widget.size.setText(player().getSizeText());
     }
 
     @Override

@@ -3,4 +3,10 @@
     <!-- TV 上隔得远，演员作品列表的字比手机大一号（main 里那份是 15/13） -->
     <dimen name="star_works_text">18sp</dimen>
     <dimen name="star_works_sub">15sp</dimen>
+    <!-- TV 上隔得远，「显示设置」那一层的间距与字号比手机大一号（main 里那份是 12dp/13sp） -->
+    <dimen name="osd_margin">24dp</dimen>
+    <dimen name="osd_text">20sp</dimen>
+    <dimen name="osd_line">4dp</dimen>
+    <dimen name="osd_progress_mini">3dp</dimen>
+    <dimen name="osd_progress_full">10dp</dimen>
 </resources>

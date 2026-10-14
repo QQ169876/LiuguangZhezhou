@@ -13,7 +13,6 @@ import android.view.View;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
-import androidx.media3.common.VideoSize;
 import androidx.media3.ui.PlayerSeekView;
 import androidx.media3.ui.PlayerView;
 import androidx.viewbinding.ViewBinding;
@@ -245,14 +244,12 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
     }
 
     private void showInfo() {
-        mBinding.widget.top.setVisibility(View.VISIBLE);
         mBinding.widget.center.setVisibility(View.VISIBLE);
         mBinding.widget.duration.setText(player().getDurationTime());
         mBinding.widget.position.setText(player().getPositionTime(0));
     }
 
     private void hideInfo() {
-        mBinding.widget.top.setVisibility(View.GONE);
         mBinding.widget.center.setVisibility(View.GONE);
     }
 
@@ -392,11 +389,6 @@ public class CastActivity extends PlaybackActivity implements CustomKeyDownVod.L
         mBinding.widget.title.setSelected(true);
         resetMedia();
         start();
-    }
-
-    @Override
-    protected void onSizeChanged(VideoSize size) {
-        mBinding.widget.size.setText(player().getSizeText());
     }
 
     @Override

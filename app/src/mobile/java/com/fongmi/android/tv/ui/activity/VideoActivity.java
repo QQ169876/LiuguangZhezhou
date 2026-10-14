@@ -134,7 +134,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private QuickAdapter mQuickAdapter;
     private StarStrip mStarStrip;
     private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
-    private String mScreenTitle = ""; // 按「显示设置」的开关拼出来的剧名（可能为空=两个开关都关了）
     private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
@@ -311,8 +310,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.progressLayout.showProgress();
         mBinding.swipeLayout.setEnabled(false);
         mClock = Clock.create(); // 右上角时间的内容由「显示设置」决定，交给 PlaybackActivity 统一写
-        setScreenClock(mBinding.widget.clock); // 常驻在画面右上角，控制条收起来之后照样在
-        setMiniProgressBar(mBinding.widget.mini);
+        setScreenOsd(mBinding.widget.osd); // 画面上所有能开关的信息都在这一层里
         mR1 = this::hideControl;
         mR2 = this::setTraffic;
         mR3 = this::setOrient;
@@ -764,24 +762,23 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setControlTitle(metadata);
     }
 
-    /** 剧名：控制条上那份，外加画面左上角常驻的一份（设置 → 显示设置，剧名/集数各一个开关） */
+    /** 控制条上那份剧名（画面左上角常驻那份归 OSD 管，在 setScreenOsd 里按开关刷） */
     private void setControlTitle(MediaMetadata metadata) {
         String title = ScreenSetting.title(metadata);
-        mScreenTitle = title;
         mBinding.control.title.setText(title);
         mBinding.control.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.title.setSelected(true);
-        mBinding.widget.title.setText(title);
-        refreshScreenTitle();
     }
 
     /**
-     * 画面左上角那份常驻剧名：只在全屏、且控制条收起来的时候露出来 ——
-     * 控制条在的时候它自己顶上那行就有剧名，两块一起显示会重影。
+     * 控制条在的时候，它自己顶上那行就有剧名，画面左上角那份让位，免得重影；
+     * 控制条收起来，剧名交给画面左上角那一份接着显示。
+     *
+     * 除了这一会儿，剧名该怎么显示就怎么显示：小窗也好、正在播也好，
+     * 开关开着它就一直在，不跟着控制条一起消失（马先生 2026-10-15：别只在暂停时才露出来）。
      */
     private void refreshScreenTitle() {
-        boolean show = !TextUtils.isEmpty(mScreenTitle) && isFullscreen() && mBinding.control.getRoot().getVisibility() != View.VISIBLE;
-        mBinding.widget.title.setVisibility(show ? View.VISIBLE : View.GONE);
+        setOsdNameHidden(mBinding.control.getRoot().getVisibility() == View.VISIBLE);
     }
 
     /** 从设置页回来：「显示设置」那几个开关可能刚动过，按新设置重刷一遍标题 */

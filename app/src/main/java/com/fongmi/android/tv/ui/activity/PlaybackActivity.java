@@ -7,6 +7,7 @@ import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.os.IBinder;
 import android.view.SurfaceView;
 import android.view.TextureView;
@@ -37,6 +38,7 @@ import androidx.media3.ui.danmaku.DanmakuConfig;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Result;
+import com.fongmi.android.tv.databinding.ViewPlayerOsdBinding;
 import com.fongmi.android.tv.playback.PlaybackIntent;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.player.media.PlaySpec;
@@ -143,79 +145,101 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         return key == null || (mService != null && key.equals(player().getKey()));
     }
 
-    /** 动过播放器视图之后 2 秒内：忽略播放器报的错，别把视图抖动当成播放失败去换源 */
-    /** 播放页「屏幕显示」里的底部细进度条：由各端在 initView 里把那根条交上来，这里负责每秒刷一次 */
-    private View miniProgress;
-    private TextView screenClock;
+    /** 播放页「显示设置」那一层（OSD）：画面上所有能开关的信息都在这一层里，这里每秒统一刷一次 */
+    private ViewPlayerOsdBinding osd;
+    private boolean osdNameHidden; // 手机版控制条拉出来时，左上角那份剧名让位，免得跟控制条顶上那份重影
+    private java.time.format.DateTimeFormatter dateFormat;
     private java.time.format.DateTimeFormatter clockFormat;
 
     private final Runnable miniProgressTask = new Runnable() {
 
         @Override
         public void run() {
-            updateMiniProgress();
-            updateScreenClock();
+            updateScreenOsd();
             App.post(this, 1000);
         }
     };
 
-    protected void setMiniProgressBar(@Nullable View bar) {
-        miniProgress = bar;
-        updateMiniProgress();
+    /** 各端在 initView 里把画面层里那层 OSD 交上来（widget.osd） */
+    protected void setScreenOsd(@Nullable ViewPlayerOsdBinding binding) {
+        osd = binding;
+        updateScreenOsd();
     }
 
-    /** 角落那个时间的控件（TV 版在 widget 上，手机版在控制条上），模式为「不显示」时整块藏掉 */
-    protected void setScreenClock(@Nullable TextView view) {
-        screenClock = view;
-        updateScreenClock();
+    /** 手机版专用：控制条出来的时候把左上角那份名字收起来 */
+    protected void setOsdNameHidden(boolean hidden) {
+        osdNameHidden = hidden;
+        updateScreenOsd();
     }
 
     /**
-     * 角落时间显示什么，用户自己挑：关掉 / 实时时间（跟着系统时区走）/
-     * 已经播了多久 / 还剩多久。跟着每刷一次进度条一起刷。
+     * 画面上露什么全由「显示设置」说了算：每条信息一个开关，各占一行并列排着，打开哪个就多露哪个。
+     * 播放时长类的（已播 / 剩余 / 进度条）要等播放器真的在播才算得出来；日期和当前时间跟系统走，一直都在。
      */
-    protected void updateScreenClock() {
-        TextView view = screenClock;
+    protected void updateScreenOsd() {
+        ViewPlayerOsdBinding view = osd;
         if (view == null) return;
-        int mode = ScreenSetting.getTimeMode();
-        if (!ScreenSetting.isShowClock() || !hasPlaybackSource()) {
-            view.setVisibility(View.GONE);
-            return;
+        boolean playing = hasPlaybackSource();
+        long duration = 0;
+        long position = 0;
+        if (playing) {
+            try {
+                duration = player().getDuration();
+                position = Math.max(0, player().getPosition());
+            } catch (Exception ignored) {
+                // 播放器还没起来（服务没绑上、刚切了源），这一秒跳过就是了
+            }
         }
-        view.setVisibility(View.VISIBLE);
-        if (mode == ScreenSetting.TIME_NOW) {
-            if (clockFormat == null) clockFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss", java.util.Locale.getDefault());
-            view.setText(java.time.LocalDateTime.now().format(clockFormat));
-            return;
-        }
-        try {
-            long duration = player().getDuration();
-            long position = player().getPosition();
-            if (position < 0) position = 0;
-            // 直播/没时长的地方算不出「还剩多少」，退回显示已播了多久
-            boolean left = mode == ScreenSetting.TIME_LEFT && duration > 0;
-            long value = left ? Math.max(0, duration - position) : position;
-            view.setText(ResUtil.getString(left ? R.string.screen_left_value : R.string.screen_played_value, Util.timeMs(value)));
-        } catch (Exception ignored) {
-            // 播放器还没起来，这一秒跳过
-        }
+        setOsdText(view.name, osdNameHidden ? "" : ScreenSetting.title(metadata()));
+        setOsdText(view.size, ScreenSetting.isShowSize() && playing ? sizeText() : "");
+        setOsdText(view.date, ScreenSetting.isShowDate() ? java.time.LocalDate.now().format(dateFormat()) : "");
+        setOsdText(view.clock, ScreenSetting.isShowClock() ? java.time.LocalTime.now().format(clockFormat()) : "");
+        setOsdText(view.played, ScreenSetting.isShowPlayed() && playing ? ResUtil.getString(R.string.screen_played_value, Util.timeMs(position)) : "");
+        setOsdText(view.left, ScreenSetting.isShowLeft() && playing && duration > 0 ? ResUtil.getString(R.string.screen_left_value, Util.timeMs(Math.max(0, duration - position))) : "");
+        int style = ScreenSetting.getProgressStyle();
+        boolean progress = style != ScreenSetting.PROGRESS_OFF && playing && duration > 0;
+        setOsdProgress(view.mini, style == ScreenSetting.PROGRESS_MINI && progress, position, duration);
+        setOsdProgress(view.full, style == ScreenSetting.PROGRESS_FULL && progress, position, duration);
     }
 
-    protected void updateMiniProgress() {
-        View bar = miniProgress;
-        if (bar == null) return;
-        boolean show = ScreenSetting.isShowProgress() && hasPlaybackSource();
+    private static void setOsdText(TextView view, CharSequence text) {
+        view.setText(text);
+        view.setVisibility(TextUtils.isEmpty(text) ? View.GONE : View.VISIBLE);
+    }
+
+    private static void setOsdProgress(ProgressBar bar, boolean show, long position, long duration) {
         bar.setVisibility(show ? View.VISIBLE : View.GONE);
-        if (!show || !(bar instanceof ProgressBar progress)) return;
+        if (show) bar.setProgress(duration > 0 ? (int) Math.min(1000L, position * 1000L / duration) : 0);
+    }
+
+    private java.time.format.DateTimeFormatter dateFormat() {
+        if (dateFormat == null) dateFormat = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd", java.util.Locale.getDefault());
+        return dateFormat;
+    }
+
+    private java.time.format.DateTimeFormatter clockFormat() {
+        if (clockFormat == null) clockFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss", java.util.Locale.getDefault());
+        return clockFormat;
+    }
+
+    @Nullable
+    private MediaMetadata metadata() {
         try {
-            long duration = player().getDuration();
-            long position = player().getPosition();
-            progress.setProgress(duration > 0 ? (int) Math.min(1000L, Math.max(0, position) * 1000L / duration) : 0);
+            return player().getMetadata();
         } catch (Exception ignored) {
-            // 播放器还没起来（服务没绑上、刚切了源），这一秒跳过就是了
+            return null;
         }
     }
 
+    private String sizeText() {
+        try {
+            return player().getSizeText();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    /** 动过播放器视图之后 2 秒内：忽略播放器报的错，别把视图抖动当成播放失败去换源 */
     protected void markUiBusy() {
         uiBusyUntil = System.currentTimeMillis() + 2000;
     }
@@ -811,6 +835,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         setRedirect(false);
         dispatchPendingObservers();
         resumePlayback();
+        updateScreenOsd(); // 从设置页回来时立刻按新开关刷一遍，别等下一秒
     }
 
     @Override

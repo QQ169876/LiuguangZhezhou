@@ -3,4 +3,10 @@
     <!-- 演员作品列表：主文字 / 次要文字。TV 那边在 leanback 里覆盖成更大的字 -->
     <dimen name="star_works_text">15sp</dimen>
     <dimen name="star_works_sub">13sp</dimen>
+    <!-- 播放页「显示设置」那一层：手机上的间距与字号（TV 在 leanback 里覆盖成更大的） -->
+    <dimen name="osd_margin">12dp</dimen>
+    <dimen name="osd_text">13sp</dimen>
+    <dimen name="osd_line">2dp</dimen>
+    <dimen name="osd_progress_mini">2dp</dimen>
+    <dimen name="osd_progress_full">6dp</dimen>
 </resources>

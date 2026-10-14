@@ -165,7 +165,7 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
         super.initView(savedInstanceState);
         mKeyDown = CustomKeyDown.create(this, mBinding.player);
         mClock = Clock.create(); // 右上角时间的内容由「显示设置」决定，交给 PlaybackActivity 统一写
-        setScreenClock(mBinding.widget.clock); // 常驻在画面右上角，控制条收起来之后照样在
+        setScreenOsd(mBinding.widget.osd); // 画面上所有能开关的信息都在这一层里
         setPadding(mBinding.control.getRoot());
         setPadding(mBinding.recycler, true);
         mHides = new ArrayList<>();

@@ -12,12 +12,19 @@ import com.fongmi.android.tv.databinding.DialogScreenDisplayBinding;
 import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
+
+import java.util.function.Consumer;
 
 /**
- * 显示设置：挑一挑播放画面上要露哪些东西。
- * ⚠️ 这里是**各自独立的开关**，不是几选一：剧名在左上角、时间在右上角、进度条在最底下，
- * 打开哪个就显示哪个，可以同时全开（马先生 2026-10-15）。
- * 入口在设置里（设置首页一项「显示设置」，播放设置页里也有一项），不在播放页。
+ * 显示设置：**画面上能看见的每一样东西，这里都有一个开关**（马先生 2026-10-15）。
+ *
+ * 左上：视频名称、当前集数、分辨率
+ * 右上：年月日、当前时间、已播时长、剩余时长
+ * 最底部：进度条（不显示 / 迷你细线 / 完整进度条）
+ *
+ * 各管各的，打开哪个就多露哪个，各占一行并列排着，不互相覆盖。
+ * 入口在设置里（设置首页一项，播放设置页里也有一项），不在播放页。
  */
 public final class ScreenDisplayDialog extends BaseAlertDialog {
 
@@ -28,7 +35,7 @@ public final class ScreenDisplayDialog extends BaseAlertDialog {
         show(activity, null);
     }
 
-    /** 从播放页的「播放选项」进来时带上回调：改完关窗口，播放页立刻按新开关重刷一遍 */
+    /** 从播放页进来时带上回调：改完关窗口，播放页立刻按新开关重刷一遍 */
     public static void show(FragmentActivity activity, @Nullable Runnable onChanged) {
         if (activity == null) return;
         FragmentManager manager = activity.getSupportFragmentManager();
@@ -64,64 +71,53 @@ public final class ScreenDisplayDialog extends BaseAlertDialog {
     protected void initView() {
         binding.titleSwitch.setChecked(ScreenSetting.isShowTitle());
         binding.episodeSwitch.setChecked(ScreenSetting.isShowEpisode());
+        binding.sizeSwitch.setChecked(ScreenSetting.isShowSize());
+        binding.dateSwitch.setChecked(ScreenSetting.isShowDate());
         binding.clockSwitch.setChecked(ScreenSetting.isShowClock());
-        binding.clockText.setText(clockName(ScreenSetting.getTimeMode()));
-        binding.progressSwitch.setChecked(ScreenSetting.isShowProgress());
-        refreshClockModeRow();
+        binding.playedSwitch.setChecked(ScreenSetting.isShowPlayed());
+        binding.leftSwitch.setChecked(ScreenSetting.isShowLeft());
+        binding.progressText.setText(progressName(ScreenSetting.getProgressStyle()));
     }
 
     @Override
     protected void initEvent() {
         binding.titleRow.setOnClickListener(view -> toggle(binding.titleSwitch, ScreenSetting::putShowTitle));
         binding.episodeRow.setOnClickListener(view -> toggle(binding.episodeSwitch, ScreenSetting::putShowEpisode));
-        binding.clockRow.setOnClickListener(view -> onClockRow());
-        binding.clockModeRow.setOnClickListener(view -> onClockModeRow());
-        binding.progressRow.setOnClickListener(view -> toggle(binding.progressSwitch, ScreenSetting::putShowProgress));
+        binding.sizeRow.setOnClickListener(view -> toggle(binding.sizeSwitch, ScreenSetting::putShowSize));
+        binding.dateRow.setOnClickListener(view -> toggle(binding.dateSwitch, ScreenSetting::putShowDate));
+        binding.clockRow.setOnClickListener(view -> toggle(binding.clockSwitch, ScreenSetting::putShowClock));
+        binding.playedRow.setOnClickListener(view -> toggle(binding.playedSwitch, ScreenSetting::putShowPlayed));
+        binding.leftRow.setOnClickListener(view -> toggle(binding.leftSwitch, ScreenSetting::putShowLeft));
+        binding.progressRow.setOnClickListener(view -> onProgressRow());
     }
 
-    /** 右上角的时间：整行就是个开关，开了才谈显示什么 */
-    private void onClockRow() {
-        boolean on = !binding.clockSwitch.isChecked();
-        binding.clockSwitch.setChecked(on);
-        ScreenSetting.putShowClock(on);
-        refreshClockModeRow();
-    }
-
-    /** 时间开着时才能挑内容：实时时间（跟着系统时间走）/ 已经播了多久 / 还剩多久 */
-    private void onClockModeRow() {
-        if (!ScreenSetting.isShowClock()) return;
-        int[] names = {R.string.screen_time_now, R.string.screen_time_played, R.string.screen_time_left};
-        int[] modes = {ScreenSetting.TIME_NOW, ScreenSetting.TIME_PLAYED, ScreenSetting.TIME_LEFT};
+    /** 底部进度条：不显示 / 迷你（一道细线）/ 完整（常规的那种） */
+    private void onProgressRow() {
+        int[] names = {R.string.screen_time_off, R.string.screen_progress_mini, R.string.screen_progress_full};
+        int[] styles = {ScreenSetting.PROGRESS_OFF, ScreenSetting.PROGRESS_MINI, ScreenSetting.PROGRESS_FULL};
         CharSequence[] items = new CharSequence[names.length];
         for (int i = 0; i < names.length; i++) items[i] = ResUtil.getString(names[i]);
         int checked = 0;
-        int mode = ScreenSetting.getTimeMode();
-        for (int i = 0; i < modes.length; i++) if (modes[i] == mode) checked = i;
-        builder().setTitle(R.string.screen_time_content)
+        int style = ScreenSetting.getProgressStyle();
+        for (int i = 0; i < styles.length; i++) if (styles[i] == style) checked = i;
+        builder().setTitle(R.string.screen_progress_style)
                 .setSingleChoiceItems(items, checked, (dialog, which) -> {
-                    ScreenSetting.putTimeMode(modes[which]);
-                    binding.clockText.setText(clockName(modes[which]));
+                    ScreenSetting.putProgressStyle(styles[which]);
+                    binding.progressText.setText(progressName(styles[which]));
                     dialog.dismiss();
                 }).show();
     }
 
-    /** 时间关着的时候，「显示什么」那一行跟着灰掉 */
-    private void refreshClockModeRow() {
-        boolean on = ScreenSetting.isShowClock();
-        binding.clockModeRow.setEnabled(on);
-        binding.clockModeRow.setAlpha(on ? 1f : 0.4f);
-    }
-
-    private static String clockName(int mode) {
-        return switch (mode) {
-            case ScreenSetting.TIME_PLAYED -> ResUtil.getString(R.string.screen_time_played);
-            case ScreenSetting.TIME_LEFT -> ResUtil.getString(R.string.screen_time_left);
-            default -> ResUtil.getString(R.string.screen_time_now);
+    private static String progressName(int style) {
+        return switch (style) {
+            case ScreenSetting.PROGRESS_OFF -> ResUtil.getString(R.string.screen_time_off);
+            case ScreenSetting.PROGRESS_FULL -> ResUtil.getString(R.string.screen_progress_full);
+            default -> ResUtil.getString(R.string.screen_progress_mini);
         };
     }
 
-    /** 点整行也能切：点了先把开关掰过去，再按掰过去的状态存 —— 开关自己会先翻，别再手动翻一次 */
-    private void toggle(com.google.android.material.materialswitch.MaterialSwitch view, java.util.function.Consumer<Boolean> setter) {
+    /** 点整行也能切：先把开关掰过去，再按掰过去的状态存（开关自己 clickable=false，不会吃掉点击） */
+    private void toggle(MaterialSwitch view, Consumer<Boolean> setter) {
         boolean on = !view.isChecked();
         view.setChecked(on);
         setter.accept(on);

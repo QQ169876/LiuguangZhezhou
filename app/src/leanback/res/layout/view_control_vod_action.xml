@@ -72,17 +72,6 @@
         style="@style/Control"
         android:text="@string/play_video_rotate" />
 
-    <!-- 片头片尾常用，别让它们排到最尾巴上够不着 -->
-    <com.fongmi.android.tv.ui.custom.CustomUpDownView
-        android:id="@+id/opening"
-        style="@style/Control"
-        android:text="@string/play_op" />
-
-    <com.fongmi.android.tv.ui.custom.CustomUpDownView
-        android:id="@+id/ending"
-        style="@style/Control"
-        android:text="@string/play_ed" />
-
     <com.fongmi.android.tv.ui.custom.CustomUpDownView
         android:id="@+id/text"
         style="@style/Control"
@@ -121,5 +110,19 @@
         android:text="@string/play_chapter"
         android:visibility="gone"
         tools:visibility="visible" />
+
+
+    <!-- 片头片尾固定占最右边两个位置，好找、好记 -->
+
+    <com.fongmi.android.tv.ui.custom.CustomUpDownView
+        android:id="@+id/opening"
+        style="@style/Control"
+        android:text="@string/play_op" />
+
+    <com.fongmi.android.tv.ui.custom.CustomUpDownView
+        android:id="@+id/ending"
+        style="@style/Control"
+        android:text="@string/play_ed" />
+
 
 </com.fongmi.android.tv.ui.custom.CustomFlowLayout>

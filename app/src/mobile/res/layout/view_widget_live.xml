@@ -5,25 +5,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 显示设置里的时间：常驻在画面右上角，控制条收起来之后照样在 -->
-    <com.google.android.material.textview.MaterialTextView
-        android:id="@+id/clock"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="12dp"
-        android:fontFeatureSettings="tnum"
-        android:shadowColor="@android:color/black"
-        android:shadowDx="1"
-        android:shadowDy="1"
-        android:shadowRadius="3"
-        android:textColor="@color/white"
-        android:textSize="13sp"
-        android:visibility="gone"
-        tools:text="01:45:30" />
+        <!-- 「显示设置」那一层：画面上所有能开关的信息都在这儿，由 PlaybackActivity 统一刷新 -->
+    <include
+        android:id="@+id/osd"
+        layout="@layout/view_player_osd"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
-    <com.google.android.material.textview.MaterialTextView
+<com.google.android.material.textview.MaterialTextView
         android:id="@+id/error"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

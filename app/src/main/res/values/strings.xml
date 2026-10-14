@@ -539,18 +539,20 @@
     <string name="player_mpv_conf_import_success">Imported mpv.conf</string>
     <string name="player_ua">User-Agent</string>
     <string name="player_display_setting">Display setting</string>
-    <string name="screen_display_tip">Each item is independent — turn one on and it shows up: name top-left, time top-right, progress line at the bottom. Turn them all on and they all show.</string>
-    <string name="screen_show_title">Series / movie name</string>
+    <string name="screen_display_tip">Every item shown on the player screen has its own switch. Turn one on and it appears on its own line, side by side, never covering another. Date and clock follow the system; played / remaining / progress need playback to start.</string>
+    <string name="screen_show_title">Video name</string>
     <string name="screen_show_episode">Current episode</string>
-    <string name="screen_show_clock">Time (top right)</string>
-    <string name="screen_time_content">Time content</string>
-    <string name="screen_show_progress">Progress (thin red line at the bottom)</string>
-    <string name="screen_time_off">Off</string>
-    <string name="screen_time_now">Wall clock</string>
+    <string name="screen_show_size">Resolution</string>
+    <string name="screen_show_date">Date (year-month-day)</string>
+    <string name="screen_show_clock">Current time (with seconds)</string>
     <string name="screen_time_played">Time played</string>
     <string name="screen_time_left">Time remaining</string>
+    <string name="screen_progress_style">Progress bar</string>
+    <string name="screen_progress_mini">Mini (thin line)</string>
+    <string name="screen_progress_full">Full bar</string>
+    <string name="screen_time_off">Hidden</string>
     <string name="screen_played_value">Played %1$s</string>
-    <string name="screen_left_value">%1$s left</string>
+    <string name="screen_left_value">Left %1$s</string>
 
     <!-- Danmaku -->
     <string name="danmaku_load">Danmaku load</string>

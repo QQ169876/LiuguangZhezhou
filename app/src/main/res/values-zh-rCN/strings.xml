@@ -538,16 +538,18 @@
     <string name="player_mpv_conf_import_success">已导入 mpv.conf</string>
     <string name="player_ua">User-Agent</string>
     <string name="player_display_setting">显示设置</string>
-    <string name="screen_display_tip">这几项各管各的，打开哪个画面上就多露哪个：剧名在左上角、时间在右上角、进度线在最底下。全打开就全显示。</string>
-    <string name="screen_show_title">剧名 / 片名</string>
+    <string name="screen_display_tip">画面上的每一项都有独立开关：打开哪个就多露哪个，各占一行并列显示，不会互相盖住。日期和当前时间跟着系统走；已播、剩余、进度条要等播放起来才算得出来。</string>
+    <string name="screen_show_title">视频名称</string>
     <string name="screen_show_episode">当前集数</string>
-    <string name="screen_show_clock">时间显示（右上角）</string>
-    <string name="screen_time_content">时间内容</string>
-    <string name="screen_show_progress">播放进度（底部细红线）</string>
-    <string name="screen_time_off">不显示</string>
-    <string name="screen_time_now">实时时间</string>
+    <string name="screen_show_size">分辨率</string>
+    <string name="screen_show_date">日期（年月日）</string>
+    <string name="screen_show_clock">当前时间（精确到秒）</string>
     <string name="screen_time_played">已播时长</string>
     <string name="screen_time_left">剩余时长</string>
+    <string name="screen_progress_style">底部进度条</string>
+    <string name="screen_progress_mini">迷你（一道细线）</string>
+    <string name="screen_progress_full">完整进度条</string>
+    <string name="screen_time_off">不显示</string>
     <string name="screen_played_value">已播 %1$s</string>
     <string name="screen_left_value">剩余 %1$s</string>
 

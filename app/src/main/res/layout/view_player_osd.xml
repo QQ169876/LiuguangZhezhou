@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    播放页「显示设置」那一层（OSD）：画面上所有可由用户开关的常驻信息都在这里。
+
+    每条信息各占一行、各有一个开关，打开哪个就多露一行，**并列排着不互相覆盖**
+    （马先生 2026-10-15：内容要并列开，不要叠在一起）。
+
+    左上：视频信息 —— 名称（剧名 + 集数）、分辨率
+    右上：日期与时间 —— 年月日 / 当前时间（精确到秒）/ 已播 / 剩余
+    最底部：进度条 —— 迷你（一道细线）或 完整（粗一点、看得清），二选一，也可以都不显示
+
+    这一层被 include 进两端的 view_widget_vod / view_widget_live，由 PlaybackActivity 统一刷新。
+    字号与间距走 dimen（osd_text / osd_margin），TV 端在 leanback 里覆盖成更大的。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="@dimen/osd_margin"
+        android:layout_marginTop="@dimen/osd_margin"
+        android:layout_marginEnd="@dimen/osd_margin"
+        android:orientation="vertical">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="權力的遊戲 第一季 - 第1集"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/size"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/osd_line"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="1920 x 1080"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginStart="@dimen/osd_margin"
+        android:layout_marginTop="@dimen/osd_margin"
+        android:layout_marginEnd="@dimen/osd_margin"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="2026-10-15"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/osd_line"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="01:45:30"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/played"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/osd_line"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="已播 00:10:50"
+            tools:visibility="visible" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/left"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/osd_line"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="@dimen/osd_text"
+            android:visibility="gone"
+            tools:text="剩余 00:20:10"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/mini"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/osd_progress_mini"
+        android:layout_gravity="bottom"
+        android:max="1000"
+        android:progressDrawable="@drawable/progress_mini"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <ProgressBar
+        android:id="@+id/full"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/osd_progress_full"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="@dimen/osd_margin"
+        android:layout_marginEnd="@dimen/osd_margin"
+        android:layout_marginBottom="@dimen/osd_margin"
+        android:max="1000"
+        android:progressDrawable="@drawable/progress_mini"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+</FrameLayout>

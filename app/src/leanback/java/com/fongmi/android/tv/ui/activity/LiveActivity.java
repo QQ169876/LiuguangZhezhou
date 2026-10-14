@@ -15,7 +15,6 @@ import androidx.leanback.widget.OnChildViewHolderSelectedListener;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
-import androidx.media3.common.VideoSize;
 import androidx.media3.ui.PlayerSeekView;
 import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.RecyclerView;
@@ -156,7 +155,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
         mClock = Clock.create(); // 角落时间的内容由「屏幕显示」决定，交给 PlaybackActivity 统一写
-        setScreenClock(mBinding.widget.clock);
+        setScreenOsd(mBinding.widget.osd); // 画面上所有能开关的信息都在这一层里
         mKeyDown = CustomKeyDownLive.create(this);
         mHides = new ArrayList<>();
         mR0 = this::setSelected;
@@ -519,11 +518,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     }
 
     @Override
-    protected void onSizeChanged(VideoSize size) {
-        mBinding.widget.size.setText(player().getSizeText());
-    }
-
-    @Override
     public void showEpg(Channel item) {
         if (mChannel == null || mChannel.getData(mViewModel.getZoneId()).getList().isEmpty() || mEpgDataAdapter.getItemCount() == 0 || !mChannel.equals(item) || !mChannel.getGroup().equals(mGroup)) return;
         mBinding.epgData.setSelectedPosition(mChannel.getData(mViewModel.getZoneId()).getSelected());
@@ -569,7 +563,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
 
     private void showControl(View view) {
         mBinding.control.getRoot().setVisibility(View.VISIBLE);
-        mBinding.widget.top.setVisibility(View.VISIBLE);
         App.post(view::requestFocus, 25);
         setR1Callback();
         hideInfo();
@@ -577,7 +570,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
 
     private void hideControl() {
         mBinding.control.getRoot().setVisibility(View.GONE);
-        mBinding.widget.top.setVisibility(View.GONE);
         App.removeCallbacks(mR1);
     }
 
@@ -820,10 +812,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        String title = ScreenSetting.title(metadata);
-        mBinding.widget.title.setText(title);
-        mBinding.widget.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
-        mBinding.widget.title.setSelected(true);
+        updateScreenOsd();
     }
 
     @Override
@@ -833,7 +822,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
 
     private void resetAdapter() {
         mBinding.control.action.line.setVisibility(View.GONE);
-        mBinding.widget.title.setText("");
         mEpgDataAdapter.clear();
         mChannelAdapter.clear();
         mGroupAdapter.clear();
