@@ -8,6 +8,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -453,16 +455,40 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
      */
     private void applyRender(PlayerView playerView) {
         if (playerView == null) return;
+        int render = PlayerSetting.getEffectiveRender();
         try {
-            playerView.setRender(PlayerSetting.getEffectiveRender());
+            playerView.setRender(render);
+            // 播放中热切换出来的新 surface 这一刻还没就绪（TextureView 的 SurfaceTexture 要等一次布局），
+            // 就这样放着会黑屏 —— 马先生 2026-10-14 实测「Surface 模式下按旋转按钮直接黑屏」。
+            // 等这一帧过去再补一次绑定就正常了。
+            if (render == PlayerSetting.RENDER_TEXTURE) rebindSurface(playerView);
         } catch (Exception e) {
             DebugLog.d("Rotate", "切换渲染层失败 " + e.getMessage());
         }
     }
 
+    /** 下一帧把新 surface 重新绑给播放器（热切换时刚建出来的 surface 还是空的，绑了等于没绑）*/
+    private void rebindSurface(PlayerView playerView) {
+        playerView.post(() -> {
+            try {
+                Player player = player().getPlayer();
+                View surface = playerView.getVideoSurfaceView();
+                if (player == null || surface == null) return;
+                if (surface instanceof TextureView) player.setVideoTextureView((TextureView) surface);
+                else if (surface instanceof SurfaceView) player.setVideoSurfaceView((SurfaceView) surface);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     /**
      * 画面旋转：只转画面本身，不动屏幕方向 —— 电视、盒子锁死横屏转不动屏幕，画面照样能转。
-     * 90°/270° 时画面是竖着的，按窗口较短那条边等比缩放，整幅画面都在窗口里（两侧留黑边，不裁切）。
+     * <p>
+     * ⭐ 缩放要按**画面在窗口里的实际大小**算，不能拿窗口尺寸算：竖屏片源在横屏窗口里只占中间一条
+     * （720×1280 的短剧在 1600×900 的窗口里只有 506×900），拿窗口尺寸算出来的系数只有 0.56，
+     * 转完就成巴掌大一小块（马先生 2026-10-14 实测："转了但比例没放成全屏"）。
+     * 正确做法：旋转前先取画面实际尺寸 (vw,vh)，转 90°/270° 后画面变成 (vh,vw)，
+     * 再取"能把它整体塞进窗口的最大等比系数" min(窗口宽/vh, 窗口高/vw) —— 竖屏源转完正好满屏。
      * <p>
      * ⚠️ 缩放这块得让着手机版的手势缩放（双指放大，见 `CustomKeyDown`）：它也是写 `scaleX/scaleY`，
      * 而且会把 pivot 挪到手指的位置。所以这里只在"角度真的要变/窗口尺寸变了"时才动缩放，
@@ -483,8 +509,15 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         int width = playerView.getWidth();
         int height = playerView.getHeight();
         if (width <= 0 || height <= 0) return;
+        // 画面本身的尺寸（旋转前）。取不到（surface 还没布局）就先按窗口算，下一帧会重算。
+        int vw = width, vh = height;
+        View surface = playerView.getVideoSurfaceView();
+        if (surface != null && surface.getWidth() > 0 && surface.getHeight() > 0) {
+            vw = surface.getWidth();
+            vh = surface.getHeight();
+        }
         // 只有竖过来的 90°/270° 才要缩；180° 转完跟窗口一样大，缩了反而把画面弄小
-        float scale = degree == 90 || degree == 270 ? Math.min((float) width / height, (float) height / width) : 1f;
+        float scale = degree == 90 || degree == 270 ? Math.min((float) width / vh, (float) height / vw) : 1f;
         // 旋转必须绕中心：手势缩放把 pivot 挪到手指点了，不掰回来画面会转出去
         playerView.setPivotX(width / 2f);
         playerView.setPivotY(height / 2f);
@@ -497,8 +530,11 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     protected void onVideoRotate() {
         int degree = (PlayerSetting.getVideoRotate() + 90) % 360;
         PlayerSetting.putVideoRotate(degree);
-        applyRender(getPlayerView()); // 转画面得先换成 TextureView，SurfaceView 转不动
+        PlayerView playerView = getPlayerView();
+        applyRender(playerView); // 转画面得先换成 TextureView，SurfaceView 转不动
         applyVideoRotate();
+        // 刚换过渲染层时新 surface 还没量出尺寸，等布局完按真实画面尺寸再算一次
+        if (playerView != null) playerView.postDelayed(this::applyVideoRotate, 250);
         Notify.show(degree == 0 ? ResUtil.getString(R.string.play_video_rotate_reset) : ResUtil.getString(R.string.play_video_rotate_to, degree));
     }
 
@@ -665,6 +701,9 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     public void onVideoSizeChanged(@NonNull VideoSize size) {
         if (isOwner()) onSizeChanged(size);
+        // 换了片源/切了集，画面比例可能变了 —— 旋转的缩放系数要跟着重算（等布局完再算才准）
+        PlayerView playerView = getPlayerView();
+        if (playerView != null) playerView.post(this::applyVideoRotate);
     }
 
     @Override
