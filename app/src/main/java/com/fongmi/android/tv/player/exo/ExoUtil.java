@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.analytics.PlayerId;
 import androidx.media3.exoplayer.audio.AudioSink;
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider;
 import androidx.media3.exoplayer.audio.DefaultAudioSink;
+import androidx.media3.exoplayer.audio.TeeAudioProcessor;
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager;
 import androidx.media3.exoplayer.trackselection.DecodeTrackSelector;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -27,6 +28,7 @@ import androidx.media3.exoplayer.util.EventLogger;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.BuildConfig;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
+import com.fongmi.android.tv.player.sync.SubtitleAutoSync;
 import com.fongmi.android.tv.player.track.LangUtil;
 import com.fongmi.android.tv.setting.DecodeSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
@@ -106,10 +108,28 @@ public class ExoUtil {
         return factory.setEnableDecoderFallback(true).setDolbyVisionOutputPolicy(DecodeSetting.getDolbyVisionOutputPolicy()).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
     }
 
+    /**
+     * 变速（尤其**慢速**）能不能真的生效，全看音频走哪条路：
+     * <p>
+     * media3 里 {@code DefaultAudioSink} 是二选一：
+     *   1. **软件变速（Sonic）** —— 条件是 `!tunneling && 输入是PCM && 不走高分辨率浮点输出`。
+     *      Sonic 是纯算力的时间拉伸，0.1x~8x 全都按你说的来，慢速快不了也慢得下去；
+     *   2. **硬件变速（AudioTrack.setPlaybackParams）** —— 剩下情况走这条。
+     *      这玩意儿在大量安卓设备/盒子上**只认加速不认减速**：speed > 1 好使，
+     *      speed < 1 要么被平台直接忽略（听感纹丝不动），要么把速度弹回 1.0。
+     *      所以「加快有效、放慢无效」就是它干的。
+     * <p>
+     * 原来这里照单全收了 {@code enableFloatOutput}：一旦音轨走高分辨率浮点输出，
+     * 条件 1 的第三条就不成立 → Sonic 被跳过 → 慢速交给 AudioTrack → 慢速失效。
+     * 所以这里**主动关掉浮点输出**，把变速稳稳按在 Sonic 这条路上；
+     * 只有 tunneling（隧道模式，4K/HDR 常用）下 Sonic 本来就上不了场，
+     * 才放行硬件变速当唯一退路。
+     */
     private static AudioSink buildAudioSink(Context context, boolean enableFloatOutput, boolean enableAudioOutputPlaybackParams, AudioProcessor audioProcessor) {
-        DefaultAudioSink.Builder builder = new DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput).setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams);
+        boolean tunneling = DecodeSetting.isTunnelingEnabled();
+        DefaultAudioSink.Builder builder = new DefaultAudioSink.Builder(context).setEnableFloatOutput(false).setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams || tunneling);
         if (!DecodeSetting.isAudioPassThrough()) builder.setAudioOutputProvider(new AudioTrackAudioOutputProvider.Builder(null).build());
-        if (audioProcessor != null) builder.setAudioProcessors(new AudioProcessor[]{audioProcessor});
+        if (audioProcessor != null) builder.setAudioProcessors(new AudioProcessor[]{audioProcessor, new TeeAudioProcessor(SubtitleAutoSync.get())});
         return builder.build();
     }
 }

@@ -37,27 +37,40 @@ import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.SubtitleName;
 import com.fongmi.android.tv.utils.Util;
 
+import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements SubtitleAdapter.OnClickListener, SubtitleListener {
 
     private final ArrayDeque<State> states;
     private final SubtitleAdapter adapter;
     private final CustomScroller scroller;
+    private final Set<Integer> pending;    // 这一趟还在等回应的来源
+    private final Set<Integer> exhausted;  // 已经翻到底（或出错）的来源
+    private final Map<Integer, Integer> cursors; // 每家各自的翻页游标
 
     private DialogSubtitleSearchBinding binding;
     private PlayerManager player;
     private String keyword;
-    private int nextPos;
-    private int setting = SubtitleSetting.getSearchSource(); // 用户选的来源（自动/伪射手/OpenSubtitles）
-    private int active = SubtitleSetting.SOURCE_OPENSUB;    // 这一趟真正在查的来源（自动模式下会切到备用）
-    private boolean triedEnglish;                           // 英文片名兜底只做一次，避免来回打转
+    private List<Integer> sources;         // 这一趟要查哪几家
+    private int setting = SubtitleSetting.getSearchSource(); // 用户选的来源（自动/伪射手/OpenSubtitles/SubDL）
+    private Exception lastError;
+    private boolean triedEnglish;                            // 英文片名兜底只做一次，避免来回打转
 
     public SubtitleSearchDialog() {
         this.states = new ArrayDeque<>();
         this.adapter = new SubtitleAdapter(this);
         this.scroller = new CustomScroller(ignored -> loadMore());
+        this.pending = new HashSet<>();
+        this.exhausted = new HashSet<>();
+        this.cursors = new HashMap<>();
+        this.sources = new ArrayList<>();
     }
 
     public static SubtitleSearchDialog create() {
@@ -137,7 +150,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         SubtitleApiDialog.show(this);
     }
 
-    /** 切换字幕来源：自动 → 伪射手 → OpenSubtitles → 自动……（「自动」= 主源不行就换备用） */
+    /** 切换字幕来源：自动 → 伪射手 → OpenSubtitles → SubDL → 自动……（「自动」= 几家一起查、结果合并） */
     private void onSource(View view) {
         setting = setting == SubtitleSetting.SOURCE_SUBDL ? SubtitleSetting.SOURCE_AUTO : setting + 1;
         SubtitleSetting.putSearchSource(setting);
@@ -168,9 +181,11 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     }
 
     /**
-     * 开始搜。原来这里只认伪射手一家，而且**没填 token 就直接 return**，
-     * 点搜索一点反应都没有，看着像坏的。现在按来源分派：
-     * 「自动」是伪射手有 token 就先走它（中文片更全），没有 / 搜失败 / 没结果就自动换 OpenSubtitles。
+     * 开始搜。
+     * <p>
+     * 「自动」以前是「挑一家，搜不到才换下一家」——等于一次只看一家的库，这家没有就白等一轮。
+     * 现在改成**几家同时查、结果合并展示**（马先生 2026-10-14：几家源各有各的库，
+     * 合起来才找得到东西）；只有明确指定某一家时才单查那家。
      */
     private void search() {
         Util.hideKeyboard(binding.keyword);
@@ -179,8 +194,12 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         adapter.clear();
         scroller.reset();
         keyword = getKeyword();
-        nextPos = 0;
+        lastError = null;
         triedEnglish = false;
+        cancelAll();
+        pending.clear();
+        exhausted.clear();
+        cursors.clear();
         if (setting == SubtitleSetting.SOURCE_ASSRT && !SubtitleApi.hasToken()) {
             showResults(true);
             Notify.show(R.string.subtitle_search_need_token);
@@ -191,9 +210,30 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
             Notify.show(R.string.subtitle_search_need_subdl_key);
             return;
         }
-        // 「自动」：谁有凭证谁先上——伪射手（填了 token）→ SubDL（填了 key）→ OpenSubtitles（免 key 兜底）
-        active = setting == SubtitleSetting.SOURCE_AUTO ? firstSource() : setting;
-        requestSearch();
+        sources = resolveSources();
+        if (sources.isEmpty()) {
+            onEmpty();
+            return;
+        }
+        for (int source : sources) requestSearch(source);
+    }
+
+    /** 这一趟要查哪几家：指定来源就只查它，「自动」= 有凭证的几家全上 + 免 key 的 OpenSubtitles 兜底 */
+    private List<Integer> resolveSources() {
+        if (setting != SubtitleSetting.SOURCE_AUTO) return List.of(setting);
+        List<Integer> list = new ArrayList<>();
+        if (SubtitleApi.hasToken()) list.add(SubtitleSetting.SOURCE_ASSRT); // 伪射手：中文片最全
+        if (SubdlApi.hasKey()) list.add(SubtitleSetting.SOURCE_SUBDL);
+        list.add(SubtitleSetting.SOURCE_OPENSUB); // OpenSubtitles：不用 key，外语片兜底
+        return list;
+    }
+
+    private void requestSearch(int source) {
+        pending.add(source);
+        int pos = cursors.getOrDefault(source, 0);
+        if (source == SubtitleSetting.SOURCE_ASSRT) SubtitleApi.search(keyword, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
+        else if (source == SubtitleSetting.SOURCE_SUBDL) SubdlApi.search(keyword, page -> onSearch(source, page), e -> onSearchError(source, e));
+        else OpenSubApi.search(keyword, pos, page -> onSearch(source, page), e -> onSearchError(source, e));
     }
 
     @Override
@@ -230,25 +270,27 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         showProgress();
         updateBackCallback();
         scroller.endLoading(hasMore());
-        if (active == SubtitleSetting.SOURCE_OPENSUB) OpenSubApi.loadArchive(item, this::showArchive, this::onError);
-        else SubtitleApi.loadArchive(item, this::showArchive, this::onError);
+        SubtitleApi.loadArchive(item, this::showArchive, this::onError);
     }
 
     private boolean loadMore() {
-        boolean load = hasMore();
-        if (load) requestSearch();
-        return load;
+        if (!hasMore() || !pending.isEmpty()) return false;
+        boolean any = false;
+        for (int source : sources) if (!exhausted.contains(source)) {
+            requestSearch(source);
+            any = true;
+        }
+        return any;
     }
 
     private boolean hasMore() {
         return !scroller.isDisable();
     }
 
-    private void requestSearch() {
-        updateBackCallback();
-        if (active == SubtitleSetting.SOURCE_ASSRT) SubtitleApi.search(keyword, nextPos, this::onSearch, this::onSearchError);
-        else if (active == SubtitleSetting.SOURCE_SUBDL) SubdlApi.search(keyword, this::onSearch, this::onSearchError);
-        else OpenSubApi.search(keyword, nextPos, this::onSearch, this::onSearchError);
+    /** 还有哪家没翻到底 */
+    private boolean hasMoreSources() {
+        for (int source : sources) if (!exhausted.contains(source)) return true;
+        return false;
     }
 
     /** 每家"一页给你几条"，用来判断还有没有下一页 */
@@ -258,17 +300,34 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         return OpenSubApi.SEARCH_COUNT;
     }
 
-    /** 自动模式的首选来源：有凭证的优先，都没有就用免 key 的 OpenSubtitles */
-    private int firstSource() {
-        if (SubtitleApi.hasToken()) return SubtitleSetting.SOURCE_ASSRT;
-        if (SubdlApi.hasKey()) return SubtitleSetting.SOURCE_SUBDL;
-        return SubtitleSetting.SOURCE_OPENSUB;
+    private void onSearch(int source, SubtitleSearchPage page) {
+        if (binding == null || !pending.remove(source)) return; // 弹窗已经关了/换了来源，这一趟的结果就别往里塞了
+        cursors.put(source, cursors.getOrDefault(source, 0) + page.getResultCount());
+        if (page.getResultCount() < countOf(source)) exhausted.add(source);
+        adapter.addAll(page.getItems());
+        scroller.endLoading(hasMoreSources());
+        if (adapter.getItemCount() > 0) showSearchResults(); // 先回来的先亮出来，别干等最慢那家
+        if (pending.isEmpty()) onBatchDone();
     }
 
-    private void onSearchError(Exception e) {
-        scroller.endLoading(false);
-        if (useBackup()) return; // 主源出错：自动模式下换备用源再试，别急着报错
-        onError(e);
+    private void onSearchError(int source, Exception e) {
+        if (binding == null || !pending.remove(source)) return;
+        exhausted.add(source);
+        lastError = e;
+        if (pending.isEmpty()) onBatchDone(); // 一家挂了不算数，等其它家
+    }
+
+    private void onBatchDone() {
+        if (binding == null) return;
+        scroller.endLoading(hasMoreSources());
+        if (adapter.getItemCount() == 0) {
+            if (hasMoreSources()) loadMore();
+            else if (!retryEnglish()) onError(lastError == null ? new IOException(ResUtil.getString(R.string.error_empty)) : lastError);
+        } else {
+            showSearchResults();
+            RecyclerView recycler = binding.recycler;
+            recycler.post(() -> scroller.checkMore(recycler)); // 第一页没占满一屏就自动接着加载
+        }
     }
 
     /**
@@ -281,55 +340,22 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
      */
     private boolean retryEnglish() {
         if (triedEnglish || player == null) return false;
-        if (active != SubtitleSetting.SOURCE_OPENSUB && active != SubtitleSetting.SOURCE_SUBDL) return false;
+        if (setting == SubtitleSetting.SOURCE_ASSRT) return false; // 中文源本来就该用中文名
         String english = SubtitleName.fromUrl(player.getUrl());
         if (TextUtils.isEmpty(english) || english.equalsIgnoreCase(keyword)) return false;
         triedEnglish = true;
         setKeyword(keyword = english); // 让用户看见换成了什么，不满意还能接着改
-        nextPos = 0;
+        lastError = null;
+        exhausted.clear();
+        cursors.clear();
         showProgress();
         Notify.show(R.string.subtitle_search_retry_en);
-        requestSearch();
+        for (int source : sources) requestSearch(source);
         return true;
-    }
-
-    /** 自动模式下主源不行就换下一家从头再搜一遍；返回 true 表示已经换了 */
-    private boolean useBackup() {
-        if (setting != SubtitleSetting.SOURCE_AUTO) return false;
-        int next = nextSource(active);
-        if (next < 0) return false;
-        active = next;
-        nextPos = 0;
-        requestSearch();
-        return true;
-    }
-
-    /** 自动模式的尝试顺序：伪射手 → SubDL（没填 key 就跳过）→ OpenSubtitles */
-    private int nextSource(int current) {
-        if (current == SubtitleSetting.SOURCE_ASSRT) return SubdlApi.hasKey() ? SubtitleSetting.SOURCE_SUBDL : SubtitleSetting.SOURCE_OPENSUB;
-        if (current == SubtitleSetting.SOURCE_SUBDL) return SubtitleSetting.SOURCE_OPENSUB;
-        return -1;
-    }
-
-    private void onSearch(SubtitleSearchPage page) {
-        // SubDL 一次就给全（最多 30 条、没有翻页），它的 SEARCH_COUNT 是 MAX_VALUE，这里自然判成"没有下一页"，
-        // 否则会一直以为还有更多、反复用同一批结果去 loadMore。
-        boolean hasMore = page.getResultCount() >= countOf(active);
-        nextPos += page.getResultCount();
-        scroller.endLoading(hasMore);
-        adapter.addAll(page.getItems());
-        if (adapter.getItemCount() == 0) {
-            if (hasMore) loadMore();
-            else if (!useBackup() && !retryEnglish()) onEmpty();
-        } else {
-            showSearchResults();
-        }
     }
 
     private void showSearchResults() {
         showResults(false);
-        RecyclerView recycler = binding.recycler;
-        recycler.post(() -> scroller.checkMore(recycler));
     }
 
     private void showArchive(List<SubtitleSearchItem> items) {
@@ -355,7 +381,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         Notify.show(TextUtils.isEmpty(e.getMessage()) ? ResUtil.getString(R.string.error_empty) : e.getMessage());
     }
 
-    /** 两家源都停：搜索请求、下载，一个都别留着在后台跑 */
+    /** 几家源都停：搜索请求、下载，一个都别留着在后台跑 */
     private void cancelAll() {
         SubtitleApi.cancel();
         OpenSubApi.cancel();
@@ -363,12 +389,13 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     }
 
     private void saveState() {
-        states.push(new State(adapter.getItems(), keyword, nextPos, hasMore()));
+        states.push(new State(adapter.getItems(), keyword));
     }
 
     private boolean restoreState() {
         if (canCancelRequest()) {
             cancelAll();
+            pending.clear();
             showResults(false);
             return true;
         } else if (!states.isEmpty()) {
@@ -382,9 +409,11 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     private void restore(State state) {
         scroller.reset();
         cancelAll();
-        nextPos = state.nextPos();
+        pending.clear();
+        exhausted.clear();
+        cursors.clear();
         adapter.setItems(state.items());
-        scroller.endLoading(state.hasMore());
+        scroller.endLoading(false);
         setKeyword(keyword = state.keyword());
         showResults(adapter.getItemCount() == 0);
     }
@@ -394,7 +423,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     }
 
     private boolean canCancelRequest() {
-        return binding.progress.getVisibility() == VISIBLE && adapter.getItemCount() > 0;
+        return !pending.isEmpty() || (binding.progress.getVisibility() == VISIBLE && adapter.getItemCount() > 0);
     }
 
     @Override
@@ -405,6 +434,6 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         super.onDestroyView();
     }
 
-    private record State(List<SubtitleSearchItem> items, String keyword, int nextPos, boolean hasMore) {
+    private record State(List<SubtitleSearchItem> items, String keyword) {
     }
 }

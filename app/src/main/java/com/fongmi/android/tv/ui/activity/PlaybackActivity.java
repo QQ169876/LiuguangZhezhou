@@ -11,6 +11,8 @@ import android.os.IBinder;
 import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 
@@ -32,6 +34,7 @@ import androidx.media3.ui.PlayerView;
 import androidx.media3.ui.TimeBar;
 import androidx.media3.ui.danmaku.DanmakuConfig;
 
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.playback.PlaybackIntent;
@@ -39,6 +42,7 @@ import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
+import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
@@ -46,6 +50,7 @@ import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.net.OkHttp;
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -139,6 +144,78 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     }
 
     /** 动过播放器视图之后 2 秒内：忽略播放器报的错，别把视图抖动当成播放失败去换源 */
+    /** 播放页「屏幕显示」里的底部细进度条：由各端在 initView 里把那根条交上来，这里负责每秒刷一次 */
+    private View miniProgress;
+    private TextView screenClock;
+    private java.time.format.DateTimeFormatter clockFormat;
+
+    private final Runnable miniProgressTask = new Runnable() {
+
+        @Override
+        public void run() {
+            updateMiniProgress();
+            updateScreenClock();
+            App.post(this, 1000);
+        }
+    };
+
+    protected void setMiniProgressBar(@Nullable View bar) {
+        miniProgress = bar;
+        updateMiniProgress();
+    }
+
+    /** 角落那个时间的控件（TV 版在 widget 上，手机版在控制条上），模式为「不显示」时整块藏掉 */
+    protected void setScreenClock(@Nullable TextView view) {
+        screenClock = view;
+        updateScreenClock();
+    }
+
+    /**
+     * 角落时间显示什么，用户自己挑：关掉 / 实时时间（跟着系统时区走）/
+     * 已经播了多久 / 还剩多久。跟着每刷一次进度条一起刷。
+     */
+    protected void updateScreenClock() {
+        TextView view = screenClock;
+        if (view == null) return;
+        int mode = ScreenSetting.getTimeMode();
+        if (!ScreenSetting.isShowClock() || !hasPlaybackSource()) {
+            view.setVisibility(View.GONE);
+            return;
+        }
+        view.setVisibility(View.VISIBLE);
+        if (mode == ScreenSetting.TIME_NOW) {
+            if (clockFormat == null) clockFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss", java.util.Locale.getDefault());
+            view.setText(java.time.LocalDateTime.now().format(clockFormat));
+            return;
+        }
+        try {
+            long duration = player().getDuration();
+            long position = player().getPosition();
+            if (position < 0) position = 0;
+            // 直播/没时长的地方算不出「还剩多少」，退回显示已播了多久
+            boolean left = mode == ScreenSetting.TIME_LEFT && duration > 0;
+            long value = left ? Math.max(0, duration - position) : position;
+            view.setText(ResUtil.getString(left ? R.string.screen_left_value : R.string.screen_played_value, Util.timeMs(value)));
+        } catch (Exception ignored) {
+            // 播放器还没起来，这一秒跳过
+        }
+    }
+
+    protected void updateMiniProgress() {
+        View bar = miniProgress;
+        if (bar == null) return;
+        boolean show = ScreenSetting.isShowProgress() && hasPlaybackSource();
+        bar.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show || !(bar instanceof ProgressBar progress)) return;
+        try {
+            long duration = player().getDuration();
+            long position = player().getPosition();
+            progress.setProgress(duration > 0 ? (int) Math.min(1000L, Math.max(0, position) * 1000L / duration) : 0);
+        } catch (Exception ignored) {
+            // 播放器还没起来（服务没绑上、刚切了源），这一秒跳过就是了
+        }
+    }
+
     protected void markUiBusy() {
         uiBusyUntil = System.currentTimeMillis() + 2000;
     }
@@ -724,6 +801,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         super.onStart();
         leaving = false;
         activateService();
+        App.post(miniProgressTask, 500);
     }
 
     @Override
@@ -744,6 +822,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     protected void onStop() {
         super.onStop();
+        App.removeCallbacks(miniProgressTask);
         leaving = isFinishing();
         if (leaving) markUiBusy();
         if (isOwner() && (isFinishing() || PlayerSetting.isBackgroundOff())) pausePlayback();

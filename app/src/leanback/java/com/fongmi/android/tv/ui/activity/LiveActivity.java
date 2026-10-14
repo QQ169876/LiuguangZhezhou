@@ -43,7 +43,6 @@ import com.fongmi.android.tv.impl.LiveListener;
 import com.fongmi.android.tv.impl.PassListener;
 import com.fongmi.android.tv.model.LiveViewModel;
 import com.fongmi.android.tv.playback.PlaybackAction;
-import com.fongmi.android.tv.playback.PlaybackOrientation;
 import com.fongmi.android.tv.playback.PlaybackReset;
 import com.fongmi.android.tv.playback.PlaybackResult;
 import com.fongmi.android.tv.playback.live.LivePlayRequest;
@@ -53,6 +52,7 @@ import com.fongmi.android.tv.player.extractor.Source;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.LiveSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
+import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.ui.adapter.ChannelAdapter;
 import com.fongmi.android.tv.ui.adapter.EpgDataAdapter;
 import com.fongmi.android.tv.ui.adapter.GroupAdapter;
@@ -155,7 +155,8 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     @Override
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
-        mClock = Clock.create(mBinding.widget.clock);
+        mClock = Clock.create(); // 角落时间的内容由「屏幕显示」决定，交给 PlaybackActivity 统一写
+        setScreenClock(mBinding.widget.clock);
         mKeyDown = CustomKeyDownLive.create(this);
         mHides = new ArrayList<>();
         mR0 = this::setSelected;
@@ -181,7 +182,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         mBinding.control.action.home.setOnClickListener(view -> onHome());
         mBinding.control.action.line.setOnClickListener(view -> onLine());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
-        mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.config.setOnClickListener(view -> onConfig());
@@ -390,23 +390,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         int index = LiveSetting.getScale();
         String[] array = ResUtil.getStringArray(R.array.select_scale);
         setScale(index == array.length - 1 ? 0 : ++index);
-    }
-
-    /** 强制转屏：现在横着就强制竖屏，现在竖着就强制横屏（跟点播页、手机版同一个口径） */
-    private void onRotate() {
-        boolean portrait = ResUtil.isLand(this);
-        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
-        checkRotated(portrait);
-    }
-
-    /** 转屏请求发出去后核对有没有真转过来；电视/盒子锁死横屏时会忽略请求，那就如实说不支持（详见点播页同名方法） */
-    private void checkRotated(boolean wantPortrait) {
-        App.post(() -> {
-            if (isFinishing() || isDestroyed()) return;
-            boolean nowPortrait = !ResUtil.isLand(this);
-            if (nowPortrait == wantPortrait) Notify.show(wantPortrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
-            else Notify.show(R.string.play_rotate_unsupported);
-        }, 1000);
     }
 
     private void onSpeed() {
@@ -837,7 +820,9 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        mBinding.widget.title.setText(metadata.displayTitle);
+        String title = ScreenSetting.title(metadata);
+        mBinding.widget.title.setText(title);
+        mBinding.widget.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.widget.title.setSelected(true);
     }
 

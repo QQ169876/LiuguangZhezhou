@@ -47,6 +47,9 @@ class VodBingePolicy {
     private long typeWaitUntil; // 最多等到这个时候，过了就不再为它等
 
     private List<String> keywords = new ArrayList<>();
+    private String seriesMain = ""; // 当前这部所属的系列：主标题（去掉「第X季」这类后缀）
+    private int seriesIndex = -1; // 当前是系列里的第几季；名字里没写就是 -1
+    private boolean serialMode; // 名字里明写着第几季：只认这个系列的下一季，绝不换别的剧
     private String region = "";
     private String typeName = ""; // 站点给的分类（如「爱情/都市」），搜同类用得上
     private String actor = ""; // 当前这部的主演（红果那招：看《A》也推同主演的《B》）
@@ -104,7 +107,8 @@ class VodBingePolicy {
     boolean onNoNext(boolean reversed) {
         if (reversed || !BingeSetting.isEnabled()) return false;
         if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
-        if (!isShortDrama()) return false;
+        // 正剧不按「同题材换一部」刷，但名字里明写着第几季的要接管：找这个系列的下一季
+        if (!isShortDrama() && !BingeTags.hasSerialMark(host.getVodName())) return false;
         BingeProfile.hit(BingeTags.tagsOf(host.getVodName())); // 看完了：题材记一分，下次更懂你
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
@@ -133,6 +137,7 @@ class VodBingePolicy {
         if (!BingeSetting.isEnabled()) return false;
         if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
         if (state.getHistory() != null && state.getHistory().isRevPlay()) return false; // 倒序看就别刷
+        if (BingeTags.hasSerialMark(host.getVodName())) return true; // 明写着「第X季」：一季接一季往下看，不换别的剧
         if (!state.hasFlags()) return false;
         int episodes = state.getFlag().getEpisodes().size();
         long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
@@ -191,14 +196,32 @@ class VodBingePolicy {
     private void begin() {
         region = BingeTags.regionOf(host.getVodName()); // 当前是哪一国的，后面就一路哪一国
         kind = currentKind(); // 当前是哪一种（短剧/漫剧/正剧），后面就一路哪一种，不串剧种
-        keywords = buildKeywords(host.getVodName());
-        DebugLog.d("Binge", "开始刷剧，产地=" + region + "，剧种=" + BingeTags.kindWord(kind) + "，关键词=" + keywords + "，当前=" + host.getVodName());
+        seriesMain = BingeTags.serialMainOf(host.getVodName());
+        seriesIndex = BingeTags.serialOf(host.getVodName());
+        serialMode = seriesIndex > 0 && !seriesMain.isEmpty();
+        keywords = serialMode ? serialKeywords() : buildKeywords(host.getVodName());
+        DebugLog.d("Binge", "开始刷剧，系列=" + (serialMode ? seriesMain + " 第" + seriesIndex + "季" : "无") + "，产地=" + region + "，剧种=" + BingeTags.kindWord(kind) + "，关键词=" + keywords + "，当前=" + host.getVodName());
         active = true;
         keywordIndex = 0;
         tried.add(host.getVodName());
         typePending = false; // 上一轮没回来的分类池别再挡着这一轮
-        searchByType(); // 先开一路：直接去站点的「短剧」分类里端一盘出来，比关键词搜索准
+        if (!serialMode) searchByType(); // 先开一路：直接去站点的「短剧」分类里端一盘出来，比关键词搜索准（系列剧不用，它只认下一季）
         search();
+    }
+
+    /**
+     * 系列剧的搜索词：只搜这个系列本身 —— 主标题，外加「主标题 第X季」（有些站按季分条目，直搜下一季更准）。
+     * 季号两种写法都带上：**中文「第三季」和阿拉伯「第3季」都要搜**，站源只认其中一种的很常见，
+     * 少了哪一半都可能搜不到下一季。不掺题材词、不掺「短剧/电视剧」这类兜底词：搜出来再靠 filter 挑掉不相关的，纯属浪费一次搜索。
+     */
+    private List<String> serialKeywords() {
+        List<String> keys = new ArrayList<>();
+        int next = seriesIndex + 1;
+        keys.add(seriesMain); // 主标题：把整个系列都搜出来，靠 filter 挑季号
+        keys.add(seriesMain + " 第" + next + "季"); // 阿拉伯写法：「庆余年 第3季」
+        keys.add(seriesMain + " 第" + BingeTags.cnNumber(next) + "季"); // 中文写法：「庆余年 第三季」
+        keys.add(seriesMain + next); // 站源偷懒写成「庆余年3」的，连着写才搜得到
+        return keys;
     }
 
     /**
@@ -411,6 +434,14 @@ class VodBingePolicy {
             if (name.equals(current) || tried.contains(name)) continue;
             if (contains(pool, name) || state.hasFailedId(item.getId())) continue;
             if (BingeTags.isBanned(name)) continue;
+            // 系列剧只接下一季：别的剧、当季、更早的季一律不要，别的门槛也不再卡它
+            // （续季常被站点分到跟本部不一样的类里，末季集数又少，拿剧种/集数去卡反而接不上）
+            if (serialMode) {
+                if (!isNextSerial(name)) continue;
+                if (watched(name)) continue;
+                items.add(item);
+                continue;
+            }
             if (BingeTags.kindMismatch(name, kind)) continue; // 别串剧种：刷短剧不跳正剧，刷正剧不跳短剧
             if (wrongType(item)) continue; // 站点自己标了分类、又明摆着是别的剧种，一样丢掉
             if (!BingeTags.sameRegion(region, name)) continue; // 别跳到别的国籍去
@@ -425,6 +456,18 @@ class VodBingePolicy {
             items.add(item);
         }
         return items;
+    }
+
+    /**
+     * 系列模式下这个候选能不能接：得是同一个系列，而且必须是更后面的季。
+     * ⚠️ 只往后不回头：看的是第二季就只接第三季往后，绝不能跳回第一季（马先生 2026-10-15）。
+     * 季号中文「第三季」、阿拉伯「第3季」、英文「S3」、罗马「Ⅲ」写法都由 BingeTags.serialOf 统一成数字再比，
+     * 不管站源怎么混写都不会比错。
+     * 同名却没写第几季的不要 —— 那多半是「整部合集」或就是当前这部，接过去等于从头再看一遍。
+     */
+    private boolean isNextSerial(String name) {
+        if (!BingeTags.sameSerial(seriesMain, name)) return false;
+        return BingeTags.serialOf(name) > seriesIndex; // 写明了第几季，且比现在这一季靠后
     }
 
     /**
@@ -486,12 +529,29 @@ class VodBingePolicy {
         probe(item);
     }
 
-    /** 候选总分：关键词命中 + 剧种对不对 + 是不是从站点的分类池里捞的（这个最可信，加成最大） */
+    /** 候选总分：系列续季 + 关键词命中 + 剧种对不对 + 是不是从站点的分类池里捞的（这个最可信，加成最大） */
     private int scoreOf(Vod item, int penalty) {
         int score = BingeTags.score(item.getName(), item.getRemarks(), keywords, penalty);
         score += BingeTags.kindScore(item.getName(), kind);
+        score += serialScore(item.getName());
         if (fromType.contains(item.getName())) score += TYPE_BONUS;
         return score;
+    }
+
+    /**
+     * 同系列续季顶到最前面：主标题对得上、季数正好是下一季 → 压倒性加分；
+     * 跳着来的（搜出第四季而现在是第二季）也认，但往后排，一季一季来更合理；
+     * 当季和更早的季重罚（filter 已经挡过了，这是双保险）。
+     * 当前这部没写季号时（比如就叫《庆余年》）把「庆余年 第二季」当第一季的下一部，一样顶上来。
+     */
+    private int serialScore(String name) {
+        if (seriesMain.isEmpty() || !BingeTags.sameSerial(seriesMain, name)) return 0;
+        int index = BingeTags.serialOf(name);
+        if (index < 0) return 0;
+        int want = Math.max(1, seriesIndex) + 1;
+        if (index == want) return 200;
+        if (index > want) return Math.max(120, 200 - (index - want) * 20);
+        return -200;
     }
 
     /**
@@ -559,6 +619,8 @@ class VodBingePolicy {
         if (detail == null || item == null) return false;
         String name = item.getName();
         if (BingeTags.isBanned(name)) return false;
+        // 系列的下一季：只要有播放列表就接上，剧种/分类/集数门槛一概不挑（同上，续季常被误判）
+        if (serialMode && isNextSerial(name) && hasEpisodes(detail)) return true;
         // 验货也看剧种：刷正剧撞上带短剧/漫剧字样的、刷短剧撞上详情写着电视剧/国产剧的，都别切过去
         if (BingeTags.kindMismatch(name, kind)) return false;
         if (kind != BingeTags.KIND_LONG && BingeTags.hasLongMark(detail.getTypeName())) return false;
@@ -579,6 +641,14 @@ class VodBingePolicy {
         if (max >= BingeTags.MIN_PLAYABLE) return true;
         if (max <= 0) return false; // 连一条播放列表都没有，切过去也是白切
         return BingeTags.hasCompileMark(name) || BingeTags.parseEpisodes(item.getRemarks()) >= BingeTags.MIN_PLAYABLE || BingeTags.isShortMark(name);
+    }
+
+    /** 详情里有没有至少一条能播的列表：系列续季只要这个就够了 */
+    private boolean hasEpisodes(Vod detail) {
+        List<Flag> flags = detail == null ? null : detail.getFlags();
+        if (flags == null) return false;
+        for (Flag flag : flags) if (flag != null && flag.getEpisodes() != null && !flag.getEpisodes().isEmpty()) return true;
+        return false;
     }
 
     /** 换过去的详情回来了：外剧、电影/单集这类接不下去的，换下一部 */
@@ -686,7 +756,7 @@ class VodBingePolicy {
             preparing = false;
             return;
         }
-        host.onBingeEnd();
+        host.onBingeEnd(serialMode);
     }
 
     void reset() {
@@ -698,6 +768,9 @@ class VodBingePolicy {
         keywords.clear();
         recentFamilies.clear();
         region = "";
+        seriesMain = "";
+        seriesIndex = -1;
+        serialMode = false;
         typeName = "";
         actor = "";
         kind = BingeTags.KIND_UNKNOWN;

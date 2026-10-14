@@ -36,6 +36,7 @@ import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.MoonDialog;
 import com.fongmi.android.tv.ui.dialog.RouteDialog;
+import com.fongmi.android.tv.ui.dialog.ScreenDisplayDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
@@ -149,6 +150,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.lanPush.setOnClickListener(this::onPush);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.player.setOnClickListener(this::onPlayer);
+        mBinding.display.setOnClickListener(this::onDisplay);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.version.setOnClickListener(this::onVersion);
         mBinding.clear.setOnClickListener(this::onClear);
@@ -296,6 +298,11 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private void onPlayer(View view) {
         getRoot().change(2);
+    }
+
+    /** 显示设置：全屏播放时画面上要露哪些东西（剧名、时间、底部进度线），各自一个开关 */
+    private void onDisplay(View view) {
+        ScreenDisplayDialog.show(this);
     }
 
     private void onDanmaku(View view) {

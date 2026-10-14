@@ -68,6 +68,11 @@ public interface VodPlaybackHost {
 
     void onBingeEnd();
 
+    /** 系列剧专用：接不下去的时候说「没有下一季」，别拿「没有同类剧集」糊弄 */
+    default void onBingeEnd(boolean serial) {
+        onBingeEnd();
+    }
+
     void prepareSource(Vod item);
 
     void stopPlaybackForRefresh();

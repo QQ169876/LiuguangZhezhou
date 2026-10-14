@@ -309,6 +309,7 @@
             android:id="@+id/timer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
             android:background="@drawable/shape_accent"
             android:text="@string/play_timer"
             android:textColor="@color/selector_control"

@@ -143,4 +143,16 @@
         </androidx.appcompat.widget.LinearLayoutCompat>
     </androidx.appcompat.widget.LinearLayoutCompat>
 
+    <!-- 底部那根极细的进度条：不占地方、不挡画面，随时能看出这集播到哪了（设置里可关） -->
+    <ProgressBar
+        android:id="@+id/mini"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_gravity="bottom"
+        android:max="1000"
+        android:progressDrawable="@drawable/progress_mini"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
 </FrameLayout>

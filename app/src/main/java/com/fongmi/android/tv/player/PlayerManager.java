@@ -17,6 +17,7 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.VideoSize;
+import androidx.media3.common.text.CueGroup;
 import androidx.media3.ui.danmaku.DanmakuConfig;
 
 import com.fongmi.android.tv.App;
@@ -33,6 +34,7 @@ import com.fongmi.android.tv.player.engine.PlayerEngine;
 import com.fongmi.android.tv.player.engine.PlayerEngineFactory;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.player.parse.ParseJob;
+import com.fongmi.android.tv.player.sync.SubtitleAutoSync;
 import com.fongmi.android.tv.player.track.TrackUtil;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
@@ -86,6 +88,7 @@ public class PlayerManager implements ParseCallback {
     public void release() {
         App.removeCallbacks(runnable);
         PlayWatchdog.stop();
+        SubtitleAutoSync.get().stop();
         if (player != null) player.removeListener(listener);
         if (engine != null) engine.release();
         engine = null;
@@ -313,8 +316,12 @@ public class PlayerManager implements ParseCallback {
     public void setSub(Sub sub) {
         if (sub == null || sub.isEmpty()) return;
         if (spec != null) spec.setSub(sub);
-        if (engine.addSubtitle(sub)) play();
-        else startCurrent();
+        if (engine.addSubtitle(sub)) {
+            play();
+            prepareSubtitleAutoSync(); // 换了字幕就重新对一次时间轴，外挂字幕最常错的就是这个
+        } else {
+            startCurrent();
+        }
     }
 
     public void setFormat(String format) {
@@ -415,6 +422,7 @@ public class PlayerManager implements ParseCallback {
         App.removeCallbacks(runnable); // 起播超时必须一起取消，否则退出后计时一到照样报「播放超时」去自动换源
         // 这里不能撤看门狗标记：换线路/换源都会走 stop，撤了就认不出「播着播着没了」
         lastStop = System.currentTimeMillis();
+        SubtitleAutoSync.get().stop();
         engine.stop();
         stopParse();
     }
@@ -453,6 +461,30 @@ public class PlayerManager implements ParseCallback {
     public void applySubtitleOffset() {
         if (player == null || !player.isCommandAvailable(Player.COMMAND_SET_TEXT_OFFSET)) return;
         player.setTextOffsetMs(SubtitleSetting.getOffsetMs(getKey()));
+    }
+
+    /**
+     * 字幕时间轴自动校准：开一轮音频采样，听着听着就能算出字幕差了多少。
+     * 直播没有时间轴可对、本地文件没有稳定片名，这两种直接跳过。
+     */
+    private void prepareSubtitleAutoSync() {
+        if (isLive()) {
+            SubtitleAutoSync.get().stop();
+            return;
+        }
+        SubtitleAutoSync.get().start(player, getSyncKey(), SubtitleSetting.getOffsetMs(getKey()));
+    }
+
+    /**
+     * 自动校准的"记得住"用的键：挂了外挂字幕就把字幕地址也算进去。
+     * 换一条字幕等于换一份时间轴，当然得重新对一次，不能拿上一条字幕的结论糊过去。
+     */
+    private String getSyncKey() {
+        String key = getKey();
+        List<Sub> subs = spec == null ? null : spec.getSubs();
+        String url = (subs == null || subs.isEmpty()) ? null : subs.get(0).getUrl();
+        if (TextUtils.isEmpty(key) || TextUtils.isEmpty(url)) return key;
+        return key + "##" + url;
     }
 
     public long getAudioOffsetMs() {
@@ -622,6 +654,7 @@ public class PlayerManager implements ParseCallback {
         initTrack = false;
         engine.start(spec, startPositionMs);
         applySubtitleOffset(); // 这部片子以前调过字幕时间轴就先套上，别让人每集重调一遍
+        prepareSubtitleAutoSync(); // 没校准过的片子，顺手听一段音频把字幕时间轴对一下
         notifyDanmakuSourceChanged();
         PlayWatchdog.start(engine.getType().name(), spec.getUrl()); // 播放留下痕迹，native 崩也能事后认出来
         DebugLog.d("Player", "起播 engine=" + engine.getType().name() + " url=" + spec.getUrl());
@@ -750,6 +783,11 @@ public class PlayerManager implements ParseCallback {
             applySubtitleOffset(); // 外挂字幕是后挂上来的，等轨道出来再套一次才稳
             callback.onTracksChanged();
             initTrack = true;
+        }
+
+        @Override
+        public void onCues(@NonNull CueGroup cueGroup) {
+            SubtitleAutoSync.get().onCues(cueGroup);
         }
 
         @Override

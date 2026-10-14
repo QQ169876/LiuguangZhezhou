@@ -83,10 +83,23 @@ public class SubdlApi {
         HttpUrl.Builder builder = Objects.requireNonNull(HttpUrl.parse(SEARCH_URL)).newBuilder();
         builder.addQueryParameter("api_key", SubtitleSetting.getEffectiveSubdlKey());
         builder.addQueryParameter("film_name", TextUtils.isEmpty(keyword) ? "" : keyword.trim());
-        builder.addQueryParameter("languages", "zh"); // 不筛的话十来条里大半是西班牙/阿拉伯语，中文一条没有
+        // 中文片名才按中文筛：不筛的话十来条里大半是西班牙/阿拉伯语，中文一条没有。
+        // 但拿英文片名（hope 2026 这种）去筛中文就是自己把自己搜空了 —— 这时放开语言，
+        // 反正结果已经按「中英优先」排过序（见 langRank），前几条还是中文/英文。
+        if (containsCJK(keyword)) builder.addQueryParameter("languages", "zh");
         builder.addQueryParameter("subs_per_page", "30");
         builder.addQueryParameter("client", "custom_integration");
         return OkHttp.newCall(builder.build().toString(), TAG);
+    }
+
+    /** 关键字里有没有中日韩文字：有就是拿中文片名在搜，没有就是英文/拼音原名 */
+    private static boolean containsCJK(String keyword) {
+        if (TextUtils.isEmpty(keyword)) return false;
+        for (int i = 0; i < keyword.length(); i++) {
+            char c = keyword.charAt(i);
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS) return true;
+        }
+        return false;
     }
 
     private static SubtitleSearchPage parseSearch(String text) throws IOException {

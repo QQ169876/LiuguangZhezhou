@@ -287,8 +287,25 @@ public class BingeTags {
     /** 单集但时长到了一部短剧的量级，下限 20 分钟 */
     public static final long COMPILE_MIN_MS = 20L * 60 * 1000L;
 
-    /** 续集后缀，去掉后可拿主标题找同系列 */
-    private static final Pattern SERIAL_SUFFIX = Pattern.compile("(第[一二三四五六七八九十\\d]+[部季篇章]|之[\\u4e00-\\u9fa5]{1,6}|续集|续|[ⅡII2]|下部|下部篇)$");
+    /**
+     * 续集后缀，去掉后可拿主标题找同系列。
+     * ⚠️ 季号阿拉伯数字、中文数字、罗马数字都得认：站源写法五花八门——《权力的游戏 第二季》《庆余年2》
+     * 《XX 第3季》《XX S4》《XX Ⅱ》都是同一个意思，抠主标题时必须一视同仁地削掉，
+     * 否则「庆余年2」抠出来是「庆余年」、「庆余年3」抠出来是「庆余年3」，两边对不上就接不下去。
+     * 数字尾缀要求前面不是字母/数字：「XXS2」里的 2 交给英文那条处理（否则会削成「XXS」），
+     * 「请回答1988」末尾的 88 前面是数字，那是年份不是季号，不能削。
+     */
+    private static final Pattern SERIAL_SUFFIX = Pattern.compile("(第[一二三四五六七八九十\\d]+[部季篇章]|之[\\u4e00-\\u9fa5]{1,6}|续集|续|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]{1,2}|(?<![a-zA-Z\\d])\\d{1,2}|下部|下部篇)$");
+
+    /**
+     * 系列序号的几种写法：中文「第二季 / 第2部」、英文「S2 / S02 / Season 2」、罗马数字「Ⅱ」。
+     * ⚠️ 英文那条要求 S 前面不是字母、后面紧跟数字，免得把「House」「Sos」这类名字里的 s 当成季号。
+     */
+    private static final Pattern SERIAL_CN = Pattern.compile("第\\s*([一二三四五六七八九十]+|\\d{1,2})\\s*[部季篇章]");
+    private static final Pattern SERIAL_EN = Pattern.compile("(?i)(?<![a-z])(?:season\\s*|s)0?(\\d{1,2})(?![a-z\\d])");
+    private static final Pattern SERIAL_ROMAN = Pattern.compile("[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]{1,2}");
+    private static final Pattern SERIAL_TAIL = Pattern.compile("(?<![集章话部季篇a-zA-Z\\d])(\\d{1,2})$");
+    private static final String[] ROMAN = {"Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ", "Ⅵ", "Ⅶ", "Ⅷ", "Ⅸ", "Ⅹ", "Ⅺ", "Ⅻ"};
 
     private static final Pattern EPISODES = Pattern.compile("(\\d{1,4})\\s*[集章话]");
 
@@ -333,9 +350,124 @@ public class BingeTags {
     /** 洗标题：去括号、去噪声，剩下的才是能联想的部分 */
     public static String clean(String name) {
         if (name == null) return "";
-        String text = name.replaceAll("[《》〈⟩\\[\\]【】()（）·・:：,，。.!！?？\"'“”‘’|/\\\\-_~\\s]", "");
+        String text = halfWidth(name).replaceAll("[《》〈⟩\\[\\]【】()（）·・:：,，。.!！?？\"'“”‘’|/\\\\-_~\\s]", "");
         for (String noise : NOISE) text = text.replace(noise, "");
         return text.trim();
+    }
+
+    /**
+     * 剧名里写着第几季 / 第几部（「权力的游戏 第一季」→ 1）；一个都没写返回 -1。
+     * 这是「系列剧」的硬证据：有它就能一季一季往下接，而不是换一部别的剧。
+     */
+    public static int serialOf(String name) {
+        if (name == null || name.isEmpty()) return -1;
+        String name0 = halfWidth(name); // 全角数字「庆余年２」先归一，不然 \d 认不出来
+        Matcher matcher = SERIAL_CN.matcher(name0);
+        if (matcher.find()) {
+            int value = cnToInt(matcher.group(1));
+            if (value > 0) return value;
+        }
+        matcher = SERIAL_EN.matcher(name0);
+        if (matcher.find()) {
+            try {
+                int value = Integer.parseInt(matcher.group(1));
+                if (value > 0) return value;
+            } catch (NumberFormatException ignored) {
+                // 数字离谱，当没写
+            }
+        }
+        matcher = SERIAL_ROMAN.matcher(name0);
+        if (matcher.find()) {
+            String text = matcher.group();
+            for (int i = 0; i < ROMAN.length; i++) if (ROMAN[i].equals(text)) return i + 1;
+        }
+        // 偷懒写法「庆余年2」：名字最后光秃秃跟着个数字也算季号（1~20）。
+        // ⚠️ 前面是「集/章/话」的不算（那是集数）；「请回答1988」这种四位数、以及跟在字母后面的（S2 交给上面英文那条）都不算。
+        matcher = SERIAL_TAIL.matcher(clean(name0));
+        if (matcher.find()) {
+            try {
+                int value = Integer.parseInt(matcher.group(1));
+                if (value > 0 && value <= 20) return value;
+            } catch (NumberFormatException ignored) {
+                // 数字离谱，当没写
+            }
+        }
+        return -1;
+    }
+
+    /** 全角数字/空格转半角：站源爱写「庆余年２」，不归一化的话正则里的 \d 认不出来 */
+    private static String halfWidth(String text) {
+        if (text == null) return "";
+        StringBuilder sb = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= '０' && c <= '９') sb.append((char) ('0' + (c - '０')));
+            else sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /** 名字里明写着第几季/第几部 */
+    public static boolean hasSerialMark(String name) {
+        return serialOf(name) > 0;
+    }
+
+    /** 系列主标题：去掉季号和噪声之后剩下的名字，同一个系列应当抠出同一个名字 */
+    public static String serialMainOf(String name) {
+        if (name == null || name.isEmpty()) return "";
+        String text = clean(name);
+        text = SERIAL_SUFFIX.matcher(text).replaceAll("");
+        text = SERIAL_CN.matcher(text).replaceAll("");
+        text = SERIAL_EN.matcher(text).replaceAll("");
+        text = SERIAL_ROMAN.matcher(text).replaceAll("");
+        return text.trim();
+    }
+
+    /** 两部剧是不是同一个系列：主标题一致；站源写法差一两个字（「权力的游戏」/「权力的游戏 第2季」）也算 */
+    public static boolean sameSerial(String current, String candidate) {
+        String a = serialMainOf(current);
+        String b = serialMainOf(candidate);
+        if (a.length() < 2 || b.length() < 2) return false;
+        if (a.equals(b)) return true;
+        if (a.contains(b) || b.contains(a)) return Math.abs(a.length() - b.length()) <= 1;
+        return false;
+    }
+
+    /** 第 n 季的中文说法（1→一、2→二、11→十一），拼「主标题 第二季」这种搜索词用 */
+    public static String cnNumber(int n) {
+        if (n <= 0) return "";
+        if (n < 10) return String.valueOf(CN_DIGITS[n]);
+        if (n == 10) return "十";
+        int tens = n / 10;
+        int ones = n % 10;
+        if (n < 20) return "十" + CN_DIGITS[ones];
+        return (tens > 1 ? String.valueOf(CN_DIGITS[tens]) : "") + "十" + (ones > 0 ? String.valueOf(CN_DIGITS[ones]) : "");
+    }
+
+    private static final char[] CN_DIGITS = {'零', '一', '二', '三', '四', '五', '六', '七', '八', '九'};
+
+    /** 中文数字转阿拉伯数字：支持「三」「十」「十三」「二十」，别的返回 -1 */
+    private static int cnToInt(String text) {
+        if (text == null || text.isEmpty()) return -1;
+        if (Character.isDigit(text.charAt(0))) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+        int ten = text.indexOf('十');
+        if (ten < 0) return cnDigit(text);
+        int tens = ten == 0 ? 1 : cnDigit(text.substring(0, ten));
+        int ones = ten == text.length() - 1 ? 0 : cnDigit(text.substring(ten + 1));
+        if (tens < 0 || ones < 0) return -1;
+        return tens * 10 + ones;
+    }
+
+    private static int cnDigit(String text) {
+        if (text == null || text.length() != 1) return -1;
+        for (int i = 0; i < CN_DIGITS.length; i++) if (CN_DIGITS[i] == text.charAt(0)) return i;
+        return -1;
     }
 
     /** 从标题（+分类名）里联想出搜索关键词：产地词 → 题材词 → 主标题 → 分类 → 兜底"短剧" */

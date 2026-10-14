@@ -52,9 +52,9 @@ import com.fongmi.android.tv.impl.CustomTarget;
 import com.fongmi.android.tv.model.VideoViewModel;
 import com.fongmi.android.tv.playback.PlaybackAction;
 import com.fongmi.android.tv.playback.PlaybackIntent;
-import com.fongmi.android.tv.playback.PlaybackOrientation;
 import com.fongmi.android.tv.playback.PlaybackReset;
 import com.fongmi.android.tv.playback.PlaybackResult;
+import com.fongmi.android.tv.playback.vod.BingeTags;
 import com.fongmi.android.tv.playback.vod.VodDetailResult;
 import com.fongmi.android.tv.playback.vod.VodPlayRequest;
 import com.fongmi.android.tv.playback.vod.VodPlaybackController;
@@ -64,6 +64,7 @@ import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
+import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.ui.adapter.ArrayAdapter;
@@ -284,7 +285,9 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
         mFrameParams = mBinding.video.getLayoutParams();
-        mClock = Clock.create(mBinding.widget.clock);
+        mClock = Clock.create(); // 角落时间的内容由「屏幕显示」决定，交给 PlaybackActivity 统一写
+        setScreenClock(mBinding.widget.clock);
+        setMiniProgressBar(mBinding.widget.mini);
         mKeyDown = CustomKeyDownVod.create(this);
         mR1 = this::hideControl;
         mR2 = this::updateFocus;
@@ -297,6 +300,13 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setStarStrip();
         checkCast();
         checkId();
+    }
+
+    /** 从设置页回来：「屏幕显示」那几个开关可能刚动过，按新设置重刷一遍标题/时间/分辨率 */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (service() != null) setWidgetTitle(player().getMetadata());
     }
 
     /** 详情页下方那块演员区域：点一下关注/取消，长按看他的作品（TMDB 列名单，点片名再回 APP 搜） */
@@ -361,7 +371,6 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.control.action.prev.setOnClickListener(view -> checkPrev());
         mBinding.control.action.binge.setOnClickListener(view -> mVod.bingeNext());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
-        mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
@@ -587,6 +596,12 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     @Override
+    public void onBingeEnd(boolean serial) {
+        // 系列剧接不下去时别说「没有同类剧集」了——人家要的是下一季，没有就是没有
+        Notify.show(serial ? R.string.play_binge_end_serial : R.string.play_binge_end);
+    }
+
+    @Override
     public void prepareSource(Vod item) {
         getIntent().putExtra("key", item.getSiteKey());
         getIntent().putExtra("pic", item.getPic());
@@ -681,6 +696,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     public void renderFlags(List<Flag> items) {
         mBinding.flag.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.action.binge.setVisibility(mVod.canBinge() ? View.VISIBLE : View.GONE);
+        // 带「第X季」的剧，这个按钮接的是下一季，不是换一部别的剧，按钮上就写「下一季」
+        mBinding.control.action.binge.setText(BingeTags.hasSerialMark(getVodName()) ? R.string.play_binge_next_serial : R.string.play_binge_btn);
         mFlagAdapter.addAll(items);
     }
 
@@ -753,7 +770,14 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        mBinding.widget.title.setText(metadata.displayTitle);
+        setWidgetTitle(metadata);
+    }
+
+    /** 顶部标题：剧名、当前集数各有一个开关，两个都关就整块不显示（设置 → 播放设置 → 屏幕显示） */
+    private void setWidgetTitle(MediaMetadata metadata) {
+        String title = ScreenSetting.title(metadata);
+        mBinding.widget.title.setText(title);
+        mBinding.widget.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.widget.title.setSelected(true);
     }
 
@@ -1062,36 +1086,6 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         int index = getScale();
         String[] array = ResUtil.getStringArray(R.array.select_scale);
         setScale(index == array.length - 1 ? 0 : ++index);
-    }
-
-    /**
-     * 强制转屏：**现在横着就强制竖屏，现在竖着就强制横屏**，跟手机版同一个口径。
-     *
-     * TV 版原先压根没这个按钮（658 那轮只补了手机版），遥控器上想转屏只能去系统设置里改。
-     * 盒子和电视本身不会转，但接了可旋转的屏（移动屏/闺蜜机/投影）或看竖屏短剧时用得上。
-     * 页面在清单里声明了自己处理 orientation，转屏不会重建 Activity，播放不中断。
-     */
-    private void onRotate() {
-        boolean portrait = ResUtil.isLand(this);
-        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
-        checkRotated(portrait);
-    }
-
-    /**
-     * 转屏请求发出去之后，等一小会儿看屏幕朝向到底有没有真的变。
-     *
-     * ⚠️ 电视和盒子（小米盒子这类 Android TV）把屏幕锁死在横屏，系统**会直接忽略** App 的转屏请求
-     * （Android 12 起 TV 上更是明确不认非横屏的方向请求）。马先生 2026-10-14 在小米盒子上按了没反应，
-     * 就是这个原因，不是按钮没接上。所以这里不能上来就报「已强制竖屏」——那等于骗人；
-     * 真没转成就如实告诉他这台设备不支持屏幕旋转。
-     */
-    private void checkRotated(boolean wantPortrait) {
-        App.post(() -> {
-            if (isFinishing() || isDestroyed()) return;
-            boolean nowPortrait = !ResUtil.isLand(this);
-            if (nowPortrait == wantPortrait) Notify.show(wantPortrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
-            else Notify.show(R.string.play_rotate_unsupported);
-        }, 1000);
     }
 
     private void onSpeed() {

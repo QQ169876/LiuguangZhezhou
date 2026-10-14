@@ -212,7 +212,7 @@ public class GhRoute {
      * 隐藏开关打开时：App 内所有请求（点播、直播、图片、同步…）都走这台 SOCKS5
      */
     public static void applyGlobal() {
-        OkHttp.selector().setGlobal(Setting.isIPv6() ? wildcard() : null);
+        OkHttp.selector().setGlobal(Setting.isGlobalProxy() ? wildcard() : null);
     }
 
     /** 当前这台代理，没有就退到自定义列表里第一台能用的 */

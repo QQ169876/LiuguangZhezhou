@@ -64,10 +64,6 @@
     <string name="play_edition">标题</string>
     <string name="play_chapter">章节</string>
     <string name="play_scale">原始</string>
-    <string name="play_rotate">转屏</string>
-    <string name="play_rotate_portrait">已强制竖屏</string>
-    <string name="play_rotate_landscape">已强制横屏</string>
-    <string name="play_rotate_unsupported">这台设备不支持旋转屏幕（电视、盒子一般把画面锁死在横屏），转屏按钮在这上面不起作用。</string>
     <string name="play_video_rotate">画面旋转</string>
     <string name="play_video_rotate_to">画面已旋转 %1$d°</string>
     <string name="play_video_rotate_reset">画面已回正</string>
@@ -85,6 +81,8 @@
     <string name="play_binge_next">下一部：《<xliff:g name="name">%1$s</xliff:g>》· <xliff:g name="site">%2$s</xliff:g></string>
     <string name="play_binge_end">暂时没有更多同类剧集</string>
     <string name="play_binge_btn">下一部</string>
+    <string name="play_binge_next_serial">下一季</string>
+    <string name="play_binge_end_serial">没找到下一季</string>
     <string name="play_ready">准备播放：<xliff:g name="name">%s</xliff:g></string>
     <string name="play_switch_flag">正在切换线路至「<xliff:g name="name">%s</xliff:g>」</string>
     <string name="play_switch_site">正在切换站源至「<xliff:g name="name">%s</xliff:g>」</string>
@@ -105,6 +103,7 @@
     <string name="speed_setting_long_press">长按倍速</string>
     <string name="speed_setting_quick">快速选择</string>
     <string name="speed_setting_skip_silence">跳过无声片段</string>
+    <string name="speed_setting_tip">注意：开着「音频直通」或「隧道模式」时倍速（尤其慢速）会失效，到解码设置里关掉它们就好了</string>
 
     <!-- Audio Setting -->
     <string name="audio_setting">音质设置</string>
@@ -182,7 +181,7 @@
     <string name="subtitle_search_api_title">Assrt</string>
     <string name="subtitle_search_token_hint">伪射手 Token（可不填）</string>
     <string name="subtitle_search_subdl_key_hint">SubDL API Key（可不填）</string>
-    <string name="subtitle_source_auto">来源：自动</string>
+    <string name="subtitle_source_auto">来源：自动（几家合并）</string>
     <string name="subtitle_source_assrt">来源：伪射手</string>
     <string name="subtitle_source_opensub">来源：OpenSubtitles</string>
     <string name="subtitle_source_subdl">来源：SubDL</string>
@@ -196,6 +195,7 @@
     <string name="subtitle_offset">字幕偏移</string>
     <string name="subtitle_offset_tip">正值字幕延后出、负值字幕提前出；长按按钮可以连续调。调好的偏移会按片子记住，下次播放自动套用。</string>
     <string name="subtitle_offset_zero">归零</string>
+    <string name="subtitle_auto_sync_done">字幕时间轴已自动校准 %1$s 秒</string>
     <string name="subtitle_size">大小</string>
     <string name="subtitle_position">位置</string>
     <string name="subtitle_style_source">样式来源</string>
@@ -537,6 +537,19 @@
     <string name="player_mpv_vulkan">vulkan</string>
     <string name="player_mpv_conf_import_success">已导入 mpv.conf</string>
     <string name="player_ua">User-Agent</string>
+    <string name="player_display_setting">显示设置</string>
+    <string name="screen_display_tip">这几项各管各的，打开哪个画面上就多露哪个：剧名在左上角、时间在右上角、进度线在最底下。全打开就全显示。</string>
+    <string name="screen_show_title">剧名 / 片名</string>
+    <string name="screen_show_episode">当前集数</string>
+    <string name="screen_show_clock">时间显示（右上角）</string>
+    <string name="screen_time_content">时间内容</string>
+    <string name="screen_show_progress">播放进度（底部细红线）</string>
+    <string name="screen_time_off">不显示</string>
+    <string name="screen_time_now">实时时间</string>
+    <string name="screen_time_played">已播时长</string>
+    <string name="screen_time_left">剩余时长</string>
+    <string name="screen_played_value">已播 %1$s</string>
+    <string name="screen_left_value">剩余 %1$s</string>
 
     <!-- Danmaku -->
     <string name="danmaku_load">弹幕加载</string>
@@ -620,6 +633,7 @@
     <string name="route_host_tip">如 192.168.1.100，也可以整串粘贴 socks5://user:pwd@1.2.3.4:1080</string>
     <string name="route_host">地址</string>
     <string name="route_tip">格式 socks5://用户名:密码@地址:端口，免认证的只填地址和端口</string>
+    <!-- 按钮上的「IPv6」只是个幌子，真实语义是全局走 SOCKS5 代理 -->
     <string name="route_ipv6">IPv6</string>
 
     <!-- Crash -->

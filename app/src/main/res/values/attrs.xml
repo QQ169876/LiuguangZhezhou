@@ -6,4 +6,9 @@
         <attr name="maxWidth" format="dimension" />
         <attr name="maxHeight" format="dimension" />
     </declare-styleable>
+
+    <declare-styleable name="CustomFlowLayout">
+        <attr name="itemSpacing" format="dimension" />
+        <attr name="lineSpacing" format="dimension" />
+    </declare-styleable>
 </resources>

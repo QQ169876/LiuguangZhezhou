@@ -31,7 +31,6 @@ public class Startup implements Initializer<Void> {
         Logger.addLogAdapter(new AndroidLogAdapter(PrettyFormatStrategy.newBuilder().methodCount(0).showThreadInfo(false).tag("TV").build()));
         EventBus.builder().addIndex(new EventIndex()).installDefaultEventBus();
         OkHttp.dns().setDoh(() -> Doh.objectFrom(Setting.getDoh()));
-        OkHttp.dns().setIPv6(Setting.isIPv6());
         GhRoute.applyGlobal();
         return null;
     }

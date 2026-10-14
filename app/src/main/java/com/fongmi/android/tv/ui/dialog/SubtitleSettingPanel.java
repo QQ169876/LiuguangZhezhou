@@ -28,6 +28,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogSubtitleSettingBinding;
 import com.fongmi.android.tv.databinding.ViewSettingSliderBinding;
 import com.fongmi.android.tv.player.PlayerManager;
+import com.fongmi.android.tv.player.sync.SubtitleAutoSync;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.utils.SliderUtil;
@@ -50,7 +51,7 @@ final class SubtitleSettingPanel {
     private static final float MAX_SUBTITLE_OFFSET_MS = 300000.0f;
     private static final float STEP_SUBTITLE_OFFSET_MS = 1000.0f;
     private static final float STEP_TEXT_SCALE = 0.05f;
-    private static final float STEP_POSITION_PERCENT = 0.5f;
+    private static final float STEP_POSITION_PERCENT = 1.0f;
     private static final float STEP_OPACITY = 0.05f;
     private static final float STEP_EDGE = 0.5f;
     private static final float STEP_SECONDARY_POSITION = 1.0f;
@@ -192,6 +193,9 @@ final class SubtitleSettingPanel {
     /** 连按住调的时候别每一步都落盘，停手 400ms 再记一次 */
     private void scheduleOffsetSave(long valueMs) {
         cancelOffsetSave();
+        // 手动动过时间轴就听人的：正在跑的自动校准立刻收手，这部片子以后也不再自动校准
+        SubtitleAutoSync.get().stop();
+        SubtitleSetting.markAutoSynced(player == null ? null : player.getKey());
         offsetSave = () -> SubtitleSetting.putOffsetMs(player == null ? null : player.getKey(), valueMs);
         App.post(offsetSave, OFFSET_SAVE_DELAY);
     }
@@ -732,7 +736,7 @@ final class SubtitleSettingPanel {
     }
 
     private String formatPosition(float value) {
-        return String.format(Locale.getDefault(), "%+.1f%%", value);
+        return String.format(Locale.getDefault(), "%+.0f%%", value);
     }
 
     private String formatOffset(float offsetMs) {

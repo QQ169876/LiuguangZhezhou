@@ -191,13 +191,23 @@ public class Setting {
         if (list.remove(socks)) putRouteCustoms(list);
     }
 
-    /** App 内所有请求强制走 IPv6（默认关） */
-    public static boolean isIPv6() {
+    /**
+     * ⚠️ 这个开关**跟 IPv6 协议没有任何关系**。
+     * <p>
+     * 「更新线路」里那个按钮显示的文字是「IPv6」，那纯粹是拿来混淆视听的壳子：
+     * 它真正干的事只有一件 —— **App 内所有请求（点播、直播、图片、站源视频链接）全部走
+     * 用户自己填的那台 SOCKS5 代理**，关掉就恢复各自原本的线路。
+     * <p>
+     * 存储键还叫 "ipv6"（历史的幌子名）：改键名会让已经偷偷勾上的用户开关失效，所以不动它，
+     * 但代码里一律走 {@link #isGlobalProxy()} / {@link #putGlobalProxy(boolean)}，
+     * 别再拿这个名字去驱动任何真正的 IPv6 逻辑。
+     */
+    public static boolean isGlobalProxy() {
         return Prefers.getBoolean("ipv6");
     }
 
-    public static void putIPv6(boolean ipv6) {
-        Prefers.put("ipv6", ipv6);
+    public static void putGlobalProxy(boolean on) {
+        Prefers.put("ipv6", on);
     }
 
     public static boolean isAdblock() {

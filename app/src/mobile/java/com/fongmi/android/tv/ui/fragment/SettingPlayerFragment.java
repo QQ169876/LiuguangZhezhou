@@ -21,6 +21,7 @@ import com.fongmi.android.tv.ui.activity.HomeActivity;
 import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.dialog.BufferDialog;
 import com.fongmi.android.tv.ui.dialog.MpvConfDialog;
+import com.fongmi.android.tv.ui.dialog.ScreenDisplayDialog;
 import com.fongmi.android.tv.ui.dialog.UaDialog;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -81,7 +82,12 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.background.setOnClickListener(this::onBackground);
         mBinding.buffer.setOnClickListener(this::onBuffer);
         mBinding.preload.setOnClickListener(this::onPreload);
+        mBinding.display.setOnClickListener(this::onDisplay);
         mBinding.ua.setOnClickListener(this::onUa);
+    }
+
+    private void onDisplay(View view) {
+        ScreenDisplayDialog.show(this);
     }
 
     private void setVisible() {

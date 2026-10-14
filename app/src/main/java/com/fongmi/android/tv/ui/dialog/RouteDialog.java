@@ -17,7 +17,6 @@ import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
 import com.fongmi.android.tv.utils.ResUtil;
-import com.github.catvod.net.OkHttp;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,13 +72,16 @@ public class RouteDialog {
         DialogRouteBinding binding = DialogRouteBinding.inflate(LayoutInflater.from(activity));
         AlertDialog dialog = new AlertDialog.Builder(activity).setTitle(R.string.setting_route).setView(binding.getRoot()).setNegativeButton(R.string.dialog_negative, null).create();
         render(binding.list, dialog);
-        binding.ipv6.setChecked(Setting.isIPv6());
+        binding.ipv6.setChecked(Setting.isGlobalProxy());
         binding.ipv6.setOnClickListener(view -> onIPv6((android.widget.CheckBox) view));
         dialog.show();
     }
 
     /**
-     * IPv6：勾上之后 App 里所有请求都走 IPv6。默认关，要连点七下才真勾上，中间不给任何提示。
+     * 那个标着「IPv6」的复选框跟 IPv6 协议一点关系没有 —— 它只是**全局 SOCKS5 代理**的开关：
+     * 勾上 = App 里所有请求（点播、直播、图片、站源视频链接）都走用户填的那台 SOCKS5，
+     * 取消 = 各走各的原线路。按钮文字是故意拿来混淆视听的，别照着名字去动 DNS / 协议栈。
+     * 默认关，要连点七下才真勾上，中间不给任何提示。
      */
     private void onIPv6(android.widget.CheckBox box) {
         if (!box.isChecked()) {
@@ -95,9 +97,8 @@ public class RouteDialog {
         apply(true);
     }
 
-    private void apply(boolean ipv6) {
-        Setting.putIPv6(ipv6);
-        OkHttp.dns().setIPv6(ipv6);
+    private void apply(boolean globalProxy) {
+        Setting.putGlobalProxy(globalProxy);
         GhRoute.applyGlobal();
     }
 
@@ -223,7 +224,7 @@ public class RouteDialog {
     }
 
     private void changed() {
-        if (Setting.isIPv6()) GhRoute.applyGlobal();
+        if (Setting.isGlobalProxy()) GhRoute.applyGlobal();
         if (listener != null) listener.onRouteChanged();
     }
 

@@ -7,6 +7,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogSpeedSettingBinding;
 import com.fongmi.android.tv.databinding.ViewSettingSliderBinding;
 import com.fongmi.android.tv.player.PlayerManager;
+import com.fongmi.android.tv.setting.DecodeSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
 import com.fongmi.android.tv.utils.SliderUtil;
 import com.fongmi.android.tv.utils.Util;
@@ -31,8 +32,18 @@ final class SpeedSettingPanel {
         bindPreset();
         bindSkipSilence();
         bindReset();
+        bindTip();
         syncControls();
         if (Util.isLeanback()) binding.speed.slider.requestFocus();
+    }
+
+    /**
+     * 慢速失效只剩这两种情况没法从代码里兜住（音频根本不过软件变速那条路），
+     * 与其让人一脸懵，不如直接写在面板上。
+     */
+    private void bindTip() {
+        boolean blocked = DecodeSetting.isAudioPassThrough() || DecodeSetting.isTunnelingEnabled();
+        binding.speedTip.setVisibility(blocked ? View.VISIBLE : View.GONE);
     }
 
     void release() {

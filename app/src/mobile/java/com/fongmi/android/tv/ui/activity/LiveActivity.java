@@ -52,6 +52,7 @@ import com.fongmi.android.tv.playback.live.LivePlaybackHost;
 import com.fongmi.android.tv.player.extractor.Source;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.LiveSetting;
+import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.ui.adapter.ChannelAdapter;
 import com.fongmi.android.tv.ui.adapter.EpgDataAdapter;
 import com.fongmi.android.tv.ui.adapter.GroupAdapter;
@@ -65,6 +66,7 @@ import com.fongmi.android.tv.ui.dialog.PlayerEngineDialog;
 import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
 import com.fongmi.android.tv.utils.Biometric;
+import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.ImgUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PiP;
@@ -83,6 +85,7 @@ import java.util.List;
 public class LiveActivity extends PlaybackActivity implements CustomKeyDown.Listener, Biometric.Callback, PassListener, ConfigListener, LiveListener, GroupAdapter.OnClickListener, ChannelAdapter.OnClickListener, EpgDataAdapter.OnClickListener, CastDialog.Listener, InfoDialog.Listener, LivePlaybackHost {
 
     private ActivityLiveBinding mBinding;
+    private Clock mClock;
     private LiveViewModel mViewModel;
     private LivePlaybackController mLive;
     private GroupAdapter mGroupAdapter;
@@ -161,6 +164,8 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
         mKeyDown = CustomKeyDown.create(this, mBinding.player);
+        mClock = Clock.create(); // 右上角时间的内容由「显示设置」决定，交给 PlaybackActivity 统一写
+        setScreenClock(mBinding.widget.clock); // 常驻在画面右上角，控制条收起来之后照样在
         setPadding(mBinding.control.getRoot());
         setPadding(mBinding.recycler, true);
         mHides = new ArrayList<>();
@@ -184,7 +189,6 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
         mBinding.control.next.setOnClickListener(view -> nextChannel());
         mBinding.control.prev.setOnClickListener(view -> prevChannel());
         mBinding.control.right.lock.setOnClickListener(view -> onLock());
-        mBinding.control.right.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.action.text.setOnClickListener(this::onTrack);
         mBinding.control.action.audio.setOnClickListener(this::onTrack);
         mBinding.control.action.video.setOnClickListener(this::onTrack);
@@ -369,12 +373,6 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
         showControl();
     }
 
-    private void onRotate() {
-        setR1Callback();
-        setRotate(!isRotate());
-        setRequestedOrientation(PlaybackOrientation.getRotateOrientation(this));
-    }
-
     private void checkPlay() {
         if (player().isPlaying()) onPaused();
         else onPlay();
@@ -513,7 +511,6 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
         if (service() == null || isInPictureInPictureMode()) return;
         mBinding.control.info.setVisibility(player().isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.cast.setVisibility(player().isEmpty() ? View.GONE : View.VISIBLE);
-        mBinding.control.right.rotate.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.center.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.bottom.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.back.setVisibility(isLock() ? View.GONE : View.VISIBLE);
@@ -767,7 +764,9 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        mBinding.control.title.setText(metadata.displayTitle);
+        String title = ScreenSetting.title(metadata);
+        mBinding.control.title.setText(title);
+        mBinding.control.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.title.setSelected(true);
     }
 
@@ -1105,6 +1104,7 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
     @Override
     protected void onStart() {
         super.onStart();
+        if (mClock != null) mClock.stop().start();
         setAudioOnly(false);
         setStop(false);
     }
@@ -1112,6 +1112,7 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
     @Override
     protected void onStop() {
         super.onStop();
+        if (mClock != null) mClock.stop();
         if (!isAudioOnly()) setStop(true);
     }
 
@@ -1133,6 +1134,7 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
     protected void onDestroy() {
         Source.get().exit();
         App.removeCallbacks(mR1, mR2, mR3);
+        if (mClock != null) mClock.release();
         super.onDestroy();
     }
 }

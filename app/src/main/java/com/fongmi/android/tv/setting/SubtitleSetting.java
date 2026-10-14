@@ -30,7 +30,7 @@ public class SubtitleSetting {
     public static final float MIN_SCALE = 0.5f;
     public static final float MAX_SCALE = 2.0f;
     public static final float MIN_POSITION = -20.0f;
-    public static final float MAX_POSITION = 30.0f;
+    public static final float MAX_POSITION = 100.0f;
     public static final float MIN_OPACITY = 0.0f;
     public static final float MAX_OPACITY = 1.0f;
     public static final float MIN_EDGE_WIDTH = 0.0f;
@@ -67,6 +67,12 @@ public class SubtitleSetting {
     private static final float DEFAULT_SECONDARY_POSITION = 10.0f;
 
     /** 在线搜字幕的来源：自动（主源不行就换备用）/ 伪射手 / OpenSubtitles / SubDL */
+    /** 估算字幕块高度用的经验值：按两行字幕、行高 1.15 倍字号算，够接近真实排版 */
+    private static final float SUBTITLE_LINE_COUNT = 2.0f;
+    private static final float SUBTITLE_LINE_SPACING = 1.15f;
+    /** 顶到最上面时跟屏幕上沿留的余量（占画面高度的比例），不贴死好看一点 */
+    private static final float SUBTITLE_TOP_MARGIN = 0.02f;
+
     public static final int SOURCE_AUTO = 0;
     public static final int SOURCE_ASSRT = 1;
     public static final int SOURCE_OPENSUB = 2;
@@ -162,6 +168,29 @@ public class SubtitleSetting {
 
     public static void putPosition(float value) {
         Prefers.put("subtitle_position", Math.clamp(value, MIN_POSITION, MAX_POSITION));
+    }
+
+    /**
+     * 把「位置」这条滑块的值（-20 往画面外压，100 顶到屏幕最上沿）翻译成 SubtitleView 真正吃的 bottomPosition。
+     * <p>
+     * bottomPosition 的含义是「字幕整体上移多少个画面高度」：0 = 贴着底边，1 = 整整上移一个画面高。
+     * 可字幕块自己就有十几分之一屏高，直接给 1 会把字幕整个顶出屏幕上沿、一条都看不见 ——
+     * 原来上限只有 30（= 上移 0.30 个屏高），所以马先生调到头也只能到屏幕一半，
+     * 想要「把字幕放到上面黑边里」根本做不到。
+     * <p>
+     * 所以先按当前字号估出字幕块占多高，再扣掉上边距，剩下的才是能往上走的距离：
+     * 100% = 字幕上沿刚好贴到屏幕顶（字越大，能上去的高度越少，这是物理限制，不是 bug）。
+     */
+    public static float getBottomPosition(Context context) {
+        float value = getPosition();
+        if (value <= 0) return value / 100.0f;
+        return (value / 100.0f) * maxShiftFraction(context);
+    }
+
+    /** 往上最多能挪多少个「画面高度」：1 屏高 - 底边留白 - 字幕块自身高度 - 顶部再留一点 */
+    private static float maxShiftFraction(Context context) {
+        float textFraction = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * getScale(context) * SUBTITLE_LINE_COUNT * SUBTITLE_LINE_SPACING;
+        return Math.clamp(1.0f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION - textFraction - SUBTITLE_TOP_MARGIN, 0.30f, 0.92f);
     }
 
     public static int getTextBaseColor() {
@@ -310,7 +339,7 @@ public class SubtitleSetting {
         subtitleView.setApplyEmbeddedStyles(!isStyleForced());
         subtitleView.setApplyEmbeddedFontSizes(true);
         if (isScaleApplied()) subtitleView.setTextSizeScale(getScale(context));
-        if (isPositionSet()) subtitleView.setBottomPosition(getPosition() / 100.0f);
+        if (isPositionSet()) subtitleView.setBottomPosition(getBottomPosition(context));
     }
 
     /** 字幕时间轴偏移（毫秒）：正值字幕延后出、负值字幕提前出 */
@@ -360,6 +389,40 @@ public class SubtitleSetting {
         }
         Map<String, Long> history = readOffsetHistory();
         if (history.remove(key) != null) writeOffsetHistory(history);
+    }
+
+    /** 自动校准过的片子：同一个 key 只校准一次，之后一律用记忆值，别每进一次播放页都重算 */
+    private static final String KEY_AUTOSYNC = "subtitle_autosync";
+    private static final int MAX_AUTOSYNC = 300;
+
+    public static boolean isAutoSynced(String key) {
+        if (TextUtils.isEmpty(key)) return false;
+        try {
+            JSONArray array = new JSONArray(Prefers.getString(KEY_AUTOSYNC, ""));
+            for (int i = 0; i < array.length(); i++) if (key.equals(array.optString(i))) return true;
+        } catch (Exception ignored) {
+            // 记不住就当没校准过，最多是多算一次，不能让它拖崩播放页
+        }
+        return false;
+    }
+
+    public static void markAutoSynced(String key) {
+        if (TextUtils.isEmpty(key) || isAutoSynced(key)) return;
+        try {
+            JSONArray array = new JSONArray(Prefers.getString(KEY_AUTOSYNC, ""));
+            array.put(key);
+            if (array.length() > MAX_AUTOSYNC) {
+                JSONArray trimmed = new JSONArray();
+                for (int i = array.length() - MAX_AUTOSYNC; i < array.length(); i++) trimmed.put(array.optString(i));
+                array = trimmed;
+            }
+            Prefers.put(KEY_AUTOSYNC, array.toString());
+        } catch (Exception ignored) {
+        }
+    }
+
+    public static void resetAutoSynced() {
+        Prefers.remove(KEY_AUTOSYNC);
     }
 
     public static void resetOffset() {

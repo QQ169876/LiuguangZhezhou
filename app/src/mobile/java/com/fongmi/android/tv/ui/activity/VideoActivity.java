@@ -76,6 +76,7 @@ import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
+import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.ui.adapter.EpisodeAdapter;
@@ -133,6 +134,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private QuickAdapter mQuickAdapter;
     private StarStrip mStarStrip;
     private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
+    private String mScreenTitle = ""; // 按「显示设置」的开关拼出来的剧名（可能为空=两个开关都关了）
     private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
@@ -150,7 +152,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean fullscreen;
     private boolean useParse;
     private boolean rotate;
-    private boolean userRotated; // 刚手动按了强制转屏：这一下屏幕变化别让「自动进/退全屏」插手
 
     public static void push(FragmentActivity activity, String text) {
         Uri uri = UrlUtil.uri(text);
@@ -309,7 +310,9 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mFrameParams = mBinding.video.getLayoutParams();
         mBinding.progressLayout.showProgress();
         mBinding.swipeLayout.setEnabled(false);
-        mClock = Clock.create();
+        mClock = Clock.create(); // 右上角时间的内容由「显示设置」决定，交给 PlaybackActivity 统一写
+        setScreenClock(mBinding.widget.clock); // 常驻在画面右上角，控制条收起来之后照样在
+        setMiniProgressBar(mBinding.widget.mini);
         mR1 = this::hideControl;
         mR2 = this::setTraffic;
         mR3 = this::setOrient;
@@ -350,7 +353,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.setting.setOnClickListener(view -> onSetting());
         mBinding.control.title.setOnLongClickListener(view -> onChange());
         mBinding.control.right.lock.setOnClickListener(view -> onLock());
-        mBinding.control.right.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.right.fullscreen.setOnClickListener(view -> onFullscreen());
         mBinding.control.danmaku.setOnClickListener(view -> onDanmakuShow());
         mBinding.control.action.text.setOnClickListener(this::onTrack);
@@ -759,8 +761,34 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void renderPlaybackMetadata(MediaMetadata metadata) {
         if (service() != null && isOwner()) player().setMetadata(metadata);
-        mBinding.control.title.setText(metadata.displayTitle);
+        setControlTitle(metadata);
+    }
+
+    /** 剧名：控制条上那份，外加画面左上角常驻的一份（设置 → 显示设置，剧名/集数各一个开关） */
+    private void setControlTitle(MediaMetadata metadata) {
+        String title = ScreenSetting.title(metadata);
+        mScreenTitle = title;
+        mBinding.control.title.setText(title);
+        mBinding.control.title.setVisibility(title.isEmpty() ? View.GONE : View.VISIBLE);
         mBinding.control.title.setSelected(true);
+        mBinding.widget.title.setText(title);
+        refreshScreenTitle();
+    }
+
+    /**
+     * 画面左上角那份常驻剧名：只在全屏、且控制条收起来的时候露出来 ——
+     * 控制条在的时候它自己顶上那行就有剧名，两块一起显示会重影。
+     */
+    private void refreshScreenTitle() {
+        boolean show = !TextUtils.isEmpty(mScreenTitle) && isFullscreen() && mBinding.control.getRoot().getVisibility() != View.VISIBLE;
+        mBinding.widget.title.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    /** 从设置页回来：「显示设置」那几个开关可能刚动过，按新设置重刷一遍标题 */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (service() != null) setControlTitle(player().getMetadata());
     }
 
     @Override
@@ -1084,25 +1112,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         showControl();
     }
 
-    /**
-     * 强制转屏：**现在横着就强制竖屏，现在竖着就强制横屏**。
-     *
-     * ⚠️ 以前这个按钮只在全屏时才露出来（小窗里根本点不到），马先生 2026-10-13 要的就是随时能按，
-     * 所以改成只要没锁就一直显示（见 showControl）。
-     * 另外这里不再靠 isRotate() 取反来猜方向——那个标记和屏幕实际朝向可能已经对不上，
-     * 直接按屏幕当前朝向算目标，转到哪儿就把标记设成哪儿，跟 getLockOrientation 的口径一致。
-     */
-    private void onRotate() {
-        setR1Callback();
-        boolean portrait = ResUtil.isLand(this);
-        setRotate(portrait);
-        // 手动转屏后系统也会发一次屏幕变化，下面那个「跟着传感器自动进/退全屏」得让它这一回合别插手，
-        // 否则刚强制成横屏，它立刻又按片源比例给掰回竖屏（竖屏片源尤其明显）。
-        userRotated = true;
-        App.post(() -> userRotated = false, 1500);
-        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
-    }
-
     /** 画面旋转会直接改播放窗口的缩放，得让手势缩放的记录跟着对齐（不然下次双指放大从一个旧数字起步） */
     @Override
     protected void onVideoRotate() {
@@ -1337,7 +1346,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         if (service() == null || isInPictureInPictureMode()) return;
         mBinding.control.danmaku.setVisibility(isLock() || !player().haveDanmaku() ? View.GONE : View.VISIBLE);
         mBinding.control.setting.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
-        mBinding.control.right.rotate.setVisibility(isLock() ? View.GONE : View.VISIBLE); // 小窗里也要能强制转屏，只有锁定了才藏起来
         mBinding.control.right.fullscreen.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.right.fullscreen.setImageResource(isFullscreen() ? R.drawable.ic_control_fullscreen_exit : R.drawable.ic_control_fullscreen);
         mBinding.control.keep.setVisibility(mHistory == null || isFullscreen() ? View.GONE : View.VISIBLE);
@@ -1352,11 +1360,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.top.setVisibility(isLock() ? View.GONE : View.VISIBLE);
         mBinding.control.getRoot().setVisibility(View.VISIBLE);
         setR1Callback();
+        refreshScreenTitle(); // 控制条出来了，画面左上角常驻那份剧名让位，免得重影
     }
 
     private void hideControl() {
         mBinding.control.getRoot().setVisibility(View.GONE);
         App.removeCallbacks(mR1);
+        refreshScreenTitle(); // 控制条收起来了，剧名交给画面左上角那一份接着显示
     }
 
     private void dismissDialogs() {
@@ -1816,7 +1826,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        if (userRotated) return; // 刚按了强制转屏，这一回合别自动进/退全屏，听用户的
         if (isAutoRotate() && isPort() && newConfig.orientation == Configuration.ORIENTATION_PORTRAIT && !isRotate() && !isLock()) exitFullscreen();
         if (isAutoRotate() && isPort() && newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) enterFullscreen();
         if (isFullscreen()) Util.hideSystemUI(this);

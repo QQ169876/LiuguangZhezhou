@@ -17,6 +17,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.dialog.BufferDialog;
 import com.fongmi.android.tv.ui.dialog.MpvConfDialog;
+import com.fongmi.android.tv.ui.dialog.ScreenDisplayDialog;
 import com.fongmi.android.tv.ui.dialog.UaDialog;
 import com.fongmi.android.tv.utils.ResUtil;
 
@@ -62,6 +63,7 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         mBinding.background.setOnClickListener(this::onBackground);
         mBinding.buffer.setOnClickListener(this::onBuffer);
         mBinding.preload.setOnClickListener(this::onPreloadSetting);
+        mBinding.display.setOnClickListener(this::onDisplay);
         mBinding.ua.setOnClickListener(this::onUa);
     }
 
@@ -142,6 +144,10 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
 
     private void onDecodeSetting(View view) {
         SettingDecodeActivity.start(this);
+    }
+
+    private void onDisplay(View view) {
+        ScreenDisplayDialog.show(this);
     }
 
     private void onUa(View view) {

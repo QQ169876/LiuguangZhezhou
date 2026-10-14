@@ -5,6 +5,48 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- 屏幕显示：左上角剧名、右上角时间。常驻在画面上（控制条收起来之后照样在），各自一个开关（设置 → 显示设置） -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="12dp">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_toStartOf="@+id/clock"
+            android:ellipsize="end"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textSize="13sp"
+            android:visibility="gone"
+            tools:text="權力的遊戲 第一季 - 第1集" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:fontFeatureSettings="tnum"
+            android:shadowColor="@android:color/black"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:textColor="@color/white"
+            android:textSize="13sp"
+            android:visibility="gone"
+            tools:text="01:45:30" />
+
+    </RelativeLayout>
+
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/error"
         android:layout_width="wrap_content"
@@ -119,4 +161,17 @@
             app:trackColor="@color/grey_500" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 底部那根极细的进度条：不占地方、不挡画面，随时能看出这集播到哪了（设置里可关） -->
+    <ProgressBar
+        android:id="@+id/mini"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:layout_gravity="bottom"
+        android:max="1000"
+        android:progressDrawable="@drawable/progress_mini"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
 </FrameLayout>

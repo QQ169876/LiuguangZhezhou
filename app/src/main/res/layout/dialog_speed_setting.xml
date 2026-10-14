@@ -178,6 +178,16 @@
 
             </com.google.android.material.chip.ChipGroup>
 
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/speedTip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="8dp"
+                android:text="@string/speed_setting_tip"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:visibility="gone" />
+
             <androidx.appcompat.widget.LinearLayoutCompat
                 android:id="@+id/skipSilenceRow"
                 android:layout_width="match_parent"

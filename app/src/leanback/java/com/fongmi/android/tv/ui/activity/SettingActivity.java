@@ -36,6 +36,7 @@ import com.fongmi.android.tv.ui.dialog.DohDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.RouteDialog;
+import com.fongmi.android.tv.ui.dialog.ScreenDisplayDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
 import com.fongmi.android.tv.ui.dialog.PushDialog;
 import com.fongmi.android.tv.ui.dialog.WebDavDialog;
@@ -134,6 +135,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.size.setOnClickListener(this::setSize);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.player.setOnClickListener(this::onPlayer);
+        mBinding.display.setOnClickListener(this::onDisplay);
         mBinding.danmaku.setOnClickListener(this::onDanmaku);
         mBinding.webdav.setOnClickListener(this::onWebDav);
         mBinding.moontv.setOnClickListener(this::onMoonTV);
@@ -279,6 +281,11 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onPlayer(View view) {
         SettingPlayerActivity.start(this);
+    }
+
+    /** 显示设置：全屏播放时画面上要露哪些东西（剧名、时间、底部进度线），各自一个开关 */
+    private void onDisplay(View view) {
+        ScreenDisplayDialog.show(this);
     }
 
     private void onDanmaku(View view) {
