@@ -61,6 +61,11 @@
             style="@style/Control"
             android:text="@string/play_scale" />
 
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/videoRotate"
+            style="@style/Control"
+            android:text="@string/play_video_rotate" />
+
         <View
             android:layout_width="0dp"
             android:layout_height="0dp"

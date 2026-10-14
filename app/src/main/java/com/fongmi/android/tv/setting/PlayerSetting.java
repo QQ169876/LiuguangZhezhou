@@ -63,6 +63,19 @@ public class PlayerSetting {
         Prefers.put("mpv_vulkan", vulkan);
     }
 
+    /**
+     * 画面旋转：只转画面本身，不动屏幕方向（电视、盒子锁死横屏，屏幕转不动，画面照样能转）。
+     * 取值只有 0 / 90 / 180 / 270，按一次加 90°，转到一圈自动回正。
+     */
+    public static int getVideoRotate() {
+        int value = Prefers.getInt("video_rotate", 0);
+        return value % 90 == 0 ? ((value % 360) + 360) % 360 : 0;
+    }
+
+    public static void putVideoRotate(int rotate) {
+        Prefers.put("video_rotate", ((rotate % 360) + 360) % 360);
+    }
+
     public static int getRender() {
         return Math.clamp(Prefers.getInt("render", RENDER_SURFACE), RENDER_SURFACE, RENDER_TEXTURE);
     }

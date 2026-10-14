@@ -84,6 +84,15 @@ public class CustomKeyDown extends GestureDetector.SimpleOnGestureListener imple
         return scale;
     }
 
+    /**
+     * 画面旋转会自己接管缩放（`PlaybackActivity.applyVideoRotate` 直接写了 scaleX/scaleY）：
+     * 这里只把手势的记录值对齐成当前值，别让下一次双指缩放从旧数字上跳一大截。
+     * 不能走 `resetScale()`——它会放一段动画把缩放拉回 1，正好把旋转该有的缩放给冲掉。
+     */
+    public void syncScale(float value) {
+        this.scale = value;
+    }
+
     private boolean isMultiple(MotionEvent e) {
         return e.getPointerCount() > 1;
     }

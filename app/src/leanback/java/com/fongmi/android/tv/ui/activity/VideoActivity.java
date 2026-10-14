@@ -362,6 +362,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.control.action.binge.setOnClickListener(view -> mVod.bingeNext());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
         mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
+        mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
         mBinding.control.action.replay.setOnClickListener(view -> onReplay());
@@ -1073,7 +1074,24 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private void onRotate() {
         boolean portrait = ResUtil.isLand(this);
         setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
-        Notify.show(portrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
+        checkRotated(portrait);
+    }
+
+    /**
+     * 转屏请求发出去之后，等一小会儿看屏幕朝向到底有没有真的变。
+     *
+     * ⚠️ 电视和盒子（小米盒子这类 Android TV）把屏幕锁死在横屏，系统**会直接忽略** App 的转屏请求
+     * （Android 12 起 TV 上更是明确不认非横屏的方向请求）。马先生 2026-10-14 在小米盒子上按了没反应，
+     * 就是这个原因，不是按钮没接上。所以这里不能上来就报「已强制竖屏」——那等于骗人；
+     * 真没转成就如实告诉他这台设备不支持屏幕旋转。
+     */
+    private void checkRotated(boolean wantPortrait) {
+        App.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            boolean nowPortrait = !ResUtil.isLand(this);
+            if (nowPortrait == wantPortrait) Notify.show(wantPortrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
+            else Notify.show(R.string.play_rotate_unsupported);
+        }, 1000);
     }
 
     private void onSpeed() {

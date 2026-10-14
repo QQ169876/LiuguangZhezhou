@@ -182,6 +182,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         mBinding.control.action.line.setOnClickListener(view -> onLine());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
         mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
+        mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.config.setOnClickListener(view -> onConfig());
         mBinding.control.action.action.setOnClickListener(view -> onAction());
@@ -395,7 +396,17 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     private void onRotate() {
         boolean portrait = ResUtil.isLand(this);
         setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
-        Notify.show(portrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
+        checkRotated(portrait);
+    }
+
+    /** 转屏请求发出去后核对有没有真转过来；电视/盒子锁死横屏时会忽略请求，那就如实说不支持（详见点播页同名方法） */
+    private void checkRotated(boolean wantPortrait) {
+        App.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            boolean nowPortrait = !ResUtil.isLand(this);
+            if (nowPortrait == wantPortrait) Notify.show(wantPortrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
+            else Notify.show(R.string.play_rotate_unsupported);
+        }, 1000);
     }
 
     private void onSpeed() {

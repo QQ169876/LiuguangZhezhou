@@ -191,6 +191,7 @@ public class LiveActivity extends PlaybackActivity implements CustomKeyDown.List
         mBinding.control.action.home.setOnClickListener(view -> onHome());
         mBinding.control.action.line.setOnClickListener(view -> onLine());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
+        mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.config.setOnClickListener(view -> onConfig());
         mBinding.control.action.invert.setOnClickListener(view -> onInvert());

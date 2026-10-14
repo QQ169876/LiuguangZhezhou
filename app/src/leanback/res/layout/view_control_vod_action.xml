@@ -90,6 +90,12 @@
             android:layout_marginEnd="8dp"
             android:text="@string/play_rotate" />
 
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/videoRotate"
+            style="@style/Control"
+            android:layout_marginEnd="8dp"
+            android:text="@string/play_video_rotate" />
+
         <com.fongmi.android.tv.ui.custom.CustomUpDownView
             android:id="@+id/text"
             style="@style/Control"

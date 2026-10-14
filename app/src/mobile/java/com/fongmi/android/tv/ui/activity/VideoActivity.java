@@ -357,6 +357,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.control.action.audio.setOnClickListener(this::onTrack);
         mBinding.control.action.video.setOnClickListener(this::onTrack);
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
+        mBinding.control.action.videoRotate.setOnClickListener(view -> onVideoRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
         mBinding.control.action.replay.setOnClickListener(view -> onReplay());
@@ -1100,6 +1101,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         userRotated = true;
         App.post(() -> userRotated = false, 1500);
         setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
+    }
+
+    /** 画面旋转会直接改播放窗口的缩放，得让手势缩放的记录跟着对齐（不然下次双指放大从一个旧数字起步） */
+    @Override
+    protected void onVideoRotate() {
+        super.onVideoRotate();
+        if (mKeyDown != null) mKeyDown.syncScale(getPlayerView().getScaleX());
     }
 
     /** 竖屏/全屏都能点：未全屏点一下进全屏，全屏里点一下退回小窗 */

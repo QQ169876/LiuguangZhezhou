@@ -41,6 +41,7 @@ import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.utils.DebugLog;
+import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.net.OkHttp;
@@ -66,6 +67,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     private boolean stop;
     private boolean lock;
     private boolean leaving;   // 页面正在退出：这之后的播放错误一律不当事故处理
+    private int appliedRotate = -1; // 画面旋转上一次真正套上去的角度（-1 = 还没套过），用来判断要不要动缩放
     private long uiBusyUntil;  // 刚动过播放器视图（进出全屏/卸载）的抖动窗口
 
     protected MediaController controller() {
@@ -440,6 +442,50 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         playerView.setDanmakuEnabled(DanmakuSetting.isShow());
         playerView.setDanmakuConfig(DanmakuSetting.getConfig());
         SubtitleSetting.applyStyle(this, playerView.getSubtitleView());
+        // 画面旋转的角度要跟着播放窗口大小重算（进出全屏、分屏都会变），尺寸一变就套一次
+        playerView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> applyVideoRotate());
+        applyVideoRotate();
+    }
+
+    /**
+     * 画面旋转：只转画面本身，不动屏幕方向 —— 电视、盒子锁死横屏转不动屏幕，画面照样能转。
+     * 90°/270° 时画面是竖着的，按窗口较短那条边等比缩放，整幅画面都在窗口里（两侧留黑边，不裁切）。
+     * <p>
+     * ⚠️ 缩放这块得让着手机版的手势缩放（双指放大，见 `CustomKeyDown`）：它也是写 `scaleX/scaleY`，
+     * 而且会把 pivot 挪到手指的位置。所以这里只在"角度真的要变/窗口尺寸变了"时才动缩放，
+     * **正着看（0°）时绝不插手**，否则用户一放大、进出个全屏就被我们清回原样了。
+     */
+    protected void applyVideoRotate() {
+        PlayerView playerView = getPlayerView();
+        if (playerView == null) return;
+        int degree = PlayerSetting.getVideoRotate();
+        playerView.setRotation(degree);
+        if (degree == 0) {
+            if (appliedRotate == 0) return; // 已经正着：缩放归手势管，别抢
+            appliedRotate = 0;
+            playerView.setScaleX(1f);
+            playerView.setScaleY(1f);
+            return;
+        }
+        int width = playerView.getWidth();
+        int height = playerView.getHeight();
+        if (width <= 0 || height <= 0) return;
+        // 只有竖过来的 90°/270° 才要缩；180° 转完跟窗口一样大，缩了反而把画面弄小
+        float scale = degree == 90 || degree == 270 ? Math.min((float) width / height, (float) height / width) : 1f;
+        // 旋转必须绕中心：手势缩放把 pivot 挪到手指点了，不掰回来画面会转出去
+        playerView.setPivotX(width / 2f);
+        playerView.setPivotY(height / 2f);
+        playerView.setScaleX(scale);
+        playerView.setScaleY(scale);
+        appliedRotate = degree;
+    }
+
+    /** 按一次 +90°，0 → 90 → 180 → 270 → 回正；记在本机上，下次进播放页还是这个角度 */
+    protected void onVideoRotate() {
+        int degree = (PlayerSetting.getVideoRotate() + 90) % 360;
+        PlayerSetting.putVideoRotate(degree);
+        applyVideoRotate();
+        Notify.show(degree == 0 ? ResUtil.getString(R.string.play_video_rotate_reset) : ResUtil.getString(R.string.play_video_rotate_to, degree));
     }
 
     private void syncDanmakuSource() {

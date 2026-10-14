@@ -67,6 +67,10 @@
     <string name="play_rotate">Rotate</string>
     <string name="play_rotate_portrait">Forced portrait</string>
     <string name="play_rotate_landscape">Forced landscape</string>
+    <string name="play_rotate_unsupported">This device does not support screen rotation (TVs and boxes are usually locked to landscape), so this button has no effect here.</string>
+    <string name="play_video_rotate">Rotate video</string>
+    <string name="play_video_rotate_to">Video rotated %1$d°</string>
+    <string name="play_video_rotate_reset">Video rotation reset</string>
     <string name="play_config">Config</string>
     <string name="play_change">Change</string>
     <string name="play_invert">Invert</string>

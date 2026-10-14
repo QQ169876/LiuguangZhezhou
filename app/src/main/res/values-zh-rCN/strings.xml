@@ -67,6 +67,10 @@
     <string name="play_rotate">转屏</string>
     <string name="play_rotate_portrait">已强制竖屏</string>
     <string name="play_rotate_landscape">已强制横屏</string>
+    <string name="play_rotate_unsupported">这台设备不支持旋转屏幕（电视、盒子一般把画面锁死在横屏），转屏按钮在这上面不起作用。</string>
+    <string name="play_video_rotate">画面旋转</string>
+    <string name="play_video_rotate_to">画面已旋转 %1$d°</string>
+    <string name="play_video_rotate_reset">画面已回正</string>
     <string name="play_config">配置</string>
     <string name="play_change">换源</string>
     <string name="play_invert">反转</string>

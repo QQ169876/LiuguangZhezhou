@@ -67,6 +67,10 @@
     <string name="play_rotate">轉屏</string>
     <string name="play_rotate_portrait">已強制直式</string>
     <string name="play_rotate_landscape">已強制橫式</string>
+    <string name="play_rotate_unsupported">這台設備不支援旋轉螢幕（電視、盒子一般把畫面鎖死在橫向），轉屏按鈕在這裡不起作用。</string>
+    <string name="play_video_rotate">畫面旋轉</string>
+    <string name="play_video_rotate_to">畫面已旋轉 %1$d°</string>
+    <string name="play_video_rotate_reset">畫面已回正</string>
     <string name="play_config">配置</string>
     <string name="play_change">換源</string>
     <string name="play_invert">反轉</string>
