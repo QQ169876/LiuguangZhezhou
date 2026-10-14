@@ -314,7 +314,12 @@ public class MoonSync {
         DebugLog.d("Sync", "结果回调 排队 success=" + success);
         App.post(() -> {
             DebugLog.d("Sync", "结果回调 开始执行");
-            listener.done(success, message);
+            // 同步结果的回调永远不许把 App 带崩：页面可能已经关了，回调里碰 Fragment 就会抛异常
+            try {
+                listener.done(success, message);
+            } catch (Throwable e) {
+                DebugLog.d("Sync", "结果回调 异常 " + e);
+            }
             DebugLog.d("Sync", "结果回调 执行完毕");
         });
     }

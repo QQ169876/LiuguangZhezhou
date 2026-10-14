@@ -31,6 +31,7 @@ public class WebDavDialog extends BaseAlertDialog {
     private DialogWebdavBinding binding;
     private static final String KNOWN = "webdav_remote_known";
     private boolean asked;
+    private String snapshot; // 打开对话框那一刻的设置：关掉时比对，改过就该问一句以哪边为准
 
     public static WebDavDialog create() {
         return new WebDavDialog();
@@ -61,7 +62,25 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.enable.setChecked(WebDavSetting.isEnabled());
         binding.auto.setChecked(WebDavSetting.isAuto());
         binding.cookie.setChecked(WebDavSetting.isCookie());
+        if (snapshot == null) snapshot = snap(); // 只记第一次：扫码导入配置也走这里，别把改动记没了
         setLastText();
+    }
+
+    /** 当前设置的指纹：地址/账号/密码/同步标识 + 三个开关 */
+    private String snap() {
+        return WebDavSetting.getUrl() + "|" + WebDavSetting.getUser() + "|" + WebDavSetting.getPass() + "|" + WebDavSetting.getFolder() + "|" + WebDavSetting.isEnabled() + "|" + WebDavSetting.isAuto() + "|" + WebDavSetting.isCookie();
+    }
+
+    private boolean changed() {
+        return snapshot != null && !snapshot.equals(snap());
+    }
+
+    /**
+     * 同步开着、并且这次确实动了设置（换地址/换同步标识/换账号/开关都算）→ 关掉前必须问清楚以哪边为准。
+     * 光看 isSwitch() 不够：改了设置却没换目标的情况（比如刚打开同步）同样可能把两边数据混在一起。
+     */
+    private boolean needAsk() {
+        return WebDavSetting.isSyncable() && (WebDavSetting.isSwitch() || changed());
     }
 
     @Override
@@ -91,15 +110,19 @@ public class WebDavDialog extends BaseAlertDialog {
     @Override
     public void onDismiss(@NonNull DialogInterface dialog) {
         save();
+        // ⚠️ 对话框一关，DialogFragment 紧接着就被摘下来了：下面 checkRemote 要跑一趟网络，
+        // 等它回来 getActivity() 已经是 null，风险提示就「静默不弹」（马先生 2026-10-14 改同步标识后没弹就是这么漏的）。
+        // 所以这里先把 Activity 抓在手上，一路往下传。
+        FragmentActivity activity = getActivity();
         super.onDismiss(dialog);
-        checkRemote(() -> askOnClose(R.string.sync_risk_dav, WebDavSetting.isEnabled() && WebDavSetting.isSyncable() && WebDavSetting.isSwitch()));
+        checkRemote(activity, () -> askOnClose(activity, R.string.sync_risk_dav, needAsk()));
     }
 
     /**
      * 远端这份同步目录里已经有数据（可能是别的设备、别的账号留下的）：
      * 先把话说清楚，别稀里糊涂把两边的观看记录、收藏混在一起。
      */
-    private void checkRemote(Runnable next) {
+    private void checkRemote(FragmentActivity activity, Runnable next) {
         if (!WebDavSetting.isValid()) {
             next.run();
             return;
@@ -116,17 +139,16 @@ public class WebDavDialog extends BaseAlertDialog {
             } catch (Exception ignored) {
             }
             boolean exist = found;
-            App.post(() -> onRemote(exist, scope, next));
+            App.post(() -> onRemote(activity, exist, scope, next));
         });
     }
 
-    private void onRemote(boolean found, String scope, Runnable next) {
+    private void onRemote(FragmentActivity activity, boolean found, String scope, Runnable next) {
         Prefers.put(KNOWN, scope);
         if (!found) {
             next.run();
             return;
         }
-        FragmentActivity activity = getActivity();
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         asked = false;
         try {
@@ -141,11 +163,11 @@ public class WebDavDialog extends BaseAlertDialog {
     }
 
     /**
-     * 遥控器改完参数就退出时，如果同步是开着的、目标又变过，
-     * 直接问清楚以哪边为准，免得下一次自动同步闷头合并。
+     * 遥控器改完参数就退出时，只要同步是开着的、这次又动了设置，
+     * 就必须问清楚以哪边为准，免得下一次自动同步闷头合并（马先生 2026-10-14 定的：这个口子要堵死）。
+     * activity 由调用方传进来：这时候 Fragment 可能已经分离，getActivity() 拿不到了。
      */
-    private void askOnClose(int message, boolean need) {
-        FragmentActivity activity = getActivity();
+    private void askOnClose(FragmentActivity activity, int message, boolean need) {
         if (asked || !need) return;
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         asked = true;
@@ -168,7 +190,8 @@ public class WebDavDialog extends BaseAlertDialog {
         }
         long time = WebDavSetting.getLast();
         if (time == 0) binding.last.setText(R.string.webdav_off);
-        else binding.last.setText(getString(R.string.webdav_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
+        // 用 App 的上下文取串：同步结果回来得晚，那时候对话框可能已经关了，Fragment 已分离，getString() 会直接崩
+        else binding.last.setText(App.get().getString(R.string.webdav_last, DateFormat.format("yyyy-MM-dd HH:mm", new Date(time))));
     }
 
     private void save() {
@@ -214,18 +237,20 @@ public class WebDavDialog extends BaseAlertDialog {
         }
     }
 
-    /** 换过地址、目录或账号：作废旧基线，并把当前目标标记为已确认 */
+    /**
+     * 选完方向：换过目标就作废旧基线；不管换没换，当前目标都记成「已确认」，
+     * 免得只是改了个开关也一直卡在「待选择同步方向」上。
+     */
     private void checkSwitch() {
         asked = true;
-        if (!WebDavSetting.isSwitch()) return;
-        SyncManager.resetBase();
+        if (WebDavSetting.isSwitch()) SyncManager.resetBase();
         WebDavSetting.putConfirm();
     }
 
     private void onDirection(int direction) {
         checkSwitch();
-        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，requireActivity() 会直接崩
-        Notify.progress(this);
+        // 关掉对话框后才弹的方向选择，到这里 Fragment 多半已分离，转圈框要跟着 Fragment 走，没附加就别弹
+        if (isAdded()) Notify.progress(this);
         if (direction == SyncDirectionDialog.CLOUD) SyncManager.pull(getListener());
         else if (direction == SyncDirectionDialog.LOCAL) SyncManager.push(getListener());
         else SyncManager.sync(getListener());
@@ -258,7 +283,8 @@ public class WebDavDialog extends BaseAlertDialog {
         return (success, message) -> {
             Notify.dismiss();
             Notify.show(message);
-            if (binding != null) setLastText();
+            // 结果回来时对话框可能已经关了：binding 还在不代表 Fragment 还挂着，两个都要看
+            if (isAdded() && binding != null) setLastText();
         };
     }
 }

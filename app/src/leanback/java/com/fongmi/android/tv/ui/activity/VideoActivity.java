@@ -52,6 +52,7 @@ import com.fongmi.android.tv.impl.CustomTarget;
 import com.fongmi.android.tv.model.VideoViewModel;
 import com.fongmi.android.tv.playback.PlaybackAction;
 import com.fongmi.android.tv.playback.PlaybackIntent;
+import com.fongmi.android.tv.playback.PlaybackOrientation;
 import com.fongmi.android.tv.playback.PlaybackReset;
 import com.fongmi.android.tv.playback.PlaybackResult;
 import com.fongmi.android.tv.playback.vod.VodDetailResult;
@@ -360,6 +361,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.control.action.prev.setOnClickListener(view -> checkPrev());
         mBinding.control.action.binge.setOnClickListener(view -> mVod.bingeNext());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
+        mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
         mBinding.control.action.replay.setOnClickListener(view -> onReplay());
@@ -1059,6 +1061,19 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         int index = getScale();
         String[] array = ResUtil.getStringArray(R.array.select_scale);
         setScale(index == array.length - 1 ? 0 : ++index);
+    }
+
+    /**
+     * 强制转屏：**现在横着就强制竖屏，现在竖着就强制横屏**，跟手机版同一个口径。
+     *
+     * TV 版原先压根没这个按钮（658 那轮只补了手机版），遥控器上想转屏只能去系统设置里改。
+     * 盒子和电视本身不会转，但接了可旋转的屏（移动屏/闺蜜机/投影）或看竖屏短剧时用得上。
+     * 页面在清单里声明了自己处理 orientation，转屏不会重建 Activity，播放不中断。
+     */
+    private void onRotate() {
+        boolean portrait = ResUtil.isLand(this);
+        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
+        Notify.show(portrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
     }
 
     private void onSpeed() {

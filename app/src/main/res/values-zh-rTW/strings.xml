@@ -64,6 +64,9 @@
     <string name="play_edition">標題</string>
     <string name="play_chapter">章節</string>
     <string name="play_scale">原始</string>
+    <string name="play_rotate">轉屏</string>
+    <string name="play_rotate_portrait">已強制直式</string>
+    <string name="play_rotate_landscape">已強制橫式</string>
     <string name="play_config">配置</string>
     <string name="play_change">換源</string>
     <string name="play_invert">反轉</string>
@@ -473,7 +476,7 @@
     <string name="moontv_busy">正在同步中</string>
 
     <string name="sync_direction_title">選擇以哪邊為準</string>
-    <string name="sync_direction_msg">同步位址或帳號剛改動過。為避免不同人的觀看記錄、收藏互相混淆，請先選擇這次雙向同步以哪份資料為準。</string>
+    <string name="sync_direction_msg">同步設定剛改動過。為避免不同人的觀看記錄、收藏互相混淆，請先選擇這次雙向同步以哪份資料為準。</string>
     <string name="sync_direction_cloud">使用雲端資料（覆蓋本機）</string>
     <string name="sync_direction_local">使用本機資料（覆蓋雲端）</string>
     <string name="sync_direction_merge">合併資料（兩邊取最新）</string>
@@ -482,8 +485,8 @@
     <string name="sync_risk_title">操作風險提示</string>
     <string name="sync_risk_confirm">我知道了</string>
     <string name="sync_risk_vod">你正在切換點播源。收藏和觀看記錄會隨點播源變化，同步設定也已跟隨切換並取消啟用。開啟同步或執行同步前，請確認本機記錄、收藏與雲端是否需要合併、使用本機覆蓋雲端、或使用雲端覆蓋本機，避免資料互相混淆。</string>
-    <string name="sync_risk_moon">影視站位址或帳號剛改動過。不同帳號的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按帳號分開記帳，別的帳號的記錄不會被帶過去。</string>
-    <string name="sync_risk_dav">WebDAV 位址、目錄或帳號剛改動過。不同目錄裡的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按同步標識分開記帳，別的同步標識的記錄不會被帶過去。</string>
+    <string name="sync_risk_moon">影視站的同步設定剛改動過（位址、帳號或開關）。不同帳號的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按帳號分開記帳，別的帳號的記錄不會被帶過去。</string>
+    <string name="sync_risk_dav">WebDAV 的同步設定剛改動過（位址、同步標識、帳號或開關）。不同同步標識、不同帳號裡的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按同步標識分開記帳，別的同步標識的記錄不會被帶過去。</string>
     <string name="moontv_empty">站點網址或帳號沒填完整</string>
     <string name="moontv_saved">設定已儲存</string>
     <string name="moontv_lan_saved">已收到影視站設定，同步維持關閉，請確認站點帳號後再手動開啟</string>

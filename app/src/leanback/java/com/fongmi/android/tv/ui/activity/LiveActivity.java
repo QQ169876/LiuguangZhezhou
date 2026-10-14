@@ -43,6 +43,7 @@ import com.fongmi.android.tv.impl.LiveListener;
 import com.fongmi.android.tv.impl.PassListener;
 import com.fongmi.android.tv.model.LiveViewModel;
 import com.fongmi.android.tv.playback.PlaybackAction;
+import com.fongmi.android.tv.playback.PlaybackOrientation;
 import com.fongmi.android.tv.playback.PlaybackReset;
 import com.fongmi.android.tv.playback.PlaybackResult;
 import com.fongmi.android.tv.playback.live.LivePlayRequest;
@@ -180,6 +181,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         mBinding.control.action.home.setOnClickListener(view -> onHome());
         mBinding.control.action.line.setOnClickListener(view -> onLine());
         mBinding.control.action.scale.setOnClickListener(view -> onScale());
+        mBinding.control.action.rotate.setOnClickListener(view -> onRotate());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.config.setOnClickListener(view -> onConfig());
         mBinding.control.action.action.setOnClickListener(view -> onAction());
@@ -387,6 +389,13 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         int index = LiveSetting.getScale();
         String[] array = ResUtil.getStringArray(R.array.select_scale);
         setScale(index == array.length - 1 ? 0 : ++index);
+    }
+
+    /** 强制转屏：现在横着就强制竖屏，现在竖着就强制横屏（跟点播页、手机版同一个口径） */
+    private void onRotate() {
+        boolean portrait = ResUtil.isLand(this);
+        setRequestedOrientation(portrait ? PlaybackOrientation.getPortraitVideoSizeOrientation() : PlaybackOrientation.getLandscapeVideoSizeOrientation());
+        Notify.show(portrait ? R.string.play_rotate_portrait : R.string.play_rotate_landscape);
     }
 
     private void onSpeed() {

@@ -227,10 +227,23 @@ public class SyncManager {
     }
 
 
-    /** 回调兜一层：拿到结果的那一刻监听器可能已经随页面没了，别让这里把整个 App 带崩 */
+    /**
+     * 回调兜一层：拿到结果的那一刻监听器可能已经随页面没了，别让这里把整个 App 带崩。
+     *
+     * ⚠️ 2026-10-14 线上崩过一次：TV 上关掉同步对话框后弹的「有操作风险 → 从云端覆盖本机」，
+     * 同步跑完往回回调时对话框 Fragment 已经分离，回调里 getString() 直接抛
+     * IllegalStateException("Fragment not attached to a context")。根因在对话框那边已经修好，
+     * 这里再加一道：同步结果的回调永远不许把 App 带崩，最多丢一句提示。
+     */
     private static void done(Listener listener, boolean success, String message) {
         if (listener == null) return;
-        App.post(() -> listener.done(success, message));
+        App.post(() -> {
+            try {
+                listener.done(success, message);
+            } catch (Throwable e) {
+                Log.w(TAG, "Sync listener crashed", e);
+            }
+        });
     }
 
     private interface Action {

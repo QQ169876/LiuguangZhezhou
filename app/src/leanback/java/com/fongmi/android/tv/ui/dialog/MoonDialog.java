@@ -30,6 +30,7 @@ public class MoonDialog extends BaseAlertDialog {
 
     private DialogMoontvBinding binding;
     private boolean asked;
+    private String snapshot; // 打开对话框那一刻的设置：关掉时比对，改过就该问一句以哪边为准
 
     public static MoonDialog create() {
         return new MoonDialog();
@@ -58,7 +59,22 @@ public class MoonDialog extends BaseAlertDialog {
         binding.pass.setText(MoonSetting.getPass());
         binding.enable.setChecked(MoonSetting.isEnabled());
         binding.auto.setChecked(MoonSetting.isAuto());
+        if (snapshot == null) snapshot = snap(); // 只记第一次：扫码导入配置也走这里，别把改动记没了
         setLastText();
+    }
+
+    /** 当前设置的指纹：站点地址/账号/密码 + 两个开关 */
+    private String snap() {
+        return MoonSetting.getUrl() + "|" + MoonSetting.getUser() + "|" + MoonSetting.getPass() + "|" + MoonSetting.isEnabled() + "|" + MoonSetting.isAuto();
+    }
+
+    private boolean changed() {
+        return snapshot != null && !snapshot.equals(snap());
+    }
+
+    /** 同步开着、并且这次确实动了设置 → 关掉前必须问清楚以哪边为准（跟 WebDAV 同一个口径） */
+    private boolean needAsk() {
+        return MoonSetting.isSyncable() && (MoonSetting.isSwitch() || changed());
     }
 
     @Override
@@ -87,18 +103,18 @@ public class MoonDialog extends BaseAlertDialog {
     @Override
     public void onDismiss(@NonNull DialogInterface dialog) {
         save();
+        // ⚠️ 对话框一关 Fragment 就被摘了，getActivity() 随时变 null，先把 Activity 抓在手上
+        FragmentActivity activity = getActivity();
         super.onDismiss(dialog);
-        askOnClose(R.string.sync_risk_moon, MoonSetting.isEnabled() && MoonSetting.isSyncable() && MoonSetting.isSwitch());
+        askOnClose(activity, R.string.sync_risk_moon, needAsk());
     }
 
     /**
-     * 遥控器改完参数就退出时，如果同步是开着的、目标又变过，
-     * 直接问清楚以哪边为准，免得下一次自动同步闷头合并。
+     * 遥控器改完参数就退出时，只要同步是开着的、这次又动了设置，
+     * 直接问清楚以哪边为准，免得下一次自动同步闷头合并（马先生 2026-10-14 定的：这个口子要堵死）。
      */
-    private void askOnClose(int message, boolean need) {
-        FragmentActivity activity = getActivity();
+    private void askOnClose(FragmentActivity activity, int message, boolean need) {
         if (asked || !need) return;
-        if (!isAdded() || isRemoving()) return;
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         asked = true;
         SyncRiskDialog.show(activity, message, () -> SyncDirectionDialog.show(activity, direction -> onDirection(activity, direction)));
@@ -194,11 +210,13 @@ public class MoonDialog extends BaseAlertDialog {
         }
     }
 
-    /** 换过站点或账号：作废旧基线，并把当前目标标记为已确认 */
+    /**
+     * 选完方向：换过站点或账号就作废旧基线；不管换没换，当前目标都记成「已确认」，
+     * 免得只是改了个开关也一直卡在「待选择同步方向」上。
+     */
     private void checkSwitch() {
         asked = true;
-        if (!MoonSetting.isSwitch()) return;
-        MoonSync.resetBase();
+        if (MoonSetting.isSwitch()) MoonSync.resetBase();
         MoonSetting.putConfirm();
     }
 
