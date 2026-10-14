@@ -437,7 +437,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
 
     private void configurePlayerView() {
         PlayerView playerView = getPlayerView();
-        playerView.setRender(PlayerSetting.getRender());
+        applyRender(playerView);
         playerView.setDanmakuOkHttpClient(OkHttp.player());
         playerView.setDanmakuEnabled(DanmakuSetting.isShow());
         playerView.setDanmakuConfig(DanmakuSetting.getConfig());
@@ -445,6 +445,19 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         // 画面旋转的角度要跟着播放窗口大小重算（进出全屏、分屏都会变），尺寸一变就套一次
         playerView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> applyVideoRotate());
         applyVideoRotate();
+    }
+
+    /**
+     * 画面旋转期间必须把渲染层换成 TextureView（SurfaceView 只跟缩放、不跟旋转，转了只会看到画面被压扁），
+     * 角度回正后换回用户自己选的渲染方式。切换是实时的，不用重开播放。
+     */
+    private void applyRender(PlayerView playerView) {
+        if (playerView == null) return;
+        try {
+            playerView.setRender(PlayerSetting.getEffectiveRender());
+        } catch (Exception e) {
+            DebugLog.d("Rotate", "切换渲染层失败 " + e.getMessage());
+        }
     }
 
     /**
@@ -484,6 +497,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     protected void onVideoRotate() {
         int degree = (PlayerSetting.getVideoRotate() + 90) % 360;
         PlayerSetting.putVideoRotate(degree);
+        applyRender(getPlayerView()); // 转画面得先换成 TextureView，SurfaceView 转不动
         applyVideoRotate();
         Notify.show(degree == 0 ? ResUtil.getString(R.string.play_video_rotate_reset) : ResUtil.getString(R.string.play_video_rotate_to, degree));
     }

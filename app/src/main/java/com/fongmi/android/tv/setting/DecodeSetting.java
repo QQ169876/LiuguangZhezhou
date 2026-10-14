@@ -57,6 +57,7 @@ public class DecodeSetting {
     }
 
     public static boolean isTunnelingEnabled() {
-        return isTunnel() && PlayerSetting.getRender() == PlayerSetting.RENDER_SURFACE;
+        // 画面旋转要走 TextureView，隧道模式只认 SurfaceView，转着画面的时候别开隧道
+        return isTunnel() && PlayerSetting.getRender() == PlayerSetting.RENDER_SURFACE && PlayerSetting.getVideoRotate() == 0;
     }
 }

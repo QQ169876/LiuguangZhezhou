@@ -80,6 +80,17 @@ public class PlayerSetting {
         return Math.clamp(Prefers.getInt("render", RENDER_SURFACE), RENDER_SURFACE, RENDER_TEXTURE);
     }
 
+    /**
+     * 播放真正要用的渲染方式：**画面一旋转就必须走 TextureView**。
+     * <p>
+     * SurfaceView 的画面是单独一层合成的，它跟得上 View 的缩放，但跟不上旋转 ——
+     * 表现就是按了旋转只看到画面被缩小，方向纹丝不动（小米盒子等电视、盒子上都这样）。
+     * TextureView 画在 View 层级里，旋转、缩放都跟得上，所以旋转期间临时换成它，回正再换回来。
+     */
+    public static int getEffectiveRender() {
+        return getVideoRotate() != 0 ? RENDER_TEXTURE : getRender();
+    }
+
     public static void putRender(int render) {
         Prefers.put("render", Math.clamp(render, RENDER_SURFACE, RENDER_TEXTURE));
         if (isExo() && DecodeSetting.isTunnel() && getRender() == RENDER_TEXTURE) DecodeSetting.putTunnel(false);
