@@ -64,6 +64,21 @@
         app:trackThickness="2dp"
         tools:visibility="visible" />
 
+    <!-- 搜不到 / 出错的时候在这儿把话说清楚：以前只是把列表一收退回搜索框，
+         看着像「点了没反应」，其实背后几家站全军覆没，用户一头雾水 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:gravity="center"
+        android:paddingHorizontal="24dp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp"
+        android:visibility="gone"
+        tools:text="没搜到"
+        tools:visibility="visible" />
+
     <com.fongmi.android.tv.ui.custom.CustomRecyclerView
         android:id="@+id/recycler"
         android:layout_width="match_parent"

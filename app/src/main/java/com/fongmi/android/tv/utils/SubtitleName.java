@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.utils;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
@@ -30,27 +32,134 @@ public final class SubtitleName {
             "multi", "subbed", "dubbed", "chs", "cht", "eng", "jpn", "kor", "fre", "ger", "spa",
             "index", "play", "playlist", "stream", "video", "movie", "hls", "live", "default",
             "download", "file", "vod", "cdn", "api", "m3u", "dash", "master", "chunk", "seg",
+            // 本机代理/服务那层路径：抠出来就是「proxy」，谁搜谁骂街
+            "proxy", "cmd", "server", "local", "localhost",
+            "https", "http", "www", "com", "net",
     };
 
     private static final int MAX_LENGTH = 48;
     private static final int MAX_WORD = 20;
 
+    /** 代理壳里装真实地址用的参数名，各家叫法不一样，都试一遍 */
+    private static final String[] INNER_KEYS = {"url", "u", "link", "src", "play", "video", "path", "file"};
+
+    /** 本机服务那层的路径名：proxy / file / cmd 后面挂的才是真实地址 */
+    private static final String[] SHELLS = {"proxy", "file", "cmd"};
+
+    /** 视频扩展名：带这些的才算文件名，光秃秃一个词只是目录名 */
+    private static final String[] MEDIA_EXT = {"mp4", "mkv", "m3u8", "ts", "avi", "mov", "flv", "webm", "rmvb", "rm", "wmv", "mpg", "mpeg", "m2ts", "iso", "strm", "m4v", "asf", "vob", "divx"};
+
     private SubtitleName() {
     }
 
-    /** 播放地址 → 英文片名；抠不出来返回空串 */
+    /**
+     * 播放地址 → 英文片名；抠不出来返回空串。
+     *
+     * ⚠️ 播放地址经常不是真实地址，而是**本机代理**那一层：
+     * {@code http://127.0.0.1:9978/proxy?url=https://xxx/Dune.Part.Two.2024.2160p...}
+     * 直接按路径抠，抠出来的就是路径里那个「proxy」——搜索框里冒出 proxy 几个字母、搜回来的也全是
+     * 带 proxy 的垃圾，就是这么来的（马先生 2026-10-15 亲历）。所以先看是不是代理壳，是就扒出真实地址再抠。
+     */
     public static String fromUrl(String url) {
         if (url == null || url.isEmpty()) return "";
-        String path = url.split("[?#]", 2)[0];
-        String[] segs = path.split("/");
-        for (int i = segs.length - 1; i >= 0 && i >= segs.length - 3; i--) { // 最多往前看三级，别把域名/根目录也算上
-            // 倒数第一级直接认（文件名本身就带片名）；再往上一级的目录名可能是 share / movie 这种分类名，
-            // 要求它至少带分隔符（Dune.Part.Two 这种），否则跳过，免得把「share」当成片名去搜。
-            if (i < segs.length - 1 && !hasSeparator(segs[i])) continue;
+        String target = url.trim();
+        for (int i = 0; i < 3; i++) { // 理论上只套一层，容错多剥两层，别把自己绕进去
+            String inner = unwrapProxy(target);
+            if (inner.isEmpty()) break;
+            target = inner;
+        }
+        return parseUrl(target);
+    }
+
+    private static String parseUrl(String url) {
+        String[] segs = segments(url);
+        for (int i = segs.length - 1; i >= 0 && i >= segs.length - 3; i--) { // 最多往前看三级，别把根目录也算上
+            // 光秃秃一个词（share / proxy 这种分类名、服务端路径）不认，
+            // 得带扩展名（Dune.2024.mkv）或带分隔符（Dune.Part.Two）才像片名。
+            if (!looksName(segs[i])) continue;
             String name = parse(segs[i]);
             if (!name.isEmpty()) return name;
         }
+        // 路径里抠不出来（比如整个地址就一串带参数的查询），再去参数里碰碰运气
+        int q = url.indexOf('?');
+        if (q > 0) for (String value : url.substring(q + 1).split("&")) {
+            int eq = value.indexOf('=');
+            if (eq <= 0) continue;
+            String name = parse(decode(value.substring(eq + 1)));
+            if (!name.isEmpty()) return name;
+        }
         return "";
+    }
+
+    /** 去掉「协议://域名:端口」之后剩下的路径分级，免得把 host.com 当成片名 */
+    private static String[] segments(String url) {
+        String path = url.split("[?#]", 2)[0];
+        int scheme = path.indexOf("://");
+        String rest = scheme >= 0 ? path.substring(scheme + 3) : path;
+        int slash = rest.indexOf('/');
+        return slash >= 0 ? rest.substring(slash + 1).split("/") : new String[0];
+    }
+
+    /** 本机代理壳（ .../proxy?url=真实地址 、 /file/真实地址 ）→ 真实地址；不是代理壳就返回空 */
+    private static String unwrapProxy(String url) {
+        int q = url.indexOf('?');
+        String head = q > 0 ? url.substring(0, q) : url;
+        for (String shell : SHELLS) { // 路径式：/file/https%3A%2F%2F...
+            String needle = "/" + shell + "/";
+            int i = head.indexOf(needle);
+            if (i < 0) continue;
+            String inner = decode(head.substring(i + needle.length()));
+            if (isAddress(inner)) return inner;
+        }
+        String[] segs = head.split("/");
+        if (segs.length == 0 || q <= 0) return "";
+        if (!isShell(segs[segs.length - 1])) return "";
+        String query = url.substring(q + 1); // 参数式：/proxy?url=...
+        for (String key : INNER_KEYS) {
+            String value = decode(param(query, key));
+            if (isAddress(value)) return value;
+        }
+        return "";
+    }
+
+    private static boolean isShell(String seg) {
+        String lower = seg.toLowerCase(Locale.ROOT);
+        for (String shell : SHELLS) if (shell.equals(lower)) return true;
+        return false;
+    }
+
+    private static boolean isAddress(String text) {
+        return text.startsWith("http") || text.contains("/");
+    }
+
+    /** 这一段像不像个片名：带视频扩展名，或者带分隔符（Dune.Part.Two） */
+    private static boolean looksName(String seg) {
+        return hasMediaExt(seg) || hasSeparator(seg);
+    }
+
+    /** 从查询串里取指定参数；没这个参数返回空 */
+    private static String param(String query, String key) {
+        String needle = key + "=";
+        int from = 0;
+        while (from < query.length()) {
+            int i = query.indexOf(needle, from);
+            if (i < 0) return "";
+            if (i == 0 || query.charAt(i - 1) == '&') {
+                int end = query.indexOf('&', i);
+                return end < 0 ? query.substring(i + needle.length()) : query.substring(i + needle.length(), end);
+            }
+            from = i + needle.length();
+        }
+        return "";
+    }
+
+    private static String decode(String text) {
+        if (text.isEmpty() || text.indexOf('%') < 0) return text;
+        try {
+            return URLDecoder.decode(text, StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return text;
+        }
     }
 
     private static String parse(String seg) {
@@ -74,6 +183,14 @@ public final class SubtitleName {
 
     private static boolean hasSeparator(String seg) {
         return seg.indexOf('.') > 0 || seg.indexOf('_') > 0 || seg.indexOf('-') > 0;
+    }
+
+    private static boolean hasMediaExt(String seg) {
+        int dot = seg.lastIndexOf('.');
+        if (dot <= 0) return false;
+        String ext = seg.substring(dot + 1).toLowerCase(Locale.ROOT);
+        for (String known : MEDIA_EXT) if (known.equals(ext)) return true;
+        return false;
     }
 
     private static String stripExt(String seg) {

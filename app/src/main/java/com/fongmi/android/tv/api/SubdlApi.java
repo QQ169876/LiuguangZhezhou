@@ -62,9 +62,25 @@ public class SubdlApi {
         SubtitleApi.cancelArchive(); // 下载槽位是几家共用的，一起停掉
     }
 
+    /**
+     * 查一次。中文片名分两步：
+     *   1. 先带 languages=ZH 问一遍，有中文字幕就只要中文（不筛的话三十条里大半是印尼语、阿拉伯语，中文一条看不到）；
+     *   2. **筛完一条都没有就放开语言再问一遍** —— 实测「庆余年」筛中文是 0 条、不筛有 30 条，
+     *      宁可给一堆外语字幕，也别让用户对着空列表发呆（有字幕总比没有强，播放器里还能再挑）。
+     * 英文片名本来就不筛，一步到位。
+     */
     public static void search(String keyword, Consumer<SubtitleSearchPage> success, Consumer<Exception> error) {
         int requestId = begin();
-        newSearchCall(keyword).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), success, error));
+        boolean cjk = containsCJK(keyword);
+        newSearchCall(keyword, cjk).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), page -> {
+            if (!cjk || page.getResultCount() > 0) success.accept(page);
+            else retryWithoutLang(requestId, keyword, success, error, page);
+        }, error));
+    }
+
+    /** 中文筛完一条都没有，放开语言再问一遍；这次要是还是空的，就把第一次那（空）结果交回去 */
+    private static void retryWithoutLang(int requestId, String keyword, Consumer<SubtitleSearchPage> success, Consumer<Exception> error, SubtitleSearchPage first) {
+        newSearchCall(keyword, false).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), page -> success.accept(page.getResultCount() > 0 ? page : first), error));
     }
 
     /** 压缩包下载几家共用同一套：Assrt 那份实现是通用的（只认 url），这里直接借过来 */
@@ -79,14 +95,11 @@ public class SubdlApi {
         return REQUEST_ID.get();
     }
 
-    private static Call newSearchCall(String keyword) {
+    private static Call newSearchCall(String keyword, boolean chineseOnly) {
         HttpUrl.Builder builder = Objects.requireNonNull(HttpUrl.parse(SEARCH_URL)).newBuilder();
         builder.addQueryParameter("api_key", SubtitleSetting.getEffectiveSubdlKey());
         builder.addQueryParameter("film_name", TextUtils.isEmpty(keyword) ? "" : keyword.trim());
-        // 中文片名才按中文筛：不筛的话十来条里大半是西班牙/阿拉伯语，中文一条没有。
-        // 但拿英文片名（hope 2026 这种）去筛中文就是自己把自己搜空了 —— 这时放开语言，
-        // 反正结果已经按「中英优先」排过序（见 langRank），前几条还是中文/英文。
-        if (containsCJK(keyword)) builder.addQueryParameter("languages", "zh");
+        if (chineseOnly) builder.addQueryParameter("languages", "zh");
         builder.addQueryParameter("subs_per_page", "30");
         builder.addQueryParameter("client", "custom_integration");
         return OkHttp.newCall(builder.build().toString(), TAG);
@@ -110,7 +123,27 @@ public class SubdlApi {
         List<SubdlItem> raw = response.getSubtitles();
         List<SubtitleSearchItem> items = raw == null ? new ArrayList<>() : raw.stream().map(SubdlApi::mapItem).filter(Objects::nonNull).collect(Collectors.toList());
         items.sort(Comparator.comparingInt(SubdlApi::langRank)); // 中文排前面，其它语言靠后
-        return SubtitleSearchPage.from(items, items.size());
+        return SubtitleSearchPage.withHints(items, items.size(), hintsOf(response));
+    }
+
+    /**
+     * 它家回包里还带着"这片子是哪一部"（results），里面有英文原名和 IMDb 编号。
+     * 这两个正是其它国外站认的写法 —— 拿中文名问 OpenSubtitles 一条都没有，换成 IMDb 编号就有上百条。
+     */
+    private static List<String> hintsOf(SubdlResponse response) {
+        List<String> hints = new ArrayList<>();
+        for (SubdlResponse.Movie movie : response.getResults()) {
+            addHint(hints, movie.getImdbNo());
+            addHint(hints, movie.getName());
+        }
+        return hints;
+    }
+
+    private static void addHint(List<String> hints, String value) {
+        if (TextUtils.isEmpty(value)) return;
+        String text = value.trim();
+        for (String exist : hints) if (exist.equalsIgnoreCase(text)) return;
+        hints.add(text);
     }
 
     private static SubtitleSearchItem mapItem(SubdlItem item) {

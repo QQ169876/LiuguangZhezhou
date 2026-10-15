@@ -123,7 +123,20 @@ public class OpenSubApi {
     }
 
     private static Call newSearchCall(String keyword) {
+        String imdb = imdbNo(keyword);
+        // 别的家（SubDL）拿中文名问出了这片子的 IMDb 编号：它家认这个，一次能给出上百条，
+        // 比拿中文名去搜（0 条）强太多
+        if (!imdb.isEmpty()) return OkHttp.newCall(client(), SEARCH_HOST + "/search/imdbid-" + imdb, TAG);
         return OkHttp.newCall(client(), SEARCH_URL + encode(keyword), TAG);
+    }
+
+    /** IMDb 编号（纯数字，tt 前缀已去掉）；不是编号就返回空 */
+    private static String imdbNo(String keyword) {
+        if (TextUtils.isEmpty(keyword)) return "";
+        String text = keyword.trim();
+        if (text.length() < 6 || text.length() > 9) return "";
+        for (int i = 0; i < text.length(); i++) if (!Character.isDigit(text.charAt(i))) return "";
+        return text;
     }
 
     /** 关键字转小写：大小写对它家搜索没影响，但能绕开 CF 那条要命的重定向（见 follow 的说明） */

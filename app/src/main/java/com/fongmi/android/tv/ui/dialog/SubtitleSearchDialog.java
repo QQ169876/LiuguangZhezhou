@@ -28,10 +28,13 @@ import com.fongmi.android.tv.databinding.DialogSubtitleSearchBinding;
 import com.fongmi.android.tv.impl.SubtitleListener;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.playback.vod.BingeTags;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.ui.adapter.SubtitleAdapter;
 import com.fongmi.android.tv.ui.custom.CustomScroller;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
+import com.fongmi.android.tv.utils.CrashReporter;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -163,6 +166,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         setting = setting == SubtitleSetting.SOURCE_SUBDL ? SubtitleSetting.SOURCE_AUTO : setting + 1;
         SubtitleSetting.putSearchSource(setting);
         showSource();
+        broken.clear(); // 用户自己换了来源，等于让报过错的那家再试一次
         // 只要搜过（哪怕结果是空的）就按新来源立刻重来一遍——最常遇到的就是「这家没搜到，换一家试试」
         if (!TextUtils.isEmpty(keyword)) search();
     }
@@ -178,13 +182,26 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
 
     private void showProgress() {
         binding.recycler.setVisibility(GONE);
+        binding.tip.setVisibility(GONE);
         binding.progress.setVisibility(VISIBLE);
     }
 
     private void showResults(boolean empty) {
         binding.progress.setVisibility(GONE);
         binding.recycler.setVisibility(empty ? GONE : VISIBLE);
-        if (!empty) binding.recycler.requestFocus();
+        if (!empty) {
+            binding.tip.setVisibility(GONE);
+            binding.recycler.requestFocus();
+        }
+        updateBackCallback();
+    }
+
+    /** 搜不到/出错时留一行字在那儿：别只是把列表收起来退回搜索框，那看着跟没反应一样 */
+    private void showTip(String text) {
+        binding.progress.setVisibility(GONE);
+        binding.recycler.setVisibility(GONE);
+        binding.tip.setText(text);
+        binding.tip.setVisibility(VISIBLE);
         updateBackCallback();
     }
 
@@ -210,6 +227,7 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         cursors.clear();
         queryIndex.clear();
         queries = buildQueries(keyword);
+        trace("开始搜「" + keyword + "」来源=" + (setting == SubtitleSetting.SOURCE_AUTO ? "自动" : nameOf(setting)) + " 写法=" + queries + " 全局代理=" + Setting.isGlobalProxy());
         if (setting == SubtitleSetting.SOURCE_ASSRT && !SubtitleApi.hasToken()) {
             showResults(true);
             Notify.show(R.string.subtitle_search_need_token);
@@ -259,12 +277,14 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         return list;
     }
 
-    private void addQuery(List<String> list, String value) {
-        if (TextUtils.isEmpty(value)) return;
+    /** 往写法队列里加一种：空的、太短的、重样的都不要；返回是不是真的加进去了 */
+    private boolean addQuery(List<String> list, String value) {
+        if (TextUtils.isEmpty(value)) return false;
         String text = value.trim();
-        if (text.length() < 2) return;
-        for (String exist : list) if (exist.equalsIgnoreCase(text)) return;
+        if (text.length() < 2) return false;
+        for (String exist : list) if (exist.equalsIgnoreCase(text)) return false;
         list.add(text);
+        return true;
     }
 
     private void requestSearch(int source) {
@@ -292,7 +312,9 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
         }
         queryIndex.put(source, index);
         cursors.put(source, 0); // 换了写法就从头翻
-        setKeyword(keyword = queries.get(index));
+        keyword = queries.get(index);
+        // IMDb 编号那种一串数字的别名不用摆到搜索框里给用户看，看着莫名其妙；英文原名才摆
+        if (!keyword.matches("\\d+")) setKeyword(keyword);
         if (!queryNotified) {
             queryNotified = true; // 几家可能同时换写法，提示一次就够
             Notify.show(R.string.subtitle_search_retry_en);
@@ -367,15 +389,42 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
 
     private void onSearch(int source, SubtitleSearchPage page) {
         if (binding == null || !pending.remove(source)) return; // 弹窗已经关了/换了来源，这一趟的结果就别往里塞了
-        // 这家用这个写法一条都没有：换下一种写法再来（不是"这家没有"，是真没搜着）
-        if (page.getResultCount() == 0 && nextQuery(source)) return;
+        trace(source + " 关键字「" + queryOf(source) + "」→ " + page.getResultCount() + " 条");
+        if (page.getResultCount() == 0) {
+            applyHints(source, page.getHints()); // 一条都没搜着，更要紧着用别家问出来的别名再试
+            if (nextQuery(source)) return;      // 换下一种写法再来（不是"这家没有"，是真没搜着）
+        }
         cursors.put(source, cursors.getOrDefault(source, 0) + page.getResultCount());
         if (page.getResultCount() < countOf(source)) exhausted.add(source);
         addItems(source, page.getItems());
+        applyHints(source, page.getHints()); // 这家顺带问出了这片子的别名，给其它家接着用
         scroller.endLoading(hasMoreSources());
         if (adapter.getItemCount() > 0) showSearchResults(); // 先回来的先亮出来，别干等最慢那家
         if (pending.isEmpty()) onBatchDone();
     }
+
+    /**
+     * 别家给的「这片子还叫什么」（英文原名、IMDb 编号）接过来接着搜。
+     *
+     * 中文片名在国外站上基本是 0 条，但 SubDL 拿中文名能问出这部片子的英文名和 IMDb 编号，
+     * 把这两个排进写法队列，OpenSubtitles 那几家就搜得动了。
+     * 写法队列只会往后加、每家的下标只增不减，所以不会来回打转。
+     */
+    private void applyHints(int from, List<String> hints) {
+        if (hints == null || hints.isEmpty()) return;
+        boolean added = false;
+        for (String hint : hints) if (addQuery(queries, hint)) added = true;
+        if (!added) return;
+        trace("拿到别名 " + hints + "，给其它家接着搜");
+        for (int source : sources) {
+            if (source == SubtitleSetting.SOURCE_ASSRT) continue; // 中文源本来就认中文名，别名对它没用
+            if (pending.contains(source)) continue;
+            if (!exhausted.contains(source)) continue;
+            exhausted.remove(source);
+            if (!nextQuery(source)) exhausted.add(source);
+        }
+    }
+
 
     /**
      * 把一家给的结果并进大列表：打上这家来源的标记，跟前面几家重复的丢掉。
@@ -401,18 +450,40 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
 
     private void onSearchError(int source, Exception e) {
         if (binding == null || !pending.remove(source)) return;
+        trace(nameOf(source) + " 失败：" + (e == null ? "未知" : e.getClass().getSimpleName() + " " + e.getMessage()));
         exhausted.add(source);
         broken.add(source);
         lastError = e;
         if (pending.isEmpty()) onBatchDone(); // 一家挂了不算数，等其它家
     }
 
+    /**
+     * 字幕搜索这一摊的流水账。开了调试模式就逐条记，一趟搜完顺手把日志传上去 ——
+     * 不然"点了搜索什么都没有"这种事只能靠猜：到底是哪一家没通、是连不上还是真没这部片子的字幕。
+     */
+    private void trace(String msg) {
+        DebugLog.d("Subtitle", msg);
+    }
+
+    private static String nameOf(int source) {
+        return switch (source) {
+            case SubtitleSetting.SOURCE_ASSRT -> "伪射手";
+            case SubtitleSetting.SOURCE_SUBDL -> "SubDL";
+            default -> "OpenSub";
+        };
+    }
+
     private void onBatchDone() {
         if (binding == null) return;
         scroller.endLoading(hasMoreSources());
         if (adapter.getItemCount() == 0) {
-            if (hasMoreSources()) loadMore();
-            else onError(lastError == null ? new IOException(ResUtil.getString(R.string.error_empty)) : lastError);
+            if (hasMoreSources()) {
+                loadMore();
+            } else {
+                trace("这一趟结束：一条都没有");
+                if (DebugLog.isEnabled()) CrashReporter.flush(); // 开着调试模式就把这一趟的流水账立刻传上来，别等下次启动
+                onError(lastError == null ? new IOException(ResUtil.getString(R.string.error_empty)) : lastError);
+            }
         } else {
             showSearchResults();
             RecyclerView recycler = binding.recycler;
@@ -438,13 +509,17 @@ public final class SubtitleSearchDialog extends BaseBottomSheetDialog implements
     }
 
     private void onEmpty() {
-        showResults(adapter.getItemCount() == 0);
+        if (adapter.getItemCount() == 0) showTip(ResUtil.getString(R.string.error_empty));
+        else showResults(false);
         Notify.show(R.string.error_empty);
     }
 
+    /** 出错/没结果：把原因摆在弹窗里，别只弹个一闪而过的提示就把列表收了 */
     private void onError(Exception e) {
-        showResults(adapter.getItemCount() == 0);
-        Notify.show(TextUtils.isEmpty(e.getMessage()) ? ResUtil.getString(R.string.error_empty) : e.getMessage());
+        String msg = e == null ? "" : e.getMessage();
+        if (adapter.getItemCount() == 0) showTip(TextUtils.isEmpty(msg) ? ResUtil.getString(R.string.subtitle_search_none) : ResUtil.getString(R.string.subtitle_search_fail, msg));
+        else showResults(false);
+        Notify.show(TextUtils.isEmpty(msg) ? ResUtil.getString(R.string.error_empty) : msg);
     }
 
     /** 几家源都停：搜索请求、下载，一个都别留着在后台跑 */

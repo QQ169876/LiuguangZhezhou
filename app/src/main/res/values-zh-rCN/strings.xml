@@ -190,6 +190,8 @@
     <string name="subtitle_tag_subdl">SubDL</string>
     <string name="subtitle_search_need_subdl_key">SubDL 的 API Key 没填或失效：点右边齿轮填一个（subdl.com 注册免费领），或把来源换成「自动」「OpenSubtitles」</string>
     <string name="subtitle_search_need_token">伪射手 Token 没填或失效：点右边齿轮换一个，或把来源换成「自动」「SubDL」</string>
+    <string name="subtitle_search_none">几家字幕站都没搜到。换个关键字（试试英文原名），或点上面的来源换一家。</string>
+    <string name="subtitle_search_fail">没搜到：%1$s</string>
     <string name="subtitle_search_retry_en">这家只认英文片名，正用播放地址里的英文原名再搜一次</string>
     <string name="subtitle_reset">重置</string>
     <string name="subtitle_tab_appearance">外观</string>

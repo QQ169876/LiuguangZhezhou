@@ -33,8 +33,10 @@ public class SubtitleApi {
     public static final int SEARCH_COUNT = 15;
 
     private static final String TAG = SubtitleApi.class.getSimpleName();
-    private static final String SEARCH_URL = "https://api.assrt.net/v1/sub/search";
-    private static final String DETAIL_URL = "https://api.assrt.net/v1/sub/detail";
+    private static final String SEARCH_HOST = "api.assrt.net";
+    private static final String SCHEME_SPLIT = "://";
+    private static final String SEARCH_PATH = SEARCH_HOST + "/v1/sub/search";
+    private static final String DETAIL_URL = "https://" + SEARCH_HOST + "/v1/sub/detail";
     private static final AtomicInteger REQUEST_ID = new AtomicInteger();
 
     private static Download download;
@@ -56,7 +58,31 @@ public class SubtitleApi {
 
     public static void search(String keyword, int pos, Consumer<SubtitleSearchPage> success, Consumer<Exception> error) {
         int requestId = begin();
-        newSearchCall(keyword, pos).enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), success, error));
+        newSearchCall(keyword, pos, "https").enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), success, e -> {
+            if (!isHandshake(e)) {
+                error.accept(e);
+                return;
+            }
+            retryPlain(requestId, keyword, pos, success, error, e); // https 握手都断了，退回 http 再试一次
+        }));
+    }
+
+    /**
+     * 握手就断的情况下退回 http 再问一次。
+     *
+     * 实测（2026-10-15）：api.assrt.net 的 https 在部分网络/老设备上直接 TLS 握手失败
+     * （SSL: UNEXPECTED_EOF），而它家是中文片唯一真正全的字幕库，一断等于中文片在线找字幕全废。
+     * 握手类失败才是握手的问题，解析出来是"没这部片子"那种不算，别白重试。
+     */
+    private static void retryPlain(int requestId, String keyword, int pos, Consumer<SubtitleSearchPage> success, Consumer<Exception> error, Exception first) {
+        newSearchCall(keyword, pos, "http").enqueue(new ApiCallback<>(requestId, REQUEST_ID, response -> parseSearch(read(response)), success, e -> error.accept(first)));
+    }
+
+    private static boolean isHandshake(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof javax.net.ssl.SSLException || t instanceof java.io.EOFException) return true;
+        }
+        return false;
     }
 
     public static void detail(int id, Consumer<List<SubtitleSearchItem>> success, Consumer<Exception> error) {
@@ -82,8 +108,8 @@ public class SubtitleApi {
         return REQUEST_ID.get();
     }
 
-    private static Call newSearchCall(String keyword, int pos) {
-        HttpUrl.Builder builder = urlBuilder(SEARCH_URL);
+    private static Call newSearchCall(String keyword, int pos, String scheme) {
+        HttpUrl.Builder builder = urlBuilder(scheme + SCHEME_SPLIT + SEARCH_PATH);
         builder.addQueryParameter("q", Trans.t2s(keyword));
         builder.addQueryParameter("cnt", String.valueOf(SEARCH_COUNT));
         builder.addQueryParameter("pos", String.valueOf(pos));
