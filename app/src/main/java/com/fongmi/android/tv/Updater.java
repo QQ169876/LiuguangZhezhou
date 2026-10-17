@@ -855,15 +855,13 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 拉起安装器。老机器（Android 6 那台投影）有的系统安装器不认 content://，
-     * 直接抛 ActivityNotFoundException / SecurityException 会把 App 带崩，
-     * 所以这里一层层退：content 地址 → file 地址 → 下载目录留一份让你手动装。
+     * 更新包下好了就交给系统安装器，剩下的事（要不要授权、装不装得成）全归系统管。
      *
-     * 顺序按 5.6.36 那会儿的老办法来：**先直接装，不先查权限**。
-     * 装不装得了本来就是系统自己的事——绝大多数机器上系统安装器会自己处理授权
-     * （要么直接装，要么在它自己的界面上给个开关），我们在前面横插一道「先跳设置页」，
-     * 反而把一次能装完的事变成两步，还得先去设置里绕一趟。
-     * 只有真的拉不起安装器、又确实是没授权，才带人去开设置，并在下载目录留一份兜底。
+     * 马先生定的调子：别搞复杂。流程就三步——下完 → 确认这是个能装的包 → 调系统安装程序。
+     * 「更新」和「新装」在系统眼里是同一件事，不需要我们区分，也不需要在前面横插一道
+     * 「先查权限 / 先跳设置页」：装不装得了本来就是系统自己的事，绝大多数机器上系统安装器
+     * 会自己处理授权（要么直接装，要么在它自己的界面上给个开关）。
+     * 只有系统明确没接下这个包（返回不是 null），我们才吭一声。
      */
     private void install(File file) {
         if (!isInstallable(file)) {
@@ -872,31 +870,15 @@ public class Updater implements Download.Callback, UpdateListener {
             return;
         }
         FileUtil.installApkAsync(file, apkName(), result -> {
-            if (result == null) return; // 安装界面已经起来了，剩下的交给系统
+            if (result == null) return; // 安装界面已经弹出来了，后面没我们的事了
             if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
                 FileUtil.openInstallPermission();
                 Notify.show(R.string.push_install_perm);
-                keepCopy(file);
                 return;
             }
             if (result.isEmpty()) Notify.show(R.string.update_install_fail);
             else Notify.show(ResUtil.getString(R.string.update_install_manual, result));
         });
-    }
-
-    /**
-     * 安装界面没起来的话，在「下载」目录里留一份安装包：有些设备（模拟器、改过的盒子）
-     * 点了更新死活拉不起界面，留了这份至少还能去文件管理里手动点装，不至于卡在旧版本。
-     * **TV 版不留**：电视上没人会去翻「下载」目录找包，留了只是白占几十 MB。
-     */
-    private void keepCopy(File file) {
-        if (FileUtil.isTv()) return; // TV 上留了也没人找得到（见 FileUtil.keep）
-        new Thread(() -> {
-            String path = FileUtil.saveToDownload(file, apkName());
-            App.post(() -> {
-                if (path != null) Notify.show(ResUtil.getString(R.string.update_keep, path));
-            });
-        }, "update-keep").start();
     }
 
     /** 下载目录里那份的名字带上版本号，一眼能认出是哪一版 */

@@ -319,12 +319,23 @@ public class FileUtil {
             "com.miui.securitycenter",                   // 小米安全中心（有时由它接管扫描）
     };
 
+    /**
+     * 直接交给系统去装，别自己先查「有没有人接」。
+     *
+     * 以前这里先用 resolveActivity 查一遍，查不到就放弃 —— 结果在安卓 11（api30）以上的
+     * 电视/盒子上成了致命一环：那会儿起有「应用可见性」限制，manifest 里没声明 queries 的话
+     * 这一查永远返回空，我们连 startActivity 都没调，更新下完就干在那儿什么也不发生
+     * （Sony api32 那台就是这样）。早期版本 targetSdk 低、不吃这条限制，所以一直是好的。
+     *
+     * 现在按马先生的意思简化：直接 startActivity，装不装得了是系统自己的事
+     * （没开「允许未知来源」也是系统自己出面问）。只有真的没人接（抛异常）才算这条路走不通。
+     */
     private static boolean launch(Intent intent) {
         try {
-            if (intent.resolveActivity(App.get().getPackageManager()) == null) return false;
             App.get().startActivity(intent);
             return true;
         } catch (Throwable e) {
+            DebugLog.d("Install", intent.getAction() + " 拉不起来：" + e);
             return false;
         }
     }

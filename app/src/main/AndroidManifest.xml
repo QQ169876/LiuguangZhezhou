@@ -64,6 +64,21 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
 
     <queries>
+        <!--
+             装更新包要用：安卓 11（api30）起有「应用可见性」限制，不在这里声明，
+             resolveActivity / queryIntentActivities 就查不到系统安装器（返回空），
+             表现为「更新下完了却拉不起安装界面」——Sony 电视（api32）上就是这样。
+        -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSTALL_PACKAGE" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <package android:name="com.android.packageinstaller" />
+        <package android:name="com.google.android.packageinstaller" />
         <intent>
             <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />
             <data android:scheme="package" />
