@@ -493,6 +493,11 @@
 
     <string name="sync_risk_title">操作風險提示</string>
     <string name="sync_risk_confirm">我知道了</string>
+    <string name="sync_guard_title">批次刪除確認</string>
+    <string name="sync_guard_message">本機上少了 %1$d 條觀看記錄、%2$d 條收藏，同步後網盤/影視站上的這些也會被刪掉。是你在 App 裡刪的嗎？</string>
+    <string name="sync_guard_delete">是我刪的，同步刪除</string>
+    <string name="sync_guard_keep">不是，先不刪</string>
+    <string name="sync_guard_skipped">本次同步保留了 %1$d 條記錄：批次刪除需要你確認後才執行</string>
     <string name="sync_risk_vod">你正在切換點播源。收藏和觀看記錄會隨點播源變化，同步設定也已跟隨切換並取消啟用。開啟同步或執行同步前，請確認本機記錄、收藏與雲端是否需要合併、使用本機覆蓋雲端、或使用雲端覆蓋本機，避免資料互相混淆。</string>
     <string name="sync_risk_moon">影視站的同步設定剛改動過（位址、帳號或開關）。不同帳號的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按帳號分開記帳，別的帳號的記錄不會被帶過去。</string>
     <string name="sync_risk_dav">WebDAV 的同步設定剛改動過（位址、同步標識、帳號或開關）。不同同步標識、不同帳號裡的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按同步標識分開記帳，別的同步標識的記錄不會被帶過去。</string>

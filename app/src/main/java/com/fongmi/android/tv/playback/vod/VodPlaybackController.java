@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.playback.vod;
 
+import android.text.TextUtils;
+
 import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 
@@ -503,7 +505,8 @@ public class VodPlaybackController {
         if (restorePlaybackSelection(activeRequest)) {
             publishPlaybackMetadata(state.getEpisode());
         } else {
-            selectFlag(history.getFlag(), true);
+            Flag resume = resumeFlag(history);
+            selectFlag(resume == null ? history.getFlag() : resume, true);
         }
     }
 
@@ -608,11 +611,42 @@ public class VodPlaybackController {
 
     private void seamless(Flag flag) {
         History history = state.getHistory();
-        Episode episode = history == null ? null : flag.find(history.getVodRemarks(), host.getVodMark().isEmpty());
+        Episode episode = history == null ? null : findResumeEpisode(flag, history);
         host.renderQualityVisible(episode != null && episode.isSelected() && state.getQuality().getUrl().isMulti());
         if (episode == null || episode.isSelected()) return;
         history.setVodRemarks(episode.getName());
         selectEpisode(episode);
+    }
+
+    /**
+     * 从播放记录进来时，上次看的是哪一集：先看存过的播放地址，再看集名（写法变了也能对上）。
+     * 两个都认不出来（换过源、集数整个变了）时：记录里没有进度就跟新剧一样从头播第一集；
+     * 有进度却认不出是哪集，就别乱播 —— 播错一集会把那条记录的进度冲掉，留着让用户自己点。
+     */
+    private Episode findResumeEpisode(Flag flag, History history) {
+        Episode episode = flag.findByUrl(history.getEpisodeUrl());
+        if (episode == null) episode = flag.find(history.getVodRemarks(), host.getVodMark().isEmpty());
+        if (episode != null) return episode;
+        if (flag.getEpisodes().isEmpty()) return null;
+        if (history.getPosition() > 0 && history.getDuration() > 0) {
+            DebugLog.d("Vod", "认不出上次看的集：" + history.getVodRemarks() + " / " + history.getEpisodeUrl() + "，等用户自己点");
+            return null;
+        }
+        return flag.getEpisodes().get(0);
+    }
+
+    /**
+     * 上次看的是哪条线路。同步下来的记录常常没记线路名，这时候按存过的集（地址优先、其次集名）
+     * 在各条线路里找，别一头撞进第一条线路，那部剧就有好几条线。
+     */
+    private Flag resumeFlag(History history) {
+        if (history == null) return null;
+        if (!TextUtils.isEmpty(history.getVodFlag()) && findFlag(history.getFlag()) != null) return null;
+        String url = history.getEpisodeUrl();
+        if (!url.isEmpty()) for (Flag flag : state.getFlags()) if (flag.findByUrl(url) != null) return flag;
+        String remarks = history.getVodRemarks();
+        if (!TextUtils.isEmpty(remarks)) for (Flag flag : state.getFlags()) if (flag.find(remarks, true) != null) return flag;
+        return null;
     }
 
     private void mergeFlag(Flag activated, Flag item) {

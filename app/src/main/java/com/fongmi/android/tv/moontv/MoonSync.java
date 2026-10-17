@@ -20,6 +20,7 @@ import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.fongmi.android.tv.sync.Owner;
+import com.fongmi.android.tv.sync.SyncGuard;
 import com.fongmi.android.tv.utils.Task;
 
 import org.json.JSONArray;
@@ -404,8 +405,20 @@ public class MoonSync {
         applyTomb(records, favorites);
         Set<String> localRecords = localRecordKeys();
         Set<String> localFavorites = localKeepKeys();
-        int delRecords = deleteRemote(diff(scopedRemote(records, localRecords), localRecords), false);
-        int delFavorites = deleteRemote(diff(scopedRemote(favorites, localFavorites), localFavorites), true);
+        Set<String> delRecords = diff(scopedRemote(records, localRecords), localRecords);
+        Set<String> delFavorites = diff(scopedRemote(favorites, localFavorites), localFavorites);
+        // 站点上要删的这批同样先过确认：数量偏大说明对端可能压根不是同一个库（见 SyncGuard）
+        int delCount = 0;
+        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), records.length() + favorites.length())) {
+            delCount = deleteRemote(delRecords, false) + deleteRemote(delFavorites, true);
+        } else {
+            DebugLog.d("Sync", "站点批量删除待确认：观看记录 " + delRecords.size() + " 条、收藏 " + delFavorites.size() + " 条");
+            SyncGuard.ask(delRecords.size(), delFavorites.size(), () -> {
+                deleteRemote(delRecords, false);
+                deleteRemote(delFavorites, true);
+                refresh();
+            }); // 上传照做，只是站点上那批先不动
+        }
         // 手动「上传」= 明确要求把本机这份搬到当前账号上，所以不看原来的归属，搬完统一归当前账号
         int[] upRecords = pushRecords(records, true);
         int[] upFavorites = pushFavorites(favorites, true);
@@ -417,7 +430,7 @@ public class MoonSync {
         beat("同步时间已写");
         refresh();
         beat("刷新事件已排队");
-        return ResUtil.getString(R.string.moontv_summary_push, upRecords[0] + upRecords[1], upFavorites[0] + upFavorites[1], delRecords + delFavorites);
+        return ResUtil.getString(R.string.moontv_summary_push, upRecords[0] + upRecords[1], upFavorites[0] + upFavorites[1], delCount);
     }
 
     /**
@@ -496,7 +509,9 @@ public class MoonSync {
             } else if (saveTime > old.getCreateTime()) {
                 old.setVodName(target.getVodName());
                 old.setVodPic(target.getVodPic());
-                old.setVodRemarks(target.getVodRemarks());
+                // 站点只给得出「第X集」这种粗集号，本机记的才是源里那一集的真名（还带着播放地址）。
+                // 集号对得上就留本机那条，别把它冲成「第X集」甚至空串，不然下次打开认不出看到哪一集。
+                if (!sameEpisode(old.getVodRemarks(), target.getVodRemarks())) old.setVodRemarks(target.getVodRemarks());
                 old.setPosition(position);
                 old.setDuration(duration);
                 old.setCreateTime(saveTime);
@@ -560,8 +575,12 @@ public class MoonSync {
         Set<String> remoteFavorites = keysOf(favorites);
         int removed = 0, removedUp = 0;
         if (hasBase()) {
-            removed += deleteLocalHistory(diff(loadSet(baseRecord()), remoteRecords), cid, ownerRecord);
-            removed += deleteLocalKeep(diff(loadSet(baseFavorite()), remoteFavorites), ownerFavorite);
+            // 站点上没了 = 本机跟着删：这是同步的正常结果（换账号、站点清库都是这个方向），不问。
+            // SyncGuard 只管反过来的那一种：本机误删 → 一同步把站点上的也删了。
+            Set<String> delRecords = diff(loadSet(baseRecord()), remoteRecords);
+            Set<String> delFavorites = diff(loadSet(baseFavorite()), remoteFavorites);
+            removed += deleteLocalHistory(delRecords, cid, ownerRecord);
+            removed += deleteLocalKeep(delFavorites, ownerFavorite);
         }
         pruneTomb();
         dropAlive();
@@ -574,12 +593,13 @@ public class MoonSync {
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         int[] clean = dedupe();
         // 基线只记当前账号这一份：别的账号的条目不该被算进「站点上少了什么」的判断里
-        Set<String> localRecords = mineOnly(localRecordKeys(), ownerRecord);
-        Set<String> localFavorites = mineOnly(localKeepKeys(), ownerFavorite);
+        // 在删完、拉完、去重之后再取，这时的本机才是同步后的真实状态
+        Set<String> mineRecords = mineOnly(localRecordKeys(), ownerRecord);
+        Set<String> mineFavorites = mineOnly(localKeepKeys(), ownerFavorite);
         int[] up = pushRecords(records, false);
         int[] keepUp = pushFavorites(favorites, false);
         DebugLog.d("Sync", "影视站上传完成");
-        saveBase(records, favorites, localRecords, localFavorites);
+        saveBase(records, favorites, mineRecords, mineFavorites);
         beat("基线已保存");
         pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
@@ -1189,6 +1209,13 @@ public class MoonSync {
 
     private static String mark(int index, int total) {
         return total > 1 && index > 0 ? "第" + index + "集" : "";
+    }
+
+    /** 两边说的是不是同一集（只比集号：本机「05」和站点「第5集」算一集） */
+    private static boolean sameEpisode(String local, String remote) {
+        if (remote.isEmpty()) return true; // 站点没给集号，别拿空值盖本机
+        if (local.isEmpty()) return false; // 本机没记过，那就听站点的
+        return index(local) == index(remote);
     }
 
     private static int index(String text) {

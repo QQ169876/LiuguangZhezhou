@@ -93,16 +93,27 @@ public class Episode implements Parcelable, Diffable<Episode> {
     }
 
     public int getScore(String name, int number) {
-        if (getName().equalsIgnoreCase(name)) return 100;
+        String self = normalize(getName());
+        String target = normalize(name);
+        if (self.equalsIgnoreCase(target)) return 100;
         if (number != -1 && getNumber() == number) return 80;
-        if (number == -1 && name.length() >= 2 && getName().toLowerCase().contains(name.toLowerCase())) return 70;
-        if (number == -1 && getName().length() >= 2 && name.toLowerCase().contains(getName().toLowerCase())) return 60;
+        if (number == -1 && target.length() >= 2 && self.toLowerCase().contains(target)) return 70;
+        if (number == -1 && self.length() >= 2 && target.toLowerCase().contains(self)) return 60;
         return 0;
+    }
+
+    /**
+     * 集名认不出来的常见原因：设置里切过简繁、源把写法改了（「第5集」/「05」/「第 5 集」）。
+     * 比之前先把空格去掉、繁简归一，免得同一集被当成两集，续播就断了。
+     */
+    static String normalize(String text) {
+        String value = text == null ? "" : text.trim().replaceAll("\\s+", "");
+        return Trans.t2s(false, value);
     }
 
     public boolean matchesName(Episode other) {
         if (other == null) return false;
-        return getName().equalsIgnoreCase(other.getName());
+        return normalize(getName()).equalsIgnoreCase(normalize(other.getName()));
     }
 
     public Episode trans() {

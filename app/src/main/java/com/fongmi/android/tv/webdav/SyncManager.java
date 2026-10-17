@@ -19,6 +19,7 @@ import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.sync.Owner;
+import com.fongmi.android.tv.sync.SyncGuard;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
@@ -333,6 +334,7 @@ public class SyncManager {
         WebDavData localData = participate(false, bookRecord, bookFavorite);
         if (remoteData == null) remoteData = baseData == null ? WebDavData.empty() : WebDavData.from(baseData.toJson());
         WebDavData merged = merge(baseData, localData, remoteData);
+        guardLocalLoss(merged, localData, baseData, bookRecord, bookFavorite, () -> sync(null));
         absorb(merged, bookRecord, bookFavorite); // 拉下来/推上去的都归当前同步标识
         boolean changed = apply(merged, localData);
         merged.setTime(System.currentTimeMillis());
@@ -351,6 +353,8 @@ public class SyncManager {
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
         // 手动「上传」= 明确要求把本机这份搬到当前同步标识下，所以不看原来归属，搬完统一改归属
         WebDavData localData = participate(true, bookRecord, bookFavorite);
+        // 本机覆盖云端：本机少的那些会从云端抹掉，批量时同样先问一句（同 guardLocalLoss）
+        guardLocalLoss(localData, localData, readBaseline(), bookRecord, bookFavorite, () -> push(null));
         absorb(localData, bookRecord, bookFavorite);
         localData.setTime(System.currentTimeMillis());
         save(WebDavSetting.getFileUrl(), localData);
@@ -372,7 +376,9 @@ public class SyncManager {
         JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
         WebDavData mine = participate(false, bookRecord, bookFavorite);
-        replaceLocal(mine);
+        // 云端覆盖本机 = 换到那份账号的数据，整体替换本来就该这样，不问（SyncGuard 只管「本机删→云端删」）
+        deleteHistoryKeep(mine.getData().getHistory(), mine.getData().getKeep());
+        replaceLocal();
         List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
         List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
         insertAll(remoteData);
@@ -391,15 +397,11 @@ public class SyncManager {
         return getSummary(remoteData);
     }
 
-    /** 清掉本机参与本次同步的那部分（连同播放轨道），并重建配置/站点/直播 */
-    private static void replaceLocal(WebDavData mine) {
-        for (History item : mine.getData().getHistory()) {
-            AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
-            AppDatabase.get().getTrackDao().delete(item.getKey());
-        }
-        for (Keep item : mine.getData().getKeep()) {
-            AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
-        }
+    /**
+     * 重建配置 / 站点 / 直播。
+     * 观看记录和收藏不在这儿删 —— 它们走 dropHistoryKeep，批量删除要先问过用户。
+     */
+    private static void replaceLocal() {
         AppDatabase.get().getConfigDao().delete();
         AppDatabase.get().getSiteDao().delete();
         AppDatabase.get().getLiveDao().delete();
@@ -713,6 +715,65 @@ public class SyncManager {
 
     /* ---------- apply ---------- */
 
+    /**
+     * 防的是「App 里误删 → 一同步网盘上的也没了」这一步（见 SyncGuard）。
+     *
+     * 判据：上次同步时本机有、这一趟本机没有了的那些（别的同步标识的、换了点播源的不算）。
+     * 数量偏大就先在同步的时候弹一句：
+     *   · 说「是我删的」→ 再跑一趟（again），这回真删；
+     *   · 没界面弹 / 说「不是」→ 一条都不删，还把那批补回这次上传的结果里 ——
+     *     网盘原样留着，本机刚删的那批也跟着回来了，等于把误删救回来。
+     */
+    private static void guardLocalLoss(WebDavData merged, WebDavData local, WebDavData base, JSONObject bookRecord, JSONObject bookFavorite, Runnable again) {
+        List<History> lostHistory = lostHistory(base, local, bookRecord);
+        List<Keep> lostKeep = lostKeep(base, local, bookFavorite);
+        int lost = lostHistory.size() + lostKeep.size();
+        if (lost == 0) return;
+        int total = local.getData().getHistory().size() + local.getData().getKeep().size() + lost;
+        if (SyncGuard.allow(lost, total)) return;
+        DebugLog.d("Sync", "本机批量删除待确认：观看记录 " + lostHistory.size() + " 条、收藏 " + lostKeep.size() + " 条");
+        SyncGuard.ask(lostHistory.size(), lostKeep.size(), again); // 真要删就再跑一趟（已批准，这回不再问）
+        restore(merged, lostHistory, lostKeep);
+    }
+
+    /** 上次同步时本机有、现在本机没有了的观看记录 */
+    private static List<History> lostHistory(WebDavData base, WebDavData local, JSONObject book) {
+        List<History> lost = new ArrayList<>();
+        if (base == null) return lost; // 没同步过，无从比较
+        int cid = VodConfig.getCid();
+        Set<String> keys = keys(local.getData().getHistory(), SyncManager::key);
+        for (History item : base.getData().getHistory()) {
+            if (item.getCid() != cid) continue; // 换过点播源，那是另一套数据，不算删
+            String name = Owner.key(item.getKey());
+            if (name != null && Owner.foreign(Owner.DAV, book, name)) continue; // 别的同步标识的，本来就不在本机
+            if (!keys.contains(key(item))) lost.add(item);
+        }
+        return lost;
+    }
+
+    /** 上次同步时本机有、现在本机没有了的收藏 */
+    private static List<Keep> lostKeep(WebDavData base, WebDavData local, JSONObject book) {
+        List<Keep> lost = new ArrayList<>();
+        if (base == null) return lost;
+        int cid = VodConfig.getCid();
+        Set<String> keys = keys(local.getData().getKeep(), SyncManager::key);
+        for (Keep item : base.getData().getKeep()) {
+            if (item.getCid() != cid) continue;
+            String name = Owner.key(item.getKey());
+            if (name != null && Owner.foreign(Owner.DAV, book, name)) continue;
+            if (!keys.contains(key(item))) lost.add(item);
+        }
+        return lost;
+    }
+
+    /** 把「先不删」的那批补回这次上传的结果：网盘留着，本机也跟着恢复 */
+    private static void restore(WebDavData merged, List<History> history, List<Keep> keep) {
+        Set<String> historyKeys = keys(merged.getData().getHistory(), SyncManager::key);
+        for (History item : history) if (!historyKeys.contains(key(item))) merged.getData().getHistory().add(item);
+        Set<String> keepKeys = keys(merged.getData().getKeep(), SyncManager::key);
+        for (Keep item : keep) if (!keepKeys.contains(key(item))) merged.getData().getKeep().add(item);
+    }
+
     private static boolean apply(WebDavData merged, WebDavData local) {
         Backup m = merged.getData();
         Backup o = backup(local);
@@ -726,15 +787,12 @@ public class SyncManager {
         Set<String> keepKeys = keys(m.getKeep(), SyncManager::key);
         Set<String> configKeys = keys(m.getConfig(), SyncManager::key);
 
-        for (History item : o.getHistory()) {
-            if (historyKeys.contains(key(item))) continue;
-            AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
-            AppDatabase.get().getTrackDao().delete(item.getKey());
-        }
-        for (Keep item : o.getKeep()) {
-            if (keepKeys.contains(key(item))) continue;
-            AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
-        }
+        List<History> delHistory = new ArrayList<>();
+        for (History item : o.getHistory()) if (!historyKeys.contains(key(item))) delHistory.add(item);
+        List<Keep> delKeep = new ArrayList<>();
+        for (Keep item : o.getKeep()) if (!keepKeys.contains(key(item))) delKeep.add(item);
+        // 云端那份没了 → 本机跟着删，这是同步的正常结果，不问（SyncGuard 只管「本机删→云端删」）
+        deleteHistoryKeep(delHistory, delKeep);
         for (Config item : o.getConfig()) {
             if (configKeys.contains(key(item))) continue;
             AppDatabase.get().getConfigDao().delete(item.getUrl(), item.getType());
@@ -783,6 +841,16 @@ public class SyncManager {
         SpiderVault.apply(merged.getData().getSpider());
         ConfigCache.apply(merged.getCache());
         return configChanged;
+    }
+
+    private static void deleteHistoryKeep(List<History> history, List<Keep> keep) {
+        if (history.isEmpty() && keep.isEmpty()) return;
+        for (History item : history) {
+            AppDatabase.get().getHistoryDao().delete(item.getCid(), item.getKey());
+            AppDatabase.get().getTrackDao().delete(item.getKey());
+        }
+        for (Keep item : keep) AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
+        notifyDataChanged();
     }
 
     private static void insertAll(WebDavData data) {

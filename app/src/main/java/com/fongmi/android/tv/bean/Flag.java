@@ -125,6 +125,15 @@ public class Flag implements Parcelable, Diffable<Flag> {
         else getEpisodes().forEach(Episode::deselect);
     }
 
+    /**
+     * 按播放地址找一集。历史里存过地址时它比集名可靠：源把集名改了（「05」→「第5集」）也能认出来。
+     */
+    public Episode findByUrl(String url) {
+        if (url == null || url.isEmpty()) return null;
+        for (Episode episode : getEpisodes()) if (episode.getUrl().equals(url)) return episode;
+        return null;
+    }
+
     public Episode find(String remarks, boolean strict) {
         if (getEpisodes().isEmpty()) return null;
         if (getEpisodes().size() == 1) return getEpisodes().get(0);

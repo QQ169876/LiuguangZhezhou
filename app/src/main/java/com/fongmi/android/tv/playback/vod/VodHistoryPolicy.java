@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.Task;
+import com.fongmi.android.tv.utils.Util;
 
 public class VodHistoryPolicy {
 
@@ -71,12 +72,26 @@ public class VodHistoryPolicy {
 
     public void updateEpisode(History history, Flag flag, Episode episode) {
         if (history == null || flag == null || episode == null) return;
-        boolean match = episode.matchesName(history.getEpisode());
+        boolean match = isSameEpisode(history, flag, episode);
         if (!match) history.setPosition(C.TIME_UNSET);
         if (!match) history.setDuration(C.TIME_UNSET);
         history.setVodFlag(flag.getFlag());
         history.setVodRemarks(episode.getName());
         history.setEpisodeUrl(episode.getUrl());
+    }
+
+    /**
+     * 现在要播的这集，是不是记录里上次看的那集。
+     * 以前只认集名一字不差，源把「05」写成「第5集」就被当成换了一集，进度直接清掉，
+     * 用户再打开只能从头看 —— 所以地址一样、集名一样、集号一样，都算同一集。
+     */
+    private boolean isSameEpisode(History history, Flag flag, Episode episode) {
+        if (flag.getEpisodes().size() <= 1) return true; // 就一集（电影/单集），不用挑
+        String url = history.getEpisodeUrl();
+        if (!url.isEmpty() && url.equals(episode.getUrl())) return true;
+        if (episode.matchesName(history.getEpisode())) return true;
+        int number = Util.getNumber(history.getVodRemarks());
+        return number != -1 && episode.getNumber() == number;
     }
 
     public void updateProgress(History history, long time, long position, long duration) {

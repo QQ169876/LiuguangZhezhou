@@ -494,6 +494,11 @@
 
     <string name="sync_risk_title">Heads-up</string>
     <string name="sync_risk_confirm">Got it</string>
+    <string name="sync_guard_title">Confirm bulk deletion</string>
+    <string name="sync_guard_message">This sync would also delete %1$d watching records and %2$d favorites from the cloud (they are already gone from this device). Did you delete them on purpose?</string>
+    <string name="sync_guard_delete">Delete anyway</string>
+    <string name="sync_guard_keep">Keep them</string>
+    <string name="sync_guard_skipped">Sync kept %1$d records: bulk deletion needs your confirmation</string>
     <string name="sync_risk_vod">You are switching the vod source. Favorites and watch history change with the source, and sync settings have been switched over and turned off. Before enabling or running sync, decide whether local and cloud data should merge, local overwrite cloud, or cloud overwrite local — to avoid mixing them up.</string>
     <string name="sync_risk_moon">The site sync settings were just changed (address, account or a switch). Watch history and favorites under different accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per account, so records from another account will not be carried over.</string>
     <string name="sync_risk_dav">The WebDAV sync settings were just changed (address, sync id, account or a switch). Watch history and favorites under different sync ids or accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per sync id, so records from another id will not be carried over.</string>
