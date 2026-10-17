@@ -80,6 +80,34 @@
             android:layout_height="match_parent"
             android:orientation="vertical">
 
+            <!-- 智能搜索的结果区：平时藏着，点键盘末尾的「AI」键后顶替热搜区显示 -->
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/aiSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="@color/white"
+                android:textSize="20sp"
+                android:visibility="gone"
+                tools:text="AI 理解：2026 年的动作电影"
+                tools:visibility="visible" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/aiRecycler"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="-8dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:visibility="gone"
+                app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+                tools:itemCount="4"
+                tools:listitem="@layout/adapter_ai_pick"
+                tools:visibility="visible" />
+
             <androidx.appcompat.widget.LinearLayoutCompat
                 android:id="@+id/recordLayout"
                 android:layout_width="match_parent"

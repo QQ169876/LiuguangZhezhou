@@ -571,6 +571,21 @@
 
     <!-- Search -->
     <string name="search_keyword">關鍵字…</string>
+    <string name="search_ai">智慧搜尋</string>
+    <string name="ai_search_asked">你問：%1$s</string>
+    <string name="ai_search_thinking">正在請 AI 理解…</string>
+    <string name="ai_search_understand">AI 理解：%1$s</string>
+    <string name="ai_search_refused">我只負責找電影、劇集、短劇、漫劇這類片子，換個找片的說法試試</string>
+    <string name="ai_search_error">AI 暫時沒回應，可以直接用關鍵字搜尋</string>
+    <string name="ai_search_empty">沒想到合適的，換個說法試試</string>
+    <string name="ai_search_ask_first">先在搜尋框輸入想問的，比如「找部今年的動作片」</string>
+    <string name="ai_search_off">智慧搜尋未開啟，請先到設定裡開啟「智能識別」</string>
+    <string name="ai_pick_rating">評分 %1$s</string>
+    <string name="ai_pick_movie">電影</string>
+    <string name="ai_pick_tv">劇集</string>
+    <string name="ai_pick_actor">直接搜這個人</string>
+    <string name="ai_pick_tag">題材</string>
+    <string name="ai_pick_guessed">AI 提名</string>
     <string name="search_record">歷史</string>
     <string name="search_suggest">建議</string>
     <string name="search_hot">熱搜</string>

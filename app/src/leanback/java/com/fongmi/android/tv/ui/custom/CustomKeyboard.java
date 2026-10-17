@@ -28,6 +28,10 @@ public class CustomKeyboard implements KeyboardAdapter.OnClickListener {
 
     @Override
     public void onTextClick(String text) {
+        if (KeyboardAdapter.KEY_AI.equals(text)) {
+            callback.onAi(); // AI 键不插字，触发智能搜索
+            return;
+        }
         StringBuilder sb = new StringBuilder(binding.keyword.getText().toString());
         int cursor = binding.keyword.getSelectionStart();
         if (binding.keyword.length() > 19) return;
@@ -78,5 +82,8 @@ public class CustomKeyboard implements KeyboardAdapter.OnClickListener {
         void onRemote();
 
         void onSearch();
+
+        /** 键盘末尾的「AI」键：智能搜索 */
+        void onAi();
     }
 }

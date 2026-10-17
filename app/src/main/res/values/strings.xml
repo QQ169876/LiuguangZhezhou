@@ -572,6 +572,21 @@
 
     <!-- Search -->
     <string name="search_keyword">Keywords…</string>
+    <string name="search_ai">AI search</string>
+    <string name="ai_search_asked">You asked: %1$s</string>
+    <string name="ai_search_thinking">AI is thinking…</string>
+    <string name="ai_search_understand">AI understood: %1$s</string>
+    <string name="ai_search_refused">I only help find movies, series, short dramas and comic dramas — try rephrasing it as a title search</string>
+    <string name="ai_search_error">AI is not responding right now — keyword search still works</string>
+    <string name="ai_search_empty">Nothing suitable came up — try rephrasing</string>
+    <string name="ai_search_ask_first">Type what you want first, e.g. “a new action movie this year”</string>
+    <string name="ai_search_off">AI search is off — enable “Smart match” in Settings first</string>
+    <string name="ai_pick_rating">Rated %1$s</string>
+    <string name="ai_pick_movie">Movie</string>
+    <string name="ai_pick_tv">Series</string>
+    <string name="ai_pick_actor">Search this name</string>
+    <string name="ai_pick_tag">Genre</string>
+    <string name="ai_pick_guessed">AI suggestion</string>
     <string name="search_record">History</string>
     <string name="search_suggest">Suggest</string>
     <string name="search_hot">Hot</string>

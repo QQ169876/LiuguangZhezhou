@@ -17,17 +17,22 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.bean.TmdbWork;
 import com.fongmi.android.tv.bean.Word;
 import com.fongmi.android.tv.databinding.ActivitySearchBinding;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.ui.adapter.AiPickAdapter;
 import com.fongmi.android.tv.ui.adapter.RecordAdapter;
 import com.fongmi.android.tv.ui.adapter.WordAdapter;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.CustomKeyboard;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.utils.AiSearchRunner;
 import com.fongmi.android.tv.utils.KeyUtil;
+import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Util;
 import com.fongmi.android.tv.utils.ZhuToPin;
 import com.github.catvod.net.OkHttp;
@@ -36,16 +41,21 @@ import com.google.android.flexbox.FlexboxLayoutManager;
 import com.google.common.net.HttpHeaders;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 import okhttp3.Call;
 import okhttp3.Response;
 
-public class SearchActivity extends BaseActivity implements WordAdapter.OnClickListener, RecordAdapter.OnClickListener, CustomKeyboard.Callback {
+public class SearchActivity extends BaseActivity implements WordAdapter.OnClickListener, RecordAdapter.OnClickListener, AiPickAdapter.OnClickListener, CustomKeyboard.Callback {
 
     private ActivitySearchBinding mBinding;
     private RecordAdapter mRecordAdapter;
     private WordAdapter mWordAdapter;
+    private AiPickAdapter mAiAdapter;
+    private boolean aiMode;    // 右侧结果区正被智能搜索占着
+    private boolean aiVoice;   // 这次语音是「AI」键起的，说完直接进智能搜索
+    private String aiQuestion = "";
 
     public static void start(Activity activity) {
         activity.startActivity(new Intent(activity, SearchActivity.class));
@@ -91,11 +101,21 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
                 getWord(s.toString());
             }
         });
-        mBinding.mic.setOnClickListener(v -> mBinding.mic.start());
+        mBinding.mic.setOnClickListener(v -> {
+            aiVoice = false; // 直接点麦克风是普通语音输入，别跟「AI」键起的语音混了
+            mBinding.mic.start();
+        });
         mBinding.mic.setListener(this, new CustomTextListener() {
             @Override
             public void onResults(String result) {
                 if (!result.isEmpty()) setKeyword(result);
+                // 从「AI」键起的语音：说完直接进智能搜索，不用再多按一下
+                if (aiVoice && !result.isEmpty()) {
+                    aiVoice = false;
+                    onAi();
+                    return;
+                }
+                aiVoice = false;
                 mBinding.keyword.requestFocus();
             }
         });
@@ -109,6 +129,9 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
         mBinding.recordRecycler.setHasFixedSize(false);
         mBinding.recordRecycler.setLayoutManager(new FlexboxLayoutManager(this, FlexDirection.ROW));
         mBinding.recordRecycler.setAdapter(mRecordAdapter = new RecordAdapter(this));
+        mBinding.aiRecycler.setItemAnimator(null);
+        mBinding.aiRecycler.setHasFixedSize(false);
+        mBinding.aiRecycler.setAdapter(mAiAdapter = new AiPickAdapter(this));
     }
 
     private void checkKeyword() {
@@ -122,6 +145,7 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     }
 
     private void getWord(String text) {
+        exitAiMode();
         if (text.isEmpty()) getHot();
         else getSuggest(text);
     }
@@ -162,6 +186,7 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
 
     @Override
     public void onDataChanged(int size) {
+        if (aiMode) return; // 智能搜索结果占着结果区，别被历史记录的增删搅了
         mBinding.recordLayout.setVisibility(size == 0 ? View.GONE : View.VISIBLE);
         if (size == 0) focusFirst(mBinding.wordRecycler);
     }
@@ -178,6 +203,105 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     @Override
     public void showDialog() {
         SiteDialog.create().search().show(this);
+    }
+
+    /**
+     * 键盘末尾的「AI」键：把搜索框里那句大白话交给大模型理解成找片指令，结果直接摆在右侧结果区。
+     * 两条路都通：框里有字 → 直接按 AI 搜（用键盘敲完字按 AI，跟按「搜索」键是平级的另一种搜法）；
+     * 框里没字 → 有语音能力的设备先起语音，说完自动进智能搜索；没有语音能力的（部分电视/盒子）
+     * 就提醒先打字，焦点送回搜索框。
+     */
+    @Override
+    public void onAi() {
+        if (!AiSetting.isEnabled()) {
+            Notify.show(R.string.ai_search_off);
+            return;
+        }
+        if (empty()) {
+            if (mBinding.mic.voiceAvailable()) {
+                aiVoice = true; // 标记一下：这次语音识别的结果要进智能搜索，不是普通搜索
+                mBinding.mic.start();
+            } else {
+                // 这台设备没有语音输入：别干等，把焦点放回框里让他用键盘敲
+                Notify.show(R.string.ai_search_ask_first);
+                mBinding.keyword.requestFocus();
+            }
+            return;
+        }
+        Util.hideKeyboard(mBinding.keyword);
+        aiQuestion = mBinding.keyword.getText().toString().trim();
+        aiMode = true;
+        mBinding.word.setVisibility(View.GONE);
+        mBinding.wordRecycler.setVisibility(View.GONE);
+        mBinding.recordLayout.setVisibility(View.GONE);
+        mBinding.aiRecycler.setVisibility(View.GONE);
+        mBinding.aiSummary.setVisibility(View.VISIBLE);
+        AiSearchRunner.run(aiQuestion, aiView);
+    }
+
+    /** 智能搜索的界面回调：结果区就在本页右侧，问句变了（用户又打字了）就把迟到的结果扔掉 */
+    private final AiSearchRunner.View aiView = new AiSearchRunner.View() {
+
+        private boolean expired() {
+            return !aiMode || !mBinding.keyword.getText().toString().trim().equals(aiQuestion);
+        }
+
+        @Override
+        public void onThinking() {
+            mBinding.aiSummary.setText(R.string.ai_search_thinking);
+        }
+
+        @Override
+        public void onSummary(String summary) {
+            if (expired() || summary.isEmpty()) return;
+            mBinding.aiSummary.setText(getString(R.string.ai_search_understand, summary));
+        }
+
+        @Override
+        public void onRows(List<TmdbWork> rows) {
+            if (expired()) return;
+            mAiAdapter.setItems(rows);
+            mBinding.aiRecycler.setVisibility(View.VISIBLE);
+            focusFirst(mBinding.aiRecycler);
+        }
+
+        @Override
+        public void onEnrich(int position, TmdbWork work) {
+            if (expired()) return;
+            mAiAdapter.update(position, work);
+        }
+
+        @Override
+        public void onTip(int resId) {
+            if (expired()) return;
+            mBinding.aiRecycler.setVisibility(View.GONE);
+            mBinding.aiSummary.setText(resId);
+        }
+
+        @Override
+        public void onDirect(String keyword) {
+            if (expired()) return;
+            setKeyword(keyword);
+            onSearch();
+        }
+    };
+
+    /** 用户又打字了：退出智能搜索，结果区还给热搜/联想词 */
+    private void exitAiMode() {
+        if (!aiMode) return;
+        aiMode = false;
+        mBinding.aiSummary.setVisibility(View.GONE);
+        mBinding.aiRecycler.setVisibility(View.GONE);
+        mBinding.word.setVisibility(View.VISIBLE);
+        mBinding.wordRecycler.setVisibility(View.VISIBLE);
+        mBinding.recordLayout.setVisibility(mRecordAdapter.getItemCount() == 0 ? View.GONE : View.VISIBLE);
+    }
+
+    /** 点了智能搜索给出的某一候选：拿准片名走正常的全站搜索 */
+    @Override
+    public void onItemClick(TmdbWork item) {
+        setKeyword(item.getName());
+        onSearch();
     }
 
     @Override

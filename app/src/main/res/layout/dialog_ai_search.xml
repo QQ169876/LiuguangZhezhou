@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.appcompat.widget.LinearLayoutCompat xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/question"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="8dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        tools:text="你问：找一部今年比较新的动作片" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="12dp"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp"
+        android:visibility="gone"
+        tools:text="AI 理解：2026 年的动作电影"
+        tools:visibility="visible" />
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp"
+        android:indeterminate="true"
+        app:indicatorColor="?attr/colorPrimary"
+        app:indicatorSize="32dp"
+        app:trackThickness="2dp" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:gravity="center"
+        android:paddingHorizontal="24dp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp"
+        android:visibility="gone"
+        tools:text="我只负责找片"
+        tools:visibility="visible" />
+
+    <com.fongmi.android.tv.ui.custom.CustomRecyclerView
+        android:id="@+id/recycler"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="20dp"
+        android:visibility="gone"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        app:maxHeight="320dp"
+        tools:listitem="@layout/adapter_ai_pick"
+        tools:visibility="visible" />
+
+</androidx.appcompat.widget.LinearLayoutCompat>

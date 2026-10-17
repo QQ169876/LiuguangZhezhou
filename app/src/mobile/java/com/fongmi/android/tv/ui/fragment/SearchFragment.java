@@ -29,12 +29,15 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Word;
 import com.fongmi.android.tv.databinding.FragmentSearchBinding;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.adapter.RecordAdapter;
 import com.fongmi.android.tv.ui.adapter.WordAdapter;
 import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
+import com.fongmi.android.tv.ui.dialog.AiSearchDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.net.OkHttp;
 import com.google.android.flexbox.FlexDirection;
@@ -193,6 +196,23 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
         mBinding.keyword.post(() -> SiteDialog.create().search().show(this));
     }
 
+    /** 智能搜索：把搜索框里那句大白话交给大模型理解成找片指令，选定后走正常的全站搜索 */
+    private void onAiSearch() {
+        if (empty()) {
+            Notify.show(R.string.ai_search_ask_first);
+            return;
+        }
+        if (!AiSetting.isEnabled()) {
+            Notify.show(R.string.ai_search_off);
+            return;
+        }
+        Util.hideKeyboard(mBinding.keyword);
+        AiSearchDialog.create(mBinding.keyword.getText().toString().trim(), text -> {
+            setKeyword(text);
+            search();
+        }).show(requireActivity());
+    }
+
     @Override
     public void onItemClick(String text) {
         setKeyword(text);
@@ -221,6 +241,7 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
         if (menuItem.getItemId() == android.R.id.home) requireActivity().getOnBackPressedDispatcher().onBackPressed();
         if (menuItem.getItemId() == R.id.action_reset) onReset();
         if (menuItem.getItemId() == R.id.action_site) onSite();
+        if (menuItem.getItemId() == R.id.action_ai) onAiSearch();
         return true;
     }
 

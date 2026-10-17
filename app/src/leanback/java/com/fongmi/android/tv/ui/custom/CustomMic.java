@@ -46,6 +46,14 @@ public class CustomMic extends AppCompatImageView {
         return mAvailable;
     }
 
+    /**
+     * 这台设备到底能不能语音输入：有系统识别服务，或有能接管识别的应用才算。
+     * 有些电视/盒子两样都没有（那时麦克风图标本来就不显示），调用方好换条路走。
+     */
+    public boolean voiceAvailable() {
+        return mAvailable || mLauncher != null;
+    }
+
     private boolean isListen() {
         return mListen;
     }
