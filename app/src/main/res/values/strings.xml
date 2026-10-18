@@ -64,7 +64,7 @@
     <string name="play_edition">Title</string>
     <string name="play_chapter">Chapter</string>
     <string name="play_scale">Default</string>
-    <string name="play_video_rotate">Rotate video</string>
+    <string name="play_video_rotate">Rotate</string>
     <string name="play_video_rotate_to">Video rotated %1$d°</string>
     <string name="play_video_rotate_reset">Video rotation reset</string>
     <string name="play_config">Config</string>

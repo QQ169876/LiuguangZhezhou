@@ -64,7 +64,7 @@
     <string name="play_edition">標題</string>
     <string name="play_chapter">章節</string>
     <string name="play_scale">原始</string>
-    <string name="play_video_rotate">畫面旋轉</string>
+    <string name="play_video_rotate">旋轉</string>
     <string name="play_video_rotate_to">畫面已旋轉 %1$d°</string>
     <string name="play_video_rotate_reset">畫面已回正</string>
     <string name="play_config">配置</string>
