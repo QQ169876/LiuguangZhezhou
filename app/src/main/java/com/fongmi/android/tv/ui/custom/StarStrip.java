@@ -54,18 +54,14 @@ public class StarStrip {
         this.binding.getRoot().setVisibility(View.GONE);
     }
 
-    /** 换一部剧/详情刷新时调：重新按演员串铺一遍牌 */
-    public void set(String actor) {
-        set(actor, "");
-    }
-
     /**
      * 换一部剧/详情刷新时调：重新按演员串铺一遍牌。
      * 站点压根没给演员（短剧站常有的事）时，拿剧名去问一句大模型，
      * 它想得起来就补上——牌的用法一模一样，能关注、能长按看作品。
      * 问不到（关了开关、断网、模型不认识这部剧）就还按没有演员处理，整块不显示。
+     * 漫剧/动画这类没有真人演员，传上类型让 AiJudge 直接拦掉，别让模型顺着关注名单瞎认领。
      */
-    public void set(String actor, String vodName) {
+    public void set(String actor, String vodName, String typeName) {
         binding.starList.removeAllViews();
         List<String> names = Star.split(actor);
         if (!names.isEmpty()) {
@@ -76,12 +72,12 @@ public class StarStrip {
         binding.getRoot().setVisibility(View.GONE);
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
-        List<String> cached = AiJudge.peekActors(askingFor);
+        List<String> cached = AiJudge.peekActors(askingFor, typeName);
         if (cached != null) { // 问过这部了：有就铺，没有就别再问第二次
             apply(cached, askingFor);
             return;
         }
-        AiJudge.actors(askingFor, "", "", cast -> apply(cast, askingFor));
+        AiJudge.actors(askingFor, typeName, "", cast -> apply(cast, askingFor));
     }
 
     /** 异步回来时页面可能已经换了剧/退了：剧名对不上或这块已经不在窗口上，就别贴了 */

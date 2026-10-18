@@ -57,6 +57,7 @@ public class AiJudge {
             + "外国演员给中文译名，人名中间的间隔号要保留（如「小罗伯特·唐尼」），"
             + "一个人的姓和名必须放在同一个字符串里，绝不能拆成两个人。"
             + "如果给了「用户关注的演员」名单，先判断其中哪些人参演了这部剧，把他们排在前面；没参演的不要写进去。"
+            + "漫剧、动态漫、动漫、动画、卡通这类作品没有真人演员，一律返回 {\"actors\":[]}，不要因为名单里有熟人就硬凑。"
             + "只输出 JSON，不要任何解释：{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
 
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
@@ -217,10 +218,21 @@ public class AiJudge {
         }
     }
 
+    /**
+     * 这类片子压根没有「真人演员」这回事：漫剧、动态漫、沙雕漫、动漫、动画、卡通。
+     * 名字或类型里写了就不问模型、也不读缓存 —— 2026-10-18 实测：给模型带「用户关注的演员」名单时，
+     * 碰上 AI 漫剧它会顺着名单瞎认领（明明没这人，也把姜十七贴上来），本地闸比指望它自觉可靠。
+     */
+    private static boolean noCast(String name, String typeName) {
+        String s = (name == null ? "" : name) + (typeName == null ? "" : typeName);
+        return s.matches("(?i).*(漫剧|动态漫|沙雕漫|动漫|动画|卡通|ai漫).*");
+    }
+
     /** 大模型给过的演员，直接给；没问过返回 null。敏感剧名连缓存都不查 */
-    public static List<String> peekActors(String name) {
+    public static List<String> peekActors(String name, String typeName) {
         if (name == null || name.isEmpty()) return null;
         if (AiGuard.blocked(name)) return null;
+        if (noCast(name, typeName)) return null; // 漫剧/动画没有演员，缓存里躺着的多半是旧版本的瞎认领
         loadActors();
         return ACTORS.get(cleanTitle(name)); // 缓存按洗干净的剧名记：同一个片子换个文件名也认得
     }
@@ -237,6 +249,10 @@ public class AiJudge {
         // 铁律：涉黄赌毒等违法关键词一律不送模型，一个字节都不许出去
         if (AiGuard.blocked(name, typeName, site)) {
             DebugLog.d("AiJudge", "命中敏感词，拒绝调用大模型：" + name);
+            replyActors(callback, null);
+            return;
+        }
+        if (noCast(name, typeName)) { // 漫剧/动画没有真人演员，问也是瞎认领
             replyActors(callback, null);
             return;
         }

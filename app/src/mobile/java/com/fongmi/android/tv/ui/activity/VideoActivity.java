@@ -897,7 +897,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setText(mBinding.site, R.string.detail_site, getSite().getName());
         setText(mBinding.director, R.string.detail_director, item.getDirector());
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
-        if (mStarStrip != null) mStarStrip.set(mActor, item.getName()); // 站点没给演员的，让大模型试着补
+        if (mStarStrip != null) mStarStrip.set(mActor, item.getName(), item.getTypeName()); // 站点没给演员的，让大模型试着补
         setText(mBinding.content, 0, item.getContent());
         setText(mBinding.remark, 0, item.getRemarks());
         setOther(mBinding.other, item);
