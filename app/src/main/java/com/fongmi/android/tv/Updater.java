@@ -781,6 +781,11 @@ public class Updater implements Download.Callback, UpdateListener {
      */
     private void waitReady(View view, int retry) {
         if (download != null) {
+            if (readyToInstall()) { // 包已经下好了（多半是上次没授权没装成），直接装，别再下一遍
+                install(getFile());
+                dismiss();
+                return;
+            }
             download.start(this);
             return;
         }
@@ -846,13 +851,14 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 更新包下好了就交给系统安装器，剩下的事（要不要授权、装不装得成）全归系统管。
+     * 更新包下好了就交给系统安装器 —— 步骤还是三步：下完 → 确认是个能装的包 → 调系统安装程序。
      *
-     * 马先生定的调子：别搞复杂。流程就三步——下完 → 确认这是个能装的包 → 调系统安装程序。
-     * 「更新」和「新装」在系统眼里是同一件事，不需要我们区分，也不需要在前面横插一道
-     * 「先查权限 / 先跳设置页」：装不装得了本来就是系统自己的事，绝大多数机器上系统安装器
-     * 会自己处理授权（要么直接装，要么在它自己的界面上给个开关）。
-     * 只有系统明确没接下这个包（返回不是 null），我们才吭一声。
+     * 只有一道例外：本机没开「允许安装未知应用」。2026-10-18 索尼电视（Android 12L）上实测，
+     * 没授权时系统会把我们这次请求**整个吞掉**：既不弹安装界面，也不给任何提示，
+     * 看着就是「下到 100%，然后什么都没有」（马先生碰到的就是这个）。
+     * 所以这里先把那个开关带人打开一次，开完再点一下更新就能装上——
+     * 那时候包已经下好了，不会再重下一遍。
+     * 已经授权的情况一句话交给系统，之后不管：装不装、弹什么，都是系统自己的事。
      */
     private void install(File file) {
         if (!isInstallable(file)) {
@@ -860,16 +866,22 @@ public class Updater implements Download.Callback, UpdateListener {
             Notify.show(R.string.update_bad_package);
             return;
         }
+        if (!FileUtil.installPermissionGranted()) { // 没授权时系统连界面都不会弹，先把开关打开
+            FileUtil.openInstallPermission();
+            Notify.show(R.string.update_install_perm);
+            return;
+        }
         FileUtil.installApkAsync(file, apkName(), result -> {
             if (result == null) return; // 安装界面已经弹出来了，后面没我们的事了
-            if (!FileUtil.installPermissionGranted()) { // 拉不起来多半是没开「允许安装未知应用」
-                FileUtil.openInstallPermission();
-                Notify.show(R.string.push_install_perm);
-                return;
-            }
             if (result.isEmpty()) Notify.show(R.string.update_install_fail);
             else Notify.show(ResUtil.getString(R.string.update_install_manual, result));
         });
+    }
+
+    /** 这个包已经下完整了（上次多半是没授权没装成），再点一次更新就没必要重下一遍 */
+    private boolean readyToInstall() {
+        File file = getFile();
+        return size > 0 && file.exists() && file.length() >= size && isInstallable(file);
     }
 
     /** 下载目录里那份的名字带上版本号，一眼能认出是哪一版 */

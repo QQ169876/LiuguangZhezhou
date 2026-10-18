@@ -99,14 +99,15 @@ public class FileUtil {
      */
     public static void installApk(File file) {
         String name = file == null ? "" : file.getName();
-        // 跟更新流程一个路数：先把安装器拉起来，拉不起来再去看是不是权限没开
-        String left = installApk(file, name);
-        if (left == null) return;
+        // 跟更新流程一个路数：没开「允许安装未知应用」时系统会一声不吭地把请求吞掉，
+        // 所以先带人去开一下，开了之后再交给系统（见 Updater.install 的注释）。
         if (!installPermissionGranted()) {
             openInstallPermission();
             Notify.show(R.string.push_install_perm);
             return;
         }
+        String left = installApk(file, name);
+        if (left == null) return;
         Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
     }
 
