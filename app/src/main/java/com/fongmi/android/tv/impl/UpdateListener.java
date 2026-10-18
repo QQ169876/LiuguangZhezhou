@@ -8,7 +8,4 @@ public interface UpdateListener {
     void onCancel(View view);
 
     void onConfirm(View view);
-
-    /** 不再提示 = 彻底关掉自动检查更新 */
-    void onNever(View view);
 }

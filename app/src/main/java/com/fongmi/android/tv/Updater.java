@@ -805,15 +805,6 @@ public class Updater implements Download.Callback, UpdateListener {
         dismiss();
     }
 
-    /** 不再提示 = 真的关掉自动检查（想恢复去设置里点版本号） */
-    @Override
-    public void onNever(View view) {
-        Setting.putUpdate(false);
-        Notify.show(R.string.update_off);
-        if (download != null) download.cancel();
-        dismiss();
-    }
-
     @Override
     public void error(String msg) {
         if (!next()) {

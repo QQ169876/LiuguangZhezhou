@@ -28,15 +28,18 @@
         android:layout_marginBottom="16dp"
         android:layout_weight="1">
 
+        <!-- 更新说明只给两行，多了省略：弹窗是用来「知道有新版本」的，不是读更新日志的地方 -->
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/desc"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:letterSpacing="0.02"
-            android:lineSpacingExtra="8dp"
+            android:lineSpacingExtra="6dp"
+            android:maxLines="2"
             android:textColor="@color/white"
             android:textSize="16sp"
-            tools:text="1. 新增 ffmpeg 音頻軟解\n2. 詳情頁新增分詞快搜\n3. 修復搜尋閃退問題\n4. 設定支援渲染切換" />
+            tools:text="1. 新增 ffmpeg 音頻軟解\n2. 修復搜尋閃退問題" />
 
     </androidx.core.widget.NestedScrollView>
 
@@ -71,28 +74,10 @@
             android:focusableInTouchMode="true"
             android:gravity="center"
             android:minHeight="52dp"
-            android:nextFocusDown="@id/never"
             android:nextFocusLeft="@id/confirm"
             android:stateListAnimator="@animator/dialog_focus"
             android:text="@string/dialog_negative"
             android:textColor="@color/selector_dialog_action_text" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
-
-    <!-- 取消只是「这一版先不装」，真不想再被打扰才点这个 -->
-    <com.google.android.material.textview.MaterialTextView
-        android:id="@+id/never"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/selector_dialog_action"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:gravity="center"
-        android:minHeight="44dp"
-        android:nextFocusUp="@id/cancel"
-        android:stateListAnimator="@animator/dialog_focus"
-        android:text="@string/update_never"
-        android:textColor="@color/selector_dialog_action_text"
-        android:textSize="14sp" />
 </androidx.appcompat.widget.LinearLayoutCompat>
