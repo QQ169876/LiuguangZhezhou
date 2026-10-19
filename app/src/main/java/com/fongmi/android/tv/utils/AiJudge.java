@@ -3,6 +3,7 @@ package com.fongmi.android.tv.utils;
 import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Star;
 import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.fongmi.android.tv.setting.AiSetting;
@@ -60,12 +61,40 @@ public class AiJudge {
             + "漫剧、动态漫、动漫、动画、卡通这类作品没有真人演员，一律返回 {\"actors\":[]}，不要因为名单里有熟人就硬凑。"
             + "只输出 JSON，不要任何解释：{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
 
+    /**
+     * 刷剧「下一部」：以前是我们拿题材词去站里撞，撞到什么算什么（相关度全靠名字里有没有那个词）。
+     * 现在多一条路——让模型直接报出**真实存在的同类剧名**，我们拿这些名字去站里搜，
+     * 搜到就是它，命中率比题材词高一大截。2026-10-19 马先生要求。
+     *
+     * 铁律不变：关掉、断网、超时、返回乱码一律当「没问」，刷剧照旧走本地词表，绝不卡住。
+     */
+    private static final String SYSTEM_NEXT = "你是短剧推荐助手。用户刚看完一部剧，要一部接一部往下刷。"
+            + "请推荐真实存在、在影视站里能搜到的同类作品**剧名**（要剧名，不是题材词）："
+            + "1. 必须跟它是同一种（按给出的「剧种」）、同一个地区，题材/设定/风格相近；"
+            + "2. 不要给电影、综艺、解说、混剪、盘点、番外；"
+            + "3. 不要给当前这部本身、它的续作或前作，也不要给「已看过」名单里的；"
+            + "4. 最像的排在最前，最多 5 个。不确定的宁可少给，绝不编造不存在的剧。"
+            + "另外给 2~3 个这类剧的题材词（每个 2~8 字，用来在站里搜同类）。"
+            + "只输出 JSON，不要任何解释：{\"titles\":[\"剧名1\",\"剧名2\"],\"tags\":[\"题材词\"]}";
+
+    /**
+     * 系列剧「下一季」：站源写法五花八门（第3季 / 第三季 / 剧名3 / S3 / 之某某），
+     * 本地正则抠不全会漏，模型知道这个系列的正名和季号排列，让它把可能的写法一次性给齐。
+     */
+    private static final String SYSTEM_NEXT_SEASON = "你是影视资料助手。用户刚看完一个系列的某一季，要接着看它的下一季。"
+            + "请给出这个系列**下一季**在影视站里可能出现的名称写法，每种写法都要："
+            + "中文季号（第X季）、阿拉伯季号（第X季）、连写（剧名X）、英文（Season X / SX）、以及续作另起的名字（如「XX之YYY」）。"
+            + "只要下一季，最多 4 个；这个系列确定没有下一季就返回空数组。"
+            + "只输出 JSON，不要任何解释：{\"titles\":[\"名称1\"],\"tags\":[]}";
+
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, List<String>> SUGGEST = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> SUGGESTING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, List<String>> ACTORS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ACTOR_ASKING = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Next> NEXT = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Boolean> NEXT_ASKING = new ConcurrentHashMap<>();
     private static final int MEMO_LIMIT = 800;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
@@ -73,6 +102,7 @@ public class AiJudge {
     private static volatile boolean loaded;
     private static volatile boolean suggestLoaded;
     private static volatile boolean actorLoaded;
+    private static volatile boolean nextLoaded;
 
     public interface Callback {
         void onResult(boolean ok);
@@ -84,6 +114,25 @@ public class AiJudge {
 
     public interface ActorsCallback {
         void onResult(List<String> names);
+    }
+
+    public interface NextCallback {
+        void onResult(Next next);
+    }
+
+    /** 刷剧「下一部/下一季」的答案：具体剧名（拿去站里搜）＋ 几个兜底题材词 */
+    public static final class Next {
+        public final List<String> titles;
+        public final List<String> tags;
+
+        Next(List<String> titles, List<String> tags) {
+            this.titles = titles == null ? new ArrayList<>() : titles;
+            this.tags = tags == null ? new ArrayList<>() : tags;
+        }
+
+        boolean isEmpty() {
+            return titles.isEmpty() && tags.isEmpty();
+        }
     }
 
     private static OkHttpClient http() {
@@ -295,6 +344,233 @@ public class AiJudge {
             if (callback != null) callback.onResult(names);
         } catch (Throwable ignored) {
         }
+    }
+
+    /**
+     * 刷剧要用「下一部/下一季」时先问缓存：问过就有结果（可能是空＝模型说不认识这部剧），
+     * 没问过返回 null，调用方先按本地词表走，同时可以在后台发问留给下一次。
+     */
+    public static Next peekNext(String name) {
+        if (name == null || name.isEmpty()) return null;
+        if (AiGuard.blocked(name)) return null;
+        loadNext();
+        return NEXT.get(name);
+    }
+
+    /**
+     * 问一句「下一部该看什么」：让模型报出同类剧名（系列剧则报下一季的各种写法）。
+     * 同名只问一次，结果记在本机；任何异常都走 onResult(null)，刷剧退回本地题材词，不受影响。
+     *
+     * ⚠️ 这是**纯建议**：模型报的剧名站里未必有，搜不到就当没这回事，下一步照旧换词搜。
+     */
+    public static void nextUp(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, NextCallback callback) {
+        if (name == null || name.isEmpty()) {
+            replyNext(callback, null);
+            return;
+        }
+        // 铁律：涉黄赌毒等违法关键词一律不送模型，一个字节都不许出去
+        if (AiGuard.blocked(name, typeName, actor)) {
+            DebugLog.d("AiJudge", "命中敏感词，拒绝调用大模型：" + name);
+            replyNext(callback, null);
+            return;
+        }
+        loadNext();
+        Next hit = NEXT.get(name);
+        if (hit != null) {
+            replyNext(callback, hit.isEmpty() ? null : hit); // 空＝问过没结果，别再问第二次
+            return;
+        }
+        if (!AiSetting.isEnabled()) {
+            replyNext(callback, null);
+            return;
+        }
+        if (NEXT_ASKING.putIfAbsent(name, Boolean.TRUE) != null) {
+            replyNext(callback, null); // 已经在问了，别重复烧钱
+            return;
+        }
+        POOL.execute(() -> {
+            Next next = null;
+            try {
+                next = requestNext(name, typeName, region, kindWord, actor, seriesMain, seriesIndex);
+            } catch (Throwable e) {
+                next = null;
+                DebugLog.d("AiJudge", "下一部推荐模型不可用，退回本地词表：" + name);
+            }
+            NEXT_ASKING.remove(name);
+            if (next != null) { // 空的也记：这部剧模型不认识/没有下一季，下次别再问
+                if (NEXT.size() > MEMO_LIMIT) NEXT.clear();
+                NEXT.put(name, next);
+                saveNext();
+            }
+            Next result = next == null || next.isEmpty() ? null : next;
+            App.post(() -> replyNext(callback, result));
+        });
+    }
+
+    private static void replyNext(NextCallback callback, Next next) {
+        try {
+            if (callback != null) callback.onResult(next);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Next requestNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex) throws Exception {
+        boolean serial = seriesIndex > 0 && seriesMain != null && !seriesMain.isEmpty();
+        StringBuilder sb = new StringBuilder();
+        sb.append("剧名：").append(name);
+        sb.append("\n类型：").append(TextUtils.isEmpty(typeName) ? "未知" : typeName);
+        sb.append("\n地区：").append(TextUtils.isEmpty(region) ? "未知" : region);
+        sb.append("\n剧种：").append(TextUtils.isEmpty(kindWord) ? "未知" : kindWord);
+        if (!TextUtils.isEmpty(actor)) sb.append("\n主演：").append(actor);
+        if (serial) sb.append("\n这是系列剧，系列名：").append(seriesMain).append("，刚看完第").append(seriesIndex).append("季");
+        String watched = watched(name);
+        if (!watched.isEmpty()) sb.append("\n已看过（不要推荐）：").append(watched);
+        sb.append(serial ? "\n问：这个系列的下一季叫什么？把可能的写法都列出来。" : "\n问：接下来该看哪几部同类的剧？给出剧名。");
+
+        JSONObject user = new JSONObject();
+        user.put("role", "user");
+        user.put("content", sb.toString());
+
+        JSONObject body = new JSONObject();
+        body.put("model", AiSetting.getModel());
+        body.put("temperature", 0);
+        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", serial ? SYSTEM_NEXT_SEASON : SYSTEM_NEXT)).put(user));
+
+        Request request = new Request.Builder()
+                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
+                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
+                .post(RequestBody.create(JSON, body.toString()))
+                .build();
+
+        try (Response response = http().newCall(request).execute()) {
+            if (response.body() == null) return null;
+            String text = response.body().string();
+            JSONObject json = new JSONObject(text);
+            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+            return parseNext(content, name);
+        }
+    }
+
+    /**
+     * 模型报的剧名逐个过闸：太短太长都不像剧名、跟当前这部一样的不收、脏词直接扔。
+     * 一个都不剩就当没问（返回空 Next，调用方退回本地词表）。
+     */
+    private static Next parseNext(String content, String current) {
+        if (content == null) return null;
+        String text = content.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try {
+            JSONObject json = new JSONObject(text.substring(start, end + 1));
+            List<String> titles = new ArrayList<>();
+            JSONArray array = json.optJSONArray("titles");
+            if (array != null) {
+                for (int i = 0; i < array.length() && titles.size() < 6; i++) {
+                    String title = array.optString(i, "").trim();
+                    title = title.replaceAll("^[\\d]+[.、)．]\\s*", "").trim(); // 模型偶尔带个「1. 」序号
+                    title = title.replaceAll("[《》]", "").trim(); // 模型爱给书名号
+                    if (title.length() < 2 || title.length() > 24) continue;
+                    if (title.equals(current)) continue; // 就是当前这部，等于没说
+                    if (AiGuard.blocked(title)) continue;
+                    if (!titles.contains(title)) titles.add(title);
+                }
+            }
+            List<String> tags = new ArrayList<>();
+            JSONArray tagArray = json.optJSONArray("tags");
+            if (tagArray != null) {
+                for (int i = 0; i < tagArray.length() && tags.size() < 4; i++) {
+                    String tag = tagArray.optString(i, "").trim();
+                    if (tag.length() < 2 || tag.length() > 8) continue;
+                    if (AiGuard.blocked(tag)) continue;
+                    if (!tags.contains(tag)) tags.add(tag);
+                }
+            }
+            DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags);
+            return new Next(titles, tags);
+        } catch (Exception e) {
+            return null; // 模型说了听不懂的话，就当没问
+        }
+    }
+
+    /**
+     * 最近看过的剧名（最多 30 个），塞给模型让它别推重复的。
+     * 只在后台线程调（要读库），requestNext 里用，符合。
+     */
+    private static String watched(String exclude) {
+        try {
+            List<History> items = History.get();
+            if (items == null || items.isEmpty()) return "";
+            List<String> names = new ArrayList<>();
+            for (History item : items) {
+                String name = item == null ? null : item.getVodName();
+                if (name == null || name.trim().isEmpty()) continue;
+                name = name.trim();
+                if (name.equals(exclude) || names.contains(name)) continue;
+                names.add(name);
+                if (names.size() >= 30) break;
+            }
+            return TextUtils.join("、", names);
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
+    private static void loadNext() {
+        if (nextLoaded) return;
+        synchronized (AiJudge.class) {
+            if (nextLoaded) return;
+            try {
+                File file = nextFile();
+                if (file.exists()) {
+                    byte[] data = new byte[(int) file.length()];
+                    try (FileInputStream in = new FileInputStream(file)) {
+                        int read = in.read(data);
+                        JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
+                        for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
+                            String key = it.next();
+                            JSONObject item = json.optJSONObject(key);
+                            if (item == null) continue;
+                            List<String> titles = new ArrayList<>();
+                            JSONArray array = item.optJSONArray("titles");
+                            if (array != null) for (int i = 0; i < array.length(); i++) {
+                                String title = array.optString(i, "");
+                                if (!title.isEmpty() && !AiGuard.blocked(title)) titles.add(title);
+                            }
+                            List<String> tags = new ArrayList<>();
+                            JSONArray tagArray = item.optJSONArray("tags");
+                            if (tagArray != null) for (int i = 0; i < tagArray.length(); i++) {
+                                String tag = tagArray.optString(i, "");
+                                if (!tag.isEmpty() && !AiGuard.blocked(tag)) tags.add(tag);
+                            }
+                            NEXT.put(key, new Next(titles, tags)); // 空的也放进去＝「问过没结果」
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            nextLoaded = true;
+        }
+    }
+
+    private static synchronized void saveNext() {
+        try {
+            JSONObject json = new JSONObject();
+            for (java.util.Map.Entry<String, Next> entry : NEXT.entrySet()) {
+                JSONObject item = new JSONObject();
+                item.put("titles", new JSONArray(entry.getValue().titles));
+                item.put("tags", new JSONArray(entry.getValue().tags));
+                json.put(entry.getKey(), item);
+            }
+            try (FileOutputStream out = new FileOutputStream(nextFile())) {
+                out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static File nextFile() {
+        return new File(App.get().getFilesDir(), "ai_next.json");
     }
 
     /**

@@ -46,6 +46,7 @@ class VodBingePolicy {
     private volatile boolean typePending; // 分类池子正在路上
     private long typeWaitUntil; // 最多等到这个时候，过了就不再为它等
 
+    private final List<String> aiTitles = new ArrayList<>(); // 本轮大模型点名的剧名，搜到了就优先切它
     private List<String> keywords = new ArrayList<>();
     private String seriesMain = ""; // 当前这部所属的系列：主标题（去掉「第X季」这类后缀）
     private int seriesIndex = -1; // 当前是系列里的第几季；名字里没写就是 -1
@@ -72,6 +73,10 @@ class VodBingePolicy {
     private static final long TYPE_WAIT_MAX = 3000L;
     /** 从「短剧分类」里捞出来的候选加这么多分：站点自己分的类，比名字猜靠谱得多 */
     private static final int TYPE_BONUS = 8;
+    /** 大模型点名的剧加分：它给的是具体剧名，搜出来就是它，比题材词撞运气准得多 */
+    private static final int AI_TITLE_BONUS = 15;
+    /** 一轮里最多拿几个大模型给的剧名去搜：多了万一模型瞎编，白跑好几次搜索 */
+    private static final int AI_TITLE_MAX = 3;
     private int epoch; // 每次作废重来（interrupt/reset/forceNext）都 +1，迟到的异步回调据此自行作废
     private boolean probing; // 正在后台验货
     private Vod probingItem; // 正在验的这一部
@@ -200,6 +205,7 @@ class VodBingePolicy {
         seriesIndex = BingeTags.serialOf(host.getVodName());
         serialMode = seriesIndex > 0 && !seriesMain.isEmpty();
         keywords = serialMode ? serialKeywords() : buildKeywords(host.getVodName());
+        applyNext(host.getVodName()); // 让大模型报几部「下一部/下一季」的剧名，比本地题材词准
         DebugLog.d("Binge", "开始刷剧，系列=" + (serialMode ? seriesMain + " 第" + seriesIndex + "季" : "无") + "，产地=" + region + "，剧种=" + BingeTags.kindWord(kind) + "，关键词=" + keywords + "，当前=" + host.getVodName());
         active = true;
         keywordIndex = 0;
@@ -207,6 +213,71 @@ class VodBingePolicy {
         typePending = false; // 上一轮没回来的分类池别再挡着这一轮
         if (!serialMode) searchByType(); // 先开一路：直接去站点的「短剧」分类里端一盘出来，比关键词搜索准（系列剧不用，它只认下一季）
         search();
+    }
+
+    /**
+     * 「下一部该看什么」交给大模型。
+     *
+     * 以前是我们从剧名里抠题材词去站里撞（「王妃」「重生」），撞到什么算什么——相关度全看站源
+     * 有没有把那个词写进片名，经常搜出一堆八竿子打不着的。现在多问一句模型：它报的是**具体剧名**
+     * （系列剧则报下一季的各种写法），我们拿名字去搜，搜到就是它。
+     *
+     * 时机上有讲究：模型一问要好几秒，播完再问就等于卡一下。所以切到新一部那一刻
+     * （{@link #prewarmNext()}）和快播完时（{@link #prepare()} → begin）都会提前问，等真要接下一部时
+     * 答案已经在缓存里。缓存没有就一边按本地词表搜、一边在后台问，问到再补进这一轮。
+     *
+     * 模型报的剧站里未必有：搜不到就当没这回事，下一步照旧换词搜，不会卡住也不会切错。
+     */
+    private void applyNext(String name) {
+        aiTitles.clear();
+        AiJudge.Next next = AiJudge.peekNext(name);
+        if (next != null) {
+            addNext(next, true);
+            return;
+        }
+        if (!AiSetting.isEnabled()) return;
+        final int myEpoch = epoch;
+        AiJudge.nextUp(name, typeName, region, BingeTags.kindWord(kind), actor, seriesMain, seriesIndex, got -> {
+            if (got == null || myEpoch != epoch || !isHandling()) return; // 这一轮已经结束，留给下一部
+            if (addNext(got, false) && active && pool.isEmpty()) search(); // 本地词搜空了，拿模型给的名字再试一轮
+        });
+    }
+
+    /**
+     * 把模型给的剧名排进搜索词。front=true 插到最前（有缓存，一上来就搜它）；
+     * false 追加到队尾——答案来晚了，别打乱正在跑的搜索，只在本地词都搜空时才轮到它。
+     * 题材词只当兜底排在后面（万一剧名在站里没有，题材词还能捞一批同类）。
+     */
+    private boolean addNext(AiJudge.Next next, boolean front) {
+        int max = serialMode ? 2 : AI_TITLE_MAX; // 系列剧只要下一季的写法，别把队首挤满
+        List<String> added = new ArrayList<>();
+        for (String title : next.titles) {
+            if (added.size() >= max) break;
+            if (title.length() < 2 || keywords.contains(title)) continue;
+            if (title.equals(host.getVodName()) || tried.contains(title)) continue;
+            added.add(title);
+        }
+        if (added.isEmpty() && next.tags.isEmpty()) return false;
+        if (front) keywords.addAll(0, added);
+        else keywords.addAll(added);
+        aiTitles.addAll(added);
+        for (String tag : next.tags) {
+            if (tag.length() < 2 || keywords.contains(tag)) continue;
+            keywords.add(tag);
+        }
+        DebugLog.d("Binge", "大模型给下一部 " + added + "，题材词 " + next.tags);
+        return !added.isEmpty();
+    }
+
+    /**
+     * 切到新一部时就开始问「再下一部看什么」：等这部播完，答案早就在缓存里了，
+     * 接下一部的时候不用干等模型。
+     */
+    private void prewarmNext() {
+        if (!AiSetting.isEnabled()) return;
+        String name = host.getVodName();
+        if (AiGuard.blocked(name)) return;
+        AiJudge.nextUp(name, typeName, region, BingeTags.kindWord(kind), actor, BingeTags.serialMainOf(name), BingeTags.serialOf(name), null);
     }
 
     /**
@@ -535,7 +606,18 @@ class VodBingePolicy {
         score += BingeTags.kindScore(item.getName(), kind);
         score += serialScore(item.getName());
         if (fromType.contains(item.getName())) score += TYPE_BONUS;
+        if (matchAi(item.getName())) score += AI_TITLE_BONUS; // 大模型点名的这部：搜到了就先切它
         return score;
+    }
+
+    /** 候选是不是大模型点名的那一部：站里写的名字跟模型给的可能差一两个字，互相包含都算 */
+    private boolean matchAi(String name) {
+        if (name == null || name.length() < 3 || aiTitles.isEmpty()) return false;
+        for (String title : aiTitles) {
+            if (title.length() < 2) continue;
+            if (name.equals(title) || name.contains(title) || title.contains(name)) return true;
+        }
+        return false;
     }
 
     /**
@@ -663,6 +745,7 @@ class VodBingePolicy {
             }
             kind = kindOf(item); // 切过去了：新这部说了算，后面照它的剧种刷
         }
+        prewarmNext(); // 刚切过来就替「再下一部」问模型，等这部播完答案已经备好了
         if (!waitingDetail) return;
         waitingDetail = false;
         if (item != null) {
@@ -764,6 +847,7 @@ class VodBingePolicy {
         pool.clear();
         tried.clear();
         fromType.clear();
+        aiTitles.clear();
         typePending = false;
         keywords.clear();
         recentFamilies.clear();
