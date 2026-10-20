@@ -4,7 +4,6 @@ import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.History;
-import com.fongmi.android.tv.bean.Star;
 import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.fongmi.android.tv.setting.AiSetting;
 
@@ -60,8 +59,8 @@ public class AiJudge {
             + "如果给了年份，同名作品或翻拍版要以该年份的版本为准，别答成另一部同名剧。"
             + "外国演员给中文译名，人名中间的间隔号要保留（如「小罗伯特·唐尼」），"
             + "一个人的姓和名必须放在同一个字符串里，绝不能拆成两个人。"
-            + "如果给了「用户关注的演员」名单，先判断其中哪些人参演了这部剧，把他们排在前面；没参演的不要写进去。"
-            + "漫剧、动态漫、动漫、动画、卡通这类作品没有真人演员，一律返回 {\"actors\":[]}，不要因为名单里有熟人就硬凑。"
+            + "只报你确信参演了这部剧的演员，不确定的不要报，更不要把某个常演短剧的演员往这部剧上硬套。"
+            + "漫剧、动态漫、动漫、动画、卡通这类作品没有真人演员，一律返回 {\"actors\":[]}。"
             + "只输出 JSON，不要任何解释：{\"actors\":[\"名字1\",\"名字2\"]}。真不知道就返回 {\"actors\":[]}，不要编造。";
 
     /**
@@ -609,32 +608,10 @@ public class AiJudge {
         return s.isEmpty() ? name.trim() : s;
     }
 
-    /**
-     * 本机关注的演员名单（最多 20 个），交给模型去这部剧里筛一遍 —— 马先生要的「按关注的演员检索」。
-     * 只在后台线程调（要读库），这儿是 requestActors 里用的，符合。
-     */
-    private static String followed() {
-        try {
-            List<Star> all = Star.getAll();
-            if (all == null || all.isEmpty()) return "";
-            StringBuilder sb = new StringBuilder();
-            int count = 0;
-            for (Star item : all) {
-                if (item == null || item.getDeleted() != 0) continue;
-                String name = item.getName();
-                if (name == null || name.trim().isEmpty()) continue;
-                if (sb.length() > 0) sb.append("、");
-                sb.append(name.trim());
-                if (++count >= 20) break;
-            }
-            return sb.toString();
-        } catch (Throwable e) {
-            return "";
-        }
-    }
-
     private static List<String> requestActors(String key, String name, String typeName, String site, String year) throws Exception {
-        String stars = followed();
+        // ⚠️ 不带「用户关注的演员」名单了（2026-10-20 马先生发火）：带名单时模型会顺着名单瞎认领，
+        // 没演员的剧十有八九给杳出个姜十七（短剧常客，模型最容易往她身上套），token 白烧。
+        // 关注标记是本地比对出来的，名单对模型没半点用处，纯粹是污染。
         String y = plainYear(year);
         JSONObject user = new JSONObject();
         user.put("role", "user");
@@ -642,7 +619,6 @@ public class AiJudge {
                 + (y.isEmpty() ? "" : "\n年份：" + y + "（同名剧、翻拍版要靠这个年份区分，认准这个年份的版本）")
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
-                + (stars.isEmpty() ? "" : "\n用户关注的演员：" + stars + "（其中参演了这部剧的，请排在最前面）")
                 + "\n问：这部剧的主演有哪些？只给人名。");
 
         JSONObject body = new JSONObject();
@@ -698,6 +674,7 @@ public class AiJudge {
         synchronized (AiJudge.class) {
             if (actorLoaded) return;
             try {
+                wipeLegacyActors(); // 旧版答案是被关注名单污染过的（没演员的剧硬杳姜十七那批），一次性作废
                 File file = actorFile();
                 if (file.exists()) {
                     byte[] data = new byte[(int) file.length()];
@@ -736,6 +713,22 @@ public class AiJudge {
 
     private static File actorFile() {
         return new File(App.get().getFilesDir(), "ai_actors.json");
+    }
+
+    /**
+     * 旧版（≤5.6.122）的演员答案都是带着关注名单问出来的，里面躺着不少瞎认领的“姜十七”，
+     * 升级后第一次加载数据库时把整个文件删掉：宁可每部剧重问一次（结果会重新缓存），
+     * 也不能让污染过的旧答案继续挂在演员区里骗人。
+     */
+    private static void wipeLegacyActors() {
+        File marker = new File(App.get().getFilesDir(), "ai_actors_v2.marker");
+        if (marker.exists()) return; // 已经清过一次了
+        File old = actorFile();
+        if (old.exists()) old.delete();
+        try {
+            marker.createNewFile();
+        } catch (Throwable ignored) {
+        }
     }
 
     private static List<String> requestSuggest(String name, String typeName, String region) throws Exception {
