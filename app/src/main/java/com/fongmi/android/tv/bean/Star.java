@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Diffable;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.webdav.SyncManager;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -173,16 +174,82 @@ public class Star implements Diffable<Star> {
         String text = unwrap(actor);
         text = text.replaceAll("(?i)^\\s*(主演|演员|cast)\\s*[:：]?\\s*", ""); // 「主演：张三」这种前缀
         text = text.replaceAll("(?i)\\s+and\\s+", "，");                       // 张三 and 李四
+        text = text.replace('　', ' ');                                        // 全角空格也当分隔符（fix 会把它抹掉，先在这里用上）
         for (String part : text.split("[,，、/／|｜;；&*＊@+]+")) {
             for (String piece : splitDot(part)) {
-                String name = fix(piece);
-                if (name.isEmpty() || names.contains(name) || dirty(name) || placeholder(name)) continue;
-                names.add(name);
+                for (String single : splitSpace(piece)) {
+                    String name = fix(single);
+                    if (name.isEmpty() || names.contains(name) || dirty(name) || placeholder(name)) continue;
+                    names.add(name);
+                    if (names.size() >= 30) break;
+                }
                 if (names.size() >= 30) break;
             }
             if (names.size() >= 30) break;
         }
+        // 拆完就一个还长得不像人名（老长老长一串）：把原始串打进日志，下次用户报「挤在一块」就有据可查
+        if (names.size() == 1 && names.get(0).length() > 12) DebugLog.d("Star", "演员串没拆开：" + actor);
         return names;
+    }
+
+    /**
+     * 拆出来的名单可不可信（2026-10-20 马先生定的规矩）：拆不开、或中英文名混搭的，
+     * 别把那串东西硬铺成牌子，交给大模型按片名+年份去查，查回来用它报的名单。
+     * 两种情况算不可信：
+     * 1. 拆完只剩一个还老长老长 —— 整串根本没分开，铺出来就是「所有演员挤在一块」；
+     * 2. 有「名字」里汉字和英文混着 —— 站点把中外演员连成一串又没给分隔符。
+     * 名单是正常拆开的（多个名字、每个都像人名）就不劳烦模型。
+     */
+    public static boolean messy(List<String> names) {
+        if (names == null || names.isEmpty()) return false;
+        if (names.size() == 1 && names.get(0).length() > 12) return true;
+        for (String name : names) if (mixed(name)) return true;
+        return false;
+    }
+
+    /** 一个「名字」里既有汉字又有英文字母 —— 真人名不长这样，是没拆开的中英混搭串 */
+    private static boolean mixed(String name) {
+        if (name == null || name.isEmpty()) return false;
+        boolean cjk = false, latin = false;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c >= 0x4e00 && c <= 0x9fa5) cjk = true;
+            else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) latin = true;
+            if (cjk && latin) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 空格分隔的中文人名串：「张三 李四 王五」—— 夸克网盘这类源爱这么给，2026-10-20 马先生在
+     * 《嫁金钗》（夸克源）看到「所有演员挤在一块」就是它。之前不敢按空格拆（「Tom Hanks」会毁），
+     * 现在收紧条件：**每个空格隔开的段都得长得像中文人名**（纯汉字 2~4 字，或带「·」的译名）才拆，
+     * 有一个不像（英文名、数字、超长串）就整段当一个名字，宁可漏拆不可拆错。
+     */
+    private static List<String> splitSpace(String part) {
+        List<String> out = new ArrayList<>();
+        if (part == null) return out;
+        String text = part.trim();
+        if (!text.contains(" ")) {
+            out.add(part);
+            return out;
+        }
+        String[] tokens = text.split("\\s+");
+        for (String token : tokens) {
+            if (!looksName(token)) { // 有一段不像人名：整段保留，别把一个人劈成两半
+                out.add(part);
+                return out;
+            }
+        }
+        for (String token : tokens) out.add(token);
+        return out;
+    }
+
+    /** 长得像中文人名：纯汉字 2~4 字（张三、欧阳震华），或带间隔号的译名（小罗伯特·唐尼） */
+    private static boolean looksName(String token) {
+        if (token == null || token.isEmpty()) return false;
+        if (token.matches("[\\u4e00-\\u9fa5]{2,4}")) return true;
+        return token.matches("[\\u4e00-\\u9fa5]{1,6}(·[\\u4e00-\\u9fa5]{1,8})+");
     }
 
     /**

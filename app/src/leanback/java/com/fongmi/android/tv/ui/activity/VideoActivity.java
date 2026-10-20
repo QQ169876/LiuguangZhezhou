@@ -886,7 +886,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
         setText(mBinding.remark, 0, item.getRemarks());
         mBinding.actor.setOnClickListener(view -> showStarDialog(item.getActor()));
-        if (mStarStrip != null) mStarStrip.set(item.getActor(), item.getName(), item.getTypeName()); // 站点没给演员的，让大模型试着补
+        if (mStarStrip != null) mStarStrip.set(item.getActor(), item.getName(), item.getTypeName(), item.getYear()); // 站点没给演员或演员串拆不开的，让大模型按片名+年份去查
         setR2Callback(); // 演员区有了牌之后重排一次焦点上下关系
     }
 

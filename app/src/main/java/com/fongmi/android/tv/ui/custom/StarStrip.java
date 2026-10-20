@@ -34,6 +34,7 @@ public class StarStrip {
     private final ViewStarStripBinding binding;
     private final Action action;
     private String askingFor = ""; // 正在问大模型的是哪一部（页面切走了就别把上一部的人名贴上来）
+    private List<String> fallback; // 拆不开的原始名单：模型查不到时垫底铺它，好歹比空白强
 
     public interface Action {
 
@@ -58,39 +59,47 @@ public class StarStrip {
      * 换一部剧/详情刷新时调：重新按演员串铺一遍牌。
      * 站点压根没给演员（短剧站常有的事）时，拿剧名去问一句大模型，
      * 它想得起来就补上——牌的用法一模一样，能关注、能长按看作品。
-     * 问不到（关了开关、断网、模型不认识这部剧）就还按没有演员处理，整块不显示。
+     * 站点给了但拆不开、或中英文名混成一串（2026-10-20 马先生点名）：也走大模型，
+     * 按片名+年份去查（年份必须带上：同名剧、翻拍版靠它区分），查回来用它报的名单，
+     * 原来那串乱的垫底——模型不认识这部剧时再回头铺它，好歹比空白强。
+     * 问不到（关了开关、断网、模型不认识）就还按没有演员处理，整块不显示。
      * 漫剧/动画这类没有真人演员，传上类型让 AiJudge 直接拦掉，别让模型顺着关注名单瞎认领。
      */
-    public void set(String actor, String vodName, String typeName) {
+    public void set(String actor, String vodName, String typeName, String year) {
         binding.starList.removeAllViews();
         List<String> names = Star.split(actor);
-        if (!names.isEmpty()) {
+        if (!names.isEmpty() && !Star.messy(names)) {
+            fallback = null;
             binding.getRoot().setVisibility(View.VISIBLE);
             for (String name : names) binding.starList.addView(chip(name));
             return;
         }
+        fallback = Star.messy(names) ? names : null; // 拆不开的那串先存着，模型查不到再回头铺它
         binding.getRoot().setVisibility(View.GONE);
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
-        List<String> cached = AiJudge.peekActors(askingFor, typeName);
+        List<String> cached = AiJudge.peekActors(askingFor, typeName, year);
         if (cached != null) { // 问过这部了：有就铺，没有就别再问第二次
             apply(cached, askingFor);
             return;
         }
-        AiJudge.actors(askingFor, typeName, "", cast -> apply(cast, askingFor));
+        AiJudge.actors(askingFor, typeName, "", year, cast -> apply(cast, askingFor));
     }
 
     /** 异步回来时页面可能已经换了剧/退了：剧名对不上或这块已经不在窗口上，就别贴了 */
     private void apply(List<String> names, String forName) {
-        if (names == null || names.isEmpty()) return;
         if (!binding.getRoot().isAttachedToWindow()) return;
         if (!forName.equals(askingFor)) return;
+        List<String> show = names != null && !names.isEmpty() ? names : fallback; // 模型没答上来：垫底铺站点原来那串
+        if (show == null || show.isEmpty()) return;
         binding.starList.removeAllViews();
-        for (String name : names) binding.starList.addView(chip(name));
+        for (String name : show) binding.starList.addView(chip(name));
         binding.getRoot().setVisibility(View.VISIBLE);
-        try {
-            if (action != null) action.onFilled(names); // 让外面把上面那行「演员」也补上
-        } catch (Throwable ignored) {
+        if (show != fallback) {
+            try {
+                if (action != null) action.onFilled(show); // 让外面把上面那行「演员」也换成模型报的
+            } catch (Throwable ignored) {
+            }
         }
     }
 

@@ -21,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -55,6 +57,7 @@ public class AiJudge {
      */
     private static final String SYSTEM_ACTORS = "你是影视资料助手。根据剧名回忆这部剧的主要演员，"
             + "给出 2 到 6 个主演的人名（只要人名，中文）。"
+            + "如果给了年份，同名作品或翻拍版要以该年份的版本为准，别答成另一部同名剧。"
             + "外国演员给中文译名，人名中间的间隔号要保留（如「小罗伯特·唐尼」），"
             + "一个人的姓和名必须放在同一个字符串里，绝不能拆成两个人。"
             + "如果给了「用户关注的演员」名单，先判断其中哪些人参演了这部剧，把他们排在前面；没参演的不要写进去。"
@@ -278,19 +281,32 @@ public class AiJudge {
     }
 
     /** 大模型给过的演员，直接给；没问过返回 null。敏感剧名连缓存都不查 */
-    public static List<String> peekActors(String name, String typeName) {
+    public static List<String> peekActors(String name, String typeName, String year) {
         if (name == null || name.isEmpty()) return null;
         if (AiGuard.blocked(name)) return null;
         if (noCast(name, typeName)) return null; // 漫剧/动画没有演员，缓存里躺着的多半是旧版本的瞎认领
         loadActors();
-        return ACTORS.get(cleanTitle(name)); // 缓存按洗干净的剧名记：同一个片子换个文件名也认得
+        return ACTORS.get(actorKey(name, year)); // 缓存按「洗干净的剧名+年份」记：换文件名认得，同名不同版也不串
+    }
+
+    /** 缓存键：洗干净的剧名 + 年份（2026-10-20 马先生点名要带年份——同名剧、翻拍版靠它区分） */
+    private static String actorKey(String name, String year) {
+        String y = plainYear(year);
+        return cleanTitle(name) + (y.isEmpty() ? "" : "·" + y);
+    }
+
+    /** 站点给的年份五花八门（2023、2023-01、2023年）：只要那 4 位数字，没有就算没给 */
+    private static String plainYear(String year) {
+        if (year == null) return "";
+        Matcher m = Pattern.compile("\\d{4}").matcher(year);
+        return m.find() ? m.group() : "";
     }
 
     /**
-     * 站点没给演员时，请大模型按剧名回忆主演。结果记在本机，同剧不再重复问；
+     * 站点没给演员（或给的演员串拆不开）时，请大模型按剧名+年份回忆主演。结果记在本机，同剧不再重复问；
      * 问不到（断网/超时/模型说不认识）返回 null，调用方就当没演员，整块不显示。
      */
-    public static void actors(String name, String typeName, String site, ActorsCallback callback) {
+    public static void actors(String name, String typeName, String site, String year, ActorsCallback callback) {
         if (name == null || name.isEmpty()) {
             replyActors(callback, null);
             return;
@@ -305,7 +321,7 @@ public class AiJudge {
             replyActors(callback, null);
             return;
         }
-        String key = cleanTitle(name); // 网盘站源常拿文件名当剧名，洗干净再问，命中率高得多
+        String key = actorKey(name, year); // 网盘站源常拿文件名当剧名，洗干净再问；年份一并入键，同名剧不串
         loadActors();
         List<String> hit = ACTORS.get(key);
         if (hit != null) {
@@ -323,7 +339,7 @@ public class AiJudge {
         POOL.execute(() -> {
             List<String> names = null;
             try {
-                names = requestActors(key, typeName, site);
+                names = requestActors(key, cleanTitle(name), typeName, site, year);
             } catch (Throwable e) {
                 names = null;
                 DebugLog.d("AiJudge", "补演员模型不可用：" + key);
@@ -617,11 +633,13 @@ public class AiJudge {
         }
     }
 
-    private static List<String> requestActors(String name, String typeName, String site) throws Exception {
+    private static List<String> requestActors(String key, String name, String typeName, String site, String year) throws Exception {
         String stars = followed();
+        String y = plainYear(year);
         JSONObject user = new JSONObject();
         user.put("role", "user");
         user.put("content", "剧名：" + name
+                + (y.isEmpty() ? "" : "\n年份：" + y + "（同名剧、翻拍版要靠这个年份区分，认准这个年份的版本）")
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
                 + (stars.isEmpty() ? "" : "\n用户关注的演员：" + stars + "（其中参演了这部剧的，请排在最前面）")

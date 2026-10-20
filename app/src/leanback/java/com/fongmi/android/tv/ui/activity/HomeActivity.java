@@ -304,7 +304,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         boolean exist = recommendIndex - historyIndex == 2;
         if (renew) mHistoryAdapter = new ArrayObjectAdapter(mPresenter = new HistoryPresenter(this));
         if ((items.isEmpty() && exist) || (renew && exist)) mAdapter.removeItems(historyIndex, 1);
-        if ((!items.isEmpty() && !exist) || (renew && exist)) mAdapter.add(historyIndex, new ListRow(mHistoryAdapter));
+        if ((!items.isEmpty() && !exist) || (renew && exist && !items.isEmpty())) mAdapter.add(historyIndex, new ListRow(mHistoryAdapter));
         mHistoryAdapter.setItems(items, new BaseDiffCallback<History>());
     }
 
@@ -357,7 +357,9 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
                 setTitle();
                 break;
             case HISTORY:
-                getHistory();
+                // 同步/推送刚把库换过（换同步标识时整批都不一样了）：
+                // 连行带牌整个重建，别指望 diff 挑差异 —— 2026-10-20 马先生改同步标识后首页不刷新就是这么漏的
+                getHistory(true);
                 break;
             case SIZE:
                 getVideo();
@@ -472,6 +474,9 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     protected void onResume() {
         super.onResume();
         mClock.start();
+        // 回到首页兜底重查一遍最近观看：同步/推送改库时页面多半在后台（设置页、对话框底下），
+        // 事件万一没接住，这里再补一刀，省得非得重进 App 才见着新数据
+        getHistory();
     }
 
     @Override
