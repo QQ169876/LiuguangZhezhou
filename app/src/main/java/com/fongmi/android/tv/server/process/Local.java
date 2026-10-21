@@ -114,6 +114,7 @@ public class Local implements Process {
         Path.copy(temp, file);
         App.post(() -> FileUtil.installApkAsync(file, file.getName(), left -> {
             if (left == null) return; // 已经交给系统了
+            if (FileUtil.installNotify(file, name)) return; // 系统没接：挂通知，点它就跟文件管理器里点包一样
             if (!FileUtil.installPermissionGranted()) {
                 FileUtil.openInstallPermission();
                 Notify.show(R.string.push_install_perm);

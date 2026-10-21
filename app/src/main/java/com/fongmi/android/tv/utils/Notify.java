@@ -45,8 +45,13 @@ public class Notify {
         return ResUtil.getString(resId) + "\n" + e.getMessage();
     }
 
+    /** 通知发不发得出去（安卓 13 起要单独授权）；发不出去的兜底得让调用方知道，好换别的路 */
+    public static boolean granted() {
+        return ContextCompat.checkSelfPermission(App.get(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
     public static void show(Notification notification) {
-        if (ContextCompat.checkSelfPermission(App.get(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        if (!granted()) return;
         NotificationManagerCompat.from(App.get()).notify(ID, notification);
     }
 

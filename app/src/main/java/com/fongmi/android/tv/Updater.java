@@ -851,30 +851,24 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 更新包下好了就交给系统安装器 —— 步骤还是三步：下完 → 确认是个能装的包 → 调系统安装程序。
+     * 更新包下好了就交给系统安装器，别的什么都不做 —— 下完 → 调系统安装程序 → 完事。
      *
-     * 只有一道例外：本机没开「允许安装未知应用」。2026-10-18 索尼电视（Android 12L）上实测，
-     * 没授权时系统会把我们这次请求**整个吞掉**：既不弹安装界面，也不给任何提示，
-     * 看着就是「下到 100%，然后什么都没有」（马先生碰到的就是这个）。
-     * 所以这里先把那个开关带人打开一次，开完再点一下更新就能装上——
-     * 那时候包已经下好了，不会再重下一遍。
-     * 已经授权的情况一句话交给系统，之后不管：装不装、弹什么，都是系统自己的事。
+     * 2026-10-22 按马先生的话彻底简化：不在装之前自己猜「有没有授权」「包能不能装」，
+     * 那些判断只会把请求拦在自己手里（有的电视连设置页都没有，点完更新就真的一点反应都没有）。
+     * 系统接了就弹安装界面（返回 null），我们撒手不管；系统没接（返回非 null）才补一句提示，
+     * 顺手带人去开「允许安装未知应用」，这是兜底不是前置条件。
      */
     private void install(File file) {
-        if (!isInstallable(file)) {
-            Path.clear(file); // 坏包留着下次续传会接着错，直接删掉重下
+        if (file == null || !file.exists() || file.length() <= 0) {
             Notify.show(R.string.update_bad_package);
-            return;
-        }
-        if (!FileUtil.installPermissionGranted()) { // 没授权时系统连界面都不会弹，先把开关打开
-            FileUtil.openInstallPermission();
-            Notify.show(R.string.update_install_perm);
             return;
         }
         FileUtil.installApkAsync(file, apkName(), result -> {
             if (result == null) return; // 安装界面已经弹出来了，后面没我们的事了
-            if (result.isEmpty()) Notify.show(R.string.update_install_fail);
-            else Notify.show(ResUtil.getString(R.string.update_install_manual, result));
+            // 系统没接：挂一条通知，用户点它就是「在文件管理器里点这个 APK」，装不装让系统自己定
+            if (FileUtil.installNotify(file, apkName())) return;
+            FileUtil.openInstallPermission(); // 连通知都发不出去才去开设置页
+            Notify.show(R.string.update_install_perm);
         });
     }
 

@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.utils;
 
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -11,6 +12,7 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.text.TextUtils;
 
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 
 import com.fongmi.android.tv.App;
@@ -98,16 +100,13 @@ public class FileUtil {
      * 所以先往公共的「下载」目录落一份，拿那份去拉安装器；两条路都不行再把位置告诉用户。
      */
     public static void installApk(File file) {
+        // 跟更新流程一个路数：先交给系统装，装不起来再说（见 Updater.install 的注释）。
+        // 不在前面自己拦「有没有授权」——拦了就可能出现点了没反应的情况。
         String name = file == null ? "" : file.getName();
-        // 跟更新流程一个路数：没开「允许安装未知应用」时系统会一声不吭地把请求吞掉，
-        // 所以先带人去开一下，开了之后再交给系统（见 Updater.install 的注释）。
-        if (!installPermissionGranted()) {
-            openInstallPermission();
-            Notify.show(R.string.push_install_perm);
-            return;
-        }
         String left = installApk(file, name);
-        if (left == null) return;
+        if (left == null) return; // 系统安装界面已经弹出来了
+        if (installNotify(file, name)) return; // 系统没接：挂通知，点它就跟文件管理器里点包一样
+        openInstallPermission();  // 连通知都发不出去才去开设置页
         Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
     }
 
@@ -186,6 +185,38 @@ public class FileUtil {
             return;
         }
         App.post(() -> installer.onDone(installApk(file, name)));
+    }
+
+    /**
+     * 安装器没拉起来时的兜底：在通知栏挂一条「已下载完毕，点击安装」——百度网盘就是这个做法。
+     *
+     * 点这条通知做的事，**跟用户在文件管理器里点这个 APK 一模一样**：还是那个
+     * ACTION_VIEW + content://（安卓 6 上是 file://）的 intent，只不过这次由通知栏替用户点下去。
+     * 能不能装、要不要先开「允许安装未知应用」，全交给系统去判断：能装系统就弹安装界面，
+     * 不能装系统自己会说——我们不做任何预判，也不在这之前拦任何一道。
+     *
+     * 返回 true = 通知已经挂出去了；false = 通知权限没给 / 发不出去，调用方再想别的办法。
+     */
+    public static boolean installNotify(File file, String name) {
+        if (file == null || !file.exists() || file.length() <= 0) return false;
+        if (!Notify.granted()) return false; // 通知权限没给，挂了也白挂
+        try {
+            Intent intent = apkIntent(file, Intent.ACTION_VIEW);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+            PendingIntent pending = PendingIntent.getActivity(App.get(), 1, intent, flags);
+            android.app.Notification notification = new NotificationCompat.Builder(App.get(), Notify.DEFAULT)
+                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle(ResUtil.getString(R.string.app_name))
+                    .setContentText(ResUtil.getString(R.string.update_install_notify))
+                    .setContentIntent(pending)
+                    .setAutoCancel(true)
+                    .build();
+            Notify.show(notification);
+            return true;
+        } catch (Throwable e) {
+            DebugLog.d("Install", "安装通知没发出来：" + e);
+            return false;
+        }
     }
 
     /**
