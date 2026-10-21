@@ -6,6 +6,10 @@ import com.github.catvod.utils.Prefers;
  * 智能识别：拿不准的条目（比如「是不是一部短剧被合成了一个视频」）交给大模型判一句。
  * 只是辅助——判不出来一律退回本地规则，绝不卡住播放。
  *
+ * ⚠️ **这是大模型的总开关，默认关**（2026-10-21 马先生定）：他不去设置里打开，
+ * 任何数据都不许发给大模型——合集判定、演员补录、刷剧推荐、智能搜索全都只在本地跑。
+ * 所有出口（AiJudge / AiSearch）在拼请求前都先查 isEnabled()，没有旁路。
+ *
  * 接口走的是 43.165.3.81 上 nginx 的中继：真正的上游 key 只存在服务器上，
  * APP 里放的是中继口令，口令就算被人从包里抠出来，改服务器一行配置就能轮换，上游 key 永不外泄。
  */
@@ -23,7 +27,8 @@ public class AiSetting {
     private static final int[] K = {91, 10, 71, 6, 17, 86, 87, 1, 20, 24, 81, 3, 78, 90, 87, 64, 84, 88, 67, 83, 67, 2, 92, 82, 25, 25, 95, 87, 25, 14, 9, 65};
 
     public static boolean isEnabled() {
-        return Prefers.getBoolean("ai_judge", true);
+        // 总开关默认关：用户没去设置里亲手打开之前，任何数据都不发给大模型
+        return Prefers.getBoolean("ai_judge", false);
     }
 
     public static void putEnabled(boolean enabled) {

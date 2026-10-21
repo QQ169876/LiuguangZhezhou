@@ -203,6 +203,20 @@ public class BingeTags {
     }
 
     /**
+     * 值不值得为这个条目去问大模型（2026-10-21 马先生定的边界：**只有剧集才发大模型查询，
+     * 单集的电影不走大模型查数据**）。本地先分析：短剧/漫剧字样、题材词、合集字样、
+     * 备注里写的集数，沾一样就算有「剧集相」，可以问；一样不沾的就是普通电影/单集综艺，
+     * 本地判「不是」完事，一个 token 都不烧。
+     */
+    public static boolean askable(String name, String remarks, int episodes) {
+        if (episodes >= MIN_PLAYABLE) return true; // 分集的就是剧
+        if (isShortMark(name) || isComic(name)) return true; // 名字写着短剧/漫剧/竖屏
+        if (hasCompileMark(name)) return true; // 名字写着合集/完整版
+        if (parseEpisodes(remarks) >= MIN_PLAYABLE) return true; // 备注写着「全70集」
+        return hasTag(name); // 命中题材词（王妃/重生这类），多半是剧
+    }
+
+    /**
      * 「动态漫」的说法。⚠️ 只有这一类要降级——马先生 2026-10-11 特意纠正：
      * **漫剧是漫剧，动态漫是动态漫，两码事，别混成一个词表。**
      */

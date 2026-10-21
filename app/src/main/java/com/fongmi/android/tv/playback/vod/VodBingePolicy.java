@@ -112,8 +112,8 @@ class VodBingePolicy {
     boolean onNoNext(boolean reversed) {
         if (reversed || !BingeSetting.isEnabled()) return false;
         if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
-        // 正剧不按「同题材换一部」刷，但名字里明写着第几季的要接管：找这个系列的下一季
-        if (!isShortDrama() && !BingeTags.hasSerialMark(host.getVodName())) return false;
+        // 能不能刷全看 canBingeNow：它已经把「单集电影（含续作）不接」的边界算进去了
+        if (!isShortDrama()) return false;
         BingeProfile.hit(BingeTags.tagsOf(host.getVodName())); // 看完了：题材记一分，下次更懂你
         if (serial >= BingeSetting.MAX_SERIAL) {
             host.onBingeEnd();
@@ -142,11 +142,14 @@ class VodBingePolicy {
         if (!BingeSetting.isEnabled()) return false;
         if (AiGuard.blocked(host.getVodName())) return false; // 碰线的剧不联想、不搜索
         if (state.getHistory() != null && state.getHistory().isRevPlay()) return false; // 倒序看就别刷
-        if (BingeTags.hasSerialMark(host.getVodName())) return true; // 明写着「第X季」：一季接一季往下看，不换别的剧
-        if (!state.hasFlags()) return false;
+        String name = host.getVodName();
+        if (!state.hasFlags()) return BingeTags.hasSerialMark(name); // 还没拿到分集信息：明写「第X季」的才接
         int episodes = state.getFlag().getEpisodes().size();
         long duration = state.getHistory() == null ? 0 : state.getHistory().getDuration();
-        String name = host.getVodName();
+        // 单集的电影（含《战狼2》这类带数字的续作）一点剧集相都没有：不刷，更别为它问大模型
+        // （2026-10-21 马先生定的边界：单集电影不走大模型查数据）
+        if (episodes <= 1 && !BingeTags.askable(name, "", episodes)) return false;
+        if (BingeTags.hasSerialMark(name)) return true; // 明写着「第X季」：一季接一季往下看，不换别的剧
         if (episodes >= BingeTags.MIN_PLAYABLE) return BingeTags.canBinge(episodes, duration, name);
         // 集数很少，看看是不是整部短剧压成一个视频的合集版
         int verdict = BingeTags.compileOf(name, "", episodes, duration);
@@ -563,6 +566,8 @@ class VodBingePolicy {
     private boolean ask(Vod item, int episodes) {
         if (!AiSetting.isEnabled()) return false;
         String name = item.getName();
+        // 单集电影不问大模型（2026-10-21 边界）：本地先看有没有剧集相，没有就判「不是」，不烧 token
+        if (!BingeTags.askable(name, item.getRemarks(), episodes)) return false;
         String key = BingeTags.compileKey(name, item.getRemarks(), episodes, 0);
         Boolean hit = AiJudge.peek(key);
         if (hit != null) return hit; // 有缓存：同步返回，filter 自己把它放进候选，不走回调
