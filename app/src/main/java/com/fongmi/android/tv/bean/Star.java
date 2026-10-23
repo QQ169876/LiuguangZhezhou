@@ -203,7 +203,11 @@ public class Star implements Diffable<Star> {
     public static boolean messy(List<String> names) {
         if (names == null || names.isEmpty()) return false;
         if (names.size() == 1 && names.get(0).length() > 12) return true;
-        for (String name : names) if (mixed(name)) return true;
+        for (String name : names) {
+            if (mixed(name)) return true;
+            // 一个人名里挂着两个以上间隔号：多半是站点拿「·」当分隔符连写了一串人，本地分不清，交模型
+            if (count(name, '·') >= 2) return true;
+        }
         return false;
     }
 
@@ -264,16 +268,12 @@ public class Star implements Diffable<Star> {
     private static List<String> splitDot(String part) {
         List<String> out = new ArrayList<>();
         if (part == null) return out;
-        int dot = count(part, '·');
-        int bullet = count(part, '•');
-        if (dot > 0 && bullet > 0) {
-            // 两种混着用：间隔号是「一个人一个」，分隔符是「比人数少一个」，
-            // 所以出现得少的那个才是分隔符（"A·B•C·D" → 拆成 A·B 和 C·D）
-            for (String seg : part.split(bullet <= dot ? "[•]" : "[·]")) out.add(seg);
-            return out;
-        }
-        if (dot + bullet >= 2) { // 同一种符号连着用好几个，那是列表，才拆
-            for (String seg : part.split("[·•]")) out.add(seg);
+        // 「·」是译名里的间隔号（小罗伯特·唐尼、杰森·斯坦森），一律当名字的一部分，绝不当分隔符。
+        // 2026-10-24 马先生在 TV 上撞见：杰森·斯坦森被劈成「杰森」「斯坦森」两个人，各自都能关注。
+        // 判不准的一律不拆 —— 漏拆只是少一张牌，拆错是把一个人劈成两个（关注也错、搜作品也错），
+        // 这串真要是一串人名，后面 messy() 会把它判成不可信、交给大模型按片名去认。
+        if (part.indexOf('•') > 0) { // 只有子弹点「•」才当分隔符
+            for (String seg : part.split("[•]")) out.add(seg);
             return out;
         }
         out.add(part);

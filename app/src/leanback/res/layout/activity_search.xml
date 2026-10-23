@@ -43,7 +43,7 @@
                 android:imeOptions="actionDone"
                 android:inputType="textCapWords|textAutoCorrect|textAutoComplete"
                 android:letterSpacing="0.02"
-                android:maxLength="255"
+                android:maxLength="512"
                 android:nextFocusDown="@id/keyboard"
                 android:singleLine="true"
                 android:textColor="@color/white"

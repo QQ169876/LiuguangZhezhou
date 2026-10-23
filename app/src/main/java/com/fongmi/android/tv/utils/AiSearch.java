@@ -58,13 +58,17 @@ public class AiSearch {
             + "只输出 JSON，不要任何解释：\n"
             + "{\"type\":\"keyword|actor|similar|discover|refused\",\"summary\":\"一句话复述理解到的需求，16字以内\","
             + "\"keywords\":[\"直接可搜的关键词\"],\"actor\":\"演员或导演姓名\",\"similar\":[\"用户提到的参照作品名\"],"
-            + "\"tags\":[\"同类题材关键词\"],\"titles\":[\"你提名的具体作品名\"],\"genre\":\"类型\","
+            + "\"tags\":[\"同类题材关键词\"],\"titles\":[\"你提名的具体作品名\"],\"form\":\"漫剧|动态漫|动画|真人剧|电影|未知\","
+            + "\"genre\":\"类型\","
             + "\"year_min\":0,\"min_rating\":0,\"media\":\"movie|tv|both\"}\n"
             + "规则：\n"
             + "1. 给了明确片名或题材关键词 → keyword，keywords 给 1~3 个最可能搜到的写法（第一个是主关键词）。\n"
             + "2. 点名演员或导演，要找他/她的作品 → actor。\n"
-            + "3. 「类似/像《X》这种」→ similar：similar 填参照作品名；tags 填 3~5 个同类题材词"
-            + "（AI漫剧、动态漫、沙雕漫、短剧这类形态词要保留）；titles 提名 3~6 部真正类似的作品名，不知道就空数组，不要编造。\n"
+            + "3. 「类似/像《X》这种」→ similar：similar 填参照作品名；"
+            + "form 填它的形态（AI漫剧/动态漫/沙雕漫填「漫剧」，动漫/动画/卡通填「动画」，真人出演的剧填「真人剧」，"
+            + "电影填「电影」，拿不准填「未知」）；tags 填 3~5 个同类题材词（形态词要保留）；"
+            + "titles 提名 3~6 部**跟它同一种形态、同一类题材**的作品名——参照是 AI 漫剧就只提 AI 漫剧，"
+            + "不许跨形态推真人剧，也不许把电影、综艺、解说混进来；没把握就给空数组，绝不编造不存在的作品。\n"
             + "4. 「最新的/今年/近几年/评分高/推荐几部」这类筛选推荐 → discover：genre 填类型"
             + "（动作/喜剧/爱情/科幻/奇幻/悬疑/恐怖/惊悚/动画/犯罪/战争/历史/家庭/古装/剧情等），"
             + "year_min 按今天日期折算（今年就填今年的年份，近几年就往前推），有评分要求就填 min_rating（比如「评分高」填 7），"
@@ -72,8 +76,12 @@ public class AiSearch {
             + "5. 与影视找片无关 → refused，其它字段留空。\n"
             + "6. summary 始终用中文，拿不准就填用户原话的缩写。";
 
-    /** 同一句话一天内不再重复问 */
-    private static final long TTL = 24 * 60 * 60 * 1000L;
+    /**
+     * 同一句话多久内不再重复问。
+     * 2026-10-24 从 24 小时缩到 6 小时：模型提名的片名要拿去站里验货，站里有没有是会变的，
+     * 记一整天的话，早上问出一坨搜不到的，晚上还是那一坨。
+     */
+    private static final long TTL = 6 * 60 * 60 * 1000L;
     private static final int MEMO_LIMIT = 200;
 
     private static final ConcurrentHashMap<String, Entry> MEMO = new ConcurrentHashMap<>();
@@ -105,6 +113,8 @@ public class AiSearch {
         public List<String> similar = new ArrayList<>();
         public List<String> tags = new ArrayList<>();
         public List<String> titles = new ArrayList<>();
+        /** 作品的形态（漫剧/动画/真人剧/电影/未知），similar 用它卡提名，不许跨形态乱推 */
+        public String form = "";
         public String genre = "";
         public int yearMin;
         public double minRating;
@@ -139,12 +149,23 @@ public class AiSearch {
 
     /** 已经问过并有结论的，直接给；没问过返回 null */
     public static Plan peek(String question) {
+        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，缓存里的模型答案一律不翻
         if (TextUtils.isEmpty(question) || AiGuard.blocked(question)) return null;
         load();
         Entry entry = MEMO.get(key(question));
         if (entry == null) return null;
         if (System.currentTimeMillis() - entry.at > TTL) return null;
         return entry.plan;
+    }
+
+    /**
+     * 忘掉这一句的答案：验货下来一条都站里没有的时候，别让它继续躺在缓存里占着位置
+     * （2026-10-24 马先生：搜出来的结果很差劲，还一整天都是那一坨）。
+     */
+    public static void drop(String question) {
+        String key = key(question);
+        if (key.isEmpty()) return;
+        MEMO.remove(key);
     }
 
     /**
@@ -157,10 +178,23 @@ public class AiSearch {
             reply(callback, Plan.error());
             return;
         }
-        // 铁律：涉黄赌毒等违法关键词一律不送模型，本地直接拒答
+        // 铁律：涉黄赌毒等违法关键词一律不送模型。
+        // 搜索框能写 512 个字了，一句话里夹了个把违禁词不代表他要找那种片子：
+        // 抠掉违禁词、把剩下的句子理顺再发（2026-10-24 马先生定的）；整句都是违禁词才本地拒答。
         if (AiGuard.blocked(key)) {
-            DebugLog.d("AiSearch", "命中敏感词，拒绝调用大模型：" + key);
-            reply(callback, Plan.refused());
+            String clean = AiGuard.scrub(key);
+            if (clean.length() < 2) {
+                DebugLog.d("AiSearch", "整句都是违禁词，本地拒答不外发");
+                reply(callback, Plan.refused());
+                return;
+            }
+            DebugLog.d("AiSearch", "已抠掉违禁词，改用：" + clean);
+            key = key(clean);
+        }
+        // 铁律（2026-10-24 马先生重申）：开关没开，任何数据都不走大模型——
+        // 连上次问出来的缓存也不许翻出来用，那也是模型给的答案。
+        if (!AiSetting.isEnabled()) {
+            reply(callback, Plan.error());
             return;
         }
         load();
@@ -169,25 +203,22 @@ public class AiSearch {
             reply(callback, hit);
             return;
         }
-        if (!AiSetting.isEnabled()) {
-            reply(callback, Plan.error());
-            return;
-        }
-        if (ASKING.putIfAbsent(key, Boolean.TRUE) != null) {
+        final String safe = key; // 发给模型的那句（可能已经抠过违禁词），进 lambda 得是最终的
+        if (ASKING.putIfAbsent(safe, Boolean.TRUE) != null) {
             reply(callback, Plan.error());
             return;
         }
         POOL.execute(() -> {
             Plan plan = null; // null＝没问到（断网、超时、报错），不缓存，下次还能再问
             try {
-                plan = request(key);
+                plan = request(safe);
             } catch (Throwable e) {
                 DebugLog.d("AiSearch", "智能搜索模型不可用：" + e);
             }
-            ASKING.remove(key);
+            ASKING.remove(safe);
             if (plan != null) {
                 if (MEMO.size() > MEMO_LIMIT) MEMO.clear();
-                MEMO.put(key, new Entry(plan));
+                MEMO.put(safe, new Entry(plan));
                 save();
             }
             Plan result = plan == null ? Plan.error() : plan;
@@ -265,6 +296,7 @@ public class AiSearch {
             plan.similar = cleanList(json.optJSONArray("similar"), 4, 30);
             plan.tags = cleanList(json.optJSONArray("tags"), 5, 12);
             plan.titles = cleanList(json.optJSONArray("titles"), 6, 30);
+            plan.form = clean(json.optString("form"), 8);
             plan.genre = clean(json.optString("genre"), 8);
             int year = json.optInt("year_min", 0);
             plan.yearMin = year >= 1950 && year <= 2100 ? year : 0; // 离谱的年份（0、99999）就当没限定

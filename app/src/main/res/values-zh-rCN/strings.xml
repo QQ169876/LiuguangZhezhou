@@ -586,6 +586,8 @@
     <string name="ai_pick_actor">直接搜这个人</string>
     <string name="ai_pick_tag">题材</string>
     <string name="ai_pick_guessed">AI 提名</string>
+    <string name="ai_pick_verified">站里有片源</string>
+    <string name="ai_pick_same_type">同类（站里有）</string>
     <string name="search_record">历史</string>
     <string name="search_suggest">建议</string>
     <string name="search_hot">热搜</string>

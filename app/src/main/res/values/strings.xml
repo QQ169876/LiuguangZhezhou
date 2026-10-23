@@ -587,6 +587,8 @@
     <string name="ai_pick_actor">Search this name</string>
     <string name="ai_pick_tag">Genre</string>
     <string name="ai_pick_guessed">AI suggestion</string>
+    <string name="ai_pick_verified">Found in your sources</string>
+    <string name="ai_pick_same_type">Same category</string>
     <string name="search_record">History</string>
     <string name="search_suggest">Suggest</string>
     <string name="search_hot">Hot</string>

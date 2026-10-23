@@ -8,6 +8,7 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.impl.Process;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.ui.dialog.ReceiveFileDialog;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.Formatters;
@@ -115,11 +116,8 @@ public class Local implements Process {
         App.post(() -> FileUtil.installApkAsync(file, file.getName(), left -> {
             if (left == null) return; // 已经交给系统了
             if (FileUtil.installNotify(file, name)) return; // 系统没接：挂通知，点它就跟文件管理器里点包一样
-            if (!FileUtil.installPermissionGranted()) {
-                FileUtil.openInstallPermission();
-                Notify.show(R.string.push_install_perm);
-                return;
-            }
+            // 通知也没发出去：只记一笔。装不装得过、要不要先授权，全交给操作系统，我们不引导去开设置页
+            DebugLog.d("Install", "推送包没能交给系统安装器：" + name + " 未知来源授权=" + FileUtil.installPermissionGranted());
             Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
         }));
     }

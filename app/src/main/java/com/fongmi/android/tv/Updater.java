@@ -867,8 +867,10 @@ public class Updater implements Download.Callback, UpdateListener {
             if (result == null) return; // 安装界面已经弹出来了，后面没我们的事了
             // 系统没接：挂一条通知，用户点它就是「在文件管理器里点这个 APK」，装不装让系统自己定
             if (FileUtil.installNotify(file, apkName())) return;
-            FileUtil.openInstallPermission(); // 连通知都发不出去才去开设置页
-            Notify.show(R.string.update_install_perm);
+            // 连通知都发不出去：只记一笔。能不能装、要不要授权，一律交给操作系统甄别，
+            // 我们不去开「允许安装未知应用」的设置页 —— 有些电视压根没有那个设置页，
+            // 跳过去就是「点完更新一点反应都没有」（2026-10-24 马先生：不要自己加戏）。
+            DebugLog.d("Install", "更新包没能交给系统安装器：" + apkName());
         });
     }
 

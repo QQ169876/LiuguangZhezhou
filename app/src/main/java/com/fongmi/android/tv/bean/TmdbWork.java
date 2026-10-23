@@ -21,6 +21,7 @@ public class TmdbWork {
     private final int type;
     private String poster = "";  // TMDB 海报路径（/xxxx.jpg），没有就空串
     private String rating = "";  // 评分（"7.8"），没有就空串
+    private String pic = "";     // 站点自己的海报（完整地址），有就优先用它：站里真有的片子，用站里的图最准
 
     public TmdbWork(String name, String year, String role, int type) {
         this.name = name == null ? "" : name.trim();
@@ -36,8 +37,15 @@ public class TmdbWork {
         return this;
     }
 
+    /** 站点给的海报（站内验货查到的片子带上它，图跟名字一样是站里原样） */
+    public TmdbWork withPic(String url) {
+        this.pic = url == null ? "" : url.trim();
+        return this;
+    }
+
     /** 海报完整地址；image.tmdb.org 国内时通时断，加载不出来就显示占位图，名字年份照样能用 */
     public String getPoster() {
+        if (!pic.isEmpty()) return pic;
         return poster.isEmpty() ? "" : "https://image.tmdb.org/t/p/w185" + poster;
     }
 

@@ -233,7 +233,7 @@ class VodBingePolicy {
      */
     private void applyNext(String name) {
         aiTitles.clear();
-        AiJudge.Next next = AiJudge.peekNext(name);
+        AiJudge.Next next = AiJudge.peekNext(name, BingeTags.kindWord(kind), region);
         if (next != null) {
             addNext(next, true);
             return;
@@ -279,7 +279,7 @@ class VodBingePolicy {
     private void prewarmNext() {
         if (!AiSetting.isEnabled()) return;
         String name = host.getVodName();
-        if (AiGuard.blocked(name)) return;
+        // 违禁词那道闸在 AiJudge.nextUp 里（先抠词、理顺再发，抠光了才拒答），这里不再重复拦
         AiJudge.nextUp(name, typeName, region, BingeTags.kindWord(kind), actor, BingeTags.serialMainOf(name), BingeTags.serialOf(name), null);
     }
 
@@ -701,6 +701,16 @@ class VodBingePolicy {
         next();
     }
 
+    /**
+     * 当前这一路的产地基准：字段里没有（刷的这部判不出国籍）就拿「剧名 + 分类」再推一次。
+     * 以前判不出就无条件放行，外剧的中文译名就是这么混进来的（2026-10-24）。
+     */
+    private String regionBase() {
+        if (!region.isEmpty()) return region;
+        String guess = BingeTags.regionOf(host.getVodName() + typeName);
+        return guess == null ? "" : guess;
+    }
+
     /** 详情到手：集数够不够一部接一部刷；只有一集的话，得是整部压成合集那种才算数 */
     private boolean playable(Vod detail, Vod item) {
         if (detail == null || item == null) return false;
@@ -718,8 +728,12 @@ class VodBingePolicy {
             int detailKind = BingeTypes.kindOfType(detail.getTypeName());
             if (detailKind != BingeTags.KIND_UNKNOWN && detailKind != kind) return false;
         }
+        // 刷漫剧：这站确实分过漫剧这一类时，候选必须也落在漫剧类，看不出剧种的也不要——
+        // 2026-10-24 马先生反馈「看国产 AI 漫剧，下一步推出韩剧」，就是分类写着「韩剧」那种漏过来的
+        if (kind == BingeTags.KIND_COMIC && BingeTypes.hasKind(item.getSiteKey(), BingeTags.KIND_COMIC)
+                && BingeTypes.kindOfType(detail.getTypeName()) != BingeTags.KIND_COMIC) return false;
         String info = String.valueOf(detail.getArea()) + detail.getTypeName() + name;
-        if (!BingeTags.sameRegion(region, info)) return false; // 详情里写明是别国的剧，别跳过去
+        if (!BingeTags.sameRegion(regionBase(), info)) return false; // 详情里写明是别国的剧，别跳过去
         List<Flag> flags = detail.getFlags();
         int max = 0;
         if (flags != null) for (Flag flag : flags) {
@@ -755,7 +769,7 @@ class VodBingePolicy {
         waitingDetail = false;
         if (item != null) {
             String info = String.valueOf(item.getArea()) + item.getTypeName() + item.getName();
-            if (!BingeTags.sameRegion(region, info)) { // 详情里写明是别的国籍，换下一部
+            if (!BingeTags.sameRegion(regionBase(), info)) { // 详情里写明是别的国籍，换下一部
                 DebugLog.d("Binge", "跳过 " + item.getName() + "，产地不符（当前" + region + "）");
                 tried.add(item.getName());
                 dropHistory(item.getName()); // 别在历史里留一部压根没看过的剧

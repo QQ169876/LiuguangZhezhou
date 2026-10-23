@@ -78,7 +78,7 @@ public class StarStrip {
         binding.getRoot().setVisibility(View.GONE);
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
-        List<String> cached = AiJudge.peekActors(askingFor, typeName, year);
+        AiJudge.Cast cached = AiJudge.peekActors(askingFor, typeName, year);
         if (cached != null) { // 问过这部了：有就铺，没有就别再问第二次
             apply(cached, askingFor);
             return;
@@ -87,15 +87,19 @@ public class StarStrip {
     }
 
     /** 异步回来时页面可能已经换了剧/退了：剧名对不上或这块已经不在窗口上，就别贴了 */
-    private void apply(List<String> names, String forName) {
+    private void apply(AiJudge.Cast cast, String forName) {
         if (!binding.getRoot().isAttachedToWindow()) return;
         if (!forName.equals(askingFor)) return;
-        List<String> show = names != null && !names.isEmpty() ? names : fallback; // 模型没答上来：垫底铺站点原来那串
+        // 有演员铺演员；漫剧这类没有真人演员的，改铺模型报的出品方（导演 / 工作室 / 版权方），
+        // 一样能关注、能长按看作品；两样都没有才回头垫站点原来那串（2026-10-24 马先生定的分层）
+        List<String> show = cast != null && !cast.names.isEmpty() ? cast.names
+                : (cast != null && !cast.studio.isEmpty() ? java.util.Collections.singletonList(cast.studio) : fallback);
         if (show == null || show.isEmpty()) return;
+        boolean fromStudio = cast != null && cast.names.isEmpty() && !cast.studio.isEmpty();
         binding.starList.removeAllViews();
         for (String name : show) binding.starList.addView(chip(name));
         binding.getRoot().setVisibility(View.VISIBLE);
-        if (show != fallback) {
+        if (show != fallback && !fromStudio) { // 出品方不往上面那行「演员」里填，那行是给人名用的
             try {
                 if (action != null) action.onFilled(show); // 让外面把上面那行「演员」也换成模型报的
             } catch (Throwable ignored) {

@@ -20,6 +20,8 @@ import java.util.Locale;
  *    不准在别处另起一套词表；要加词就往下面的 WORDS 里加，全 App 一起生效。
  * 2. **先闸后问**：任何新加的大模型调用，拼 prompt 之前必须先过一遍 blocked()，
  *    命中就到此为止，不许「换个说法再问」「去掉敏感词再问」这类绕过。
+ *    **例外（2026-10-24 马先生放宽）**：「AI 键搜索」这一路改成先调 scrub() 把违禁词抠掉、
+ *    剩下的句子理顺再发；抠完没内容了才拒答。其余出口一律照旧一刀切。
  * 3. **连缓存都不查**：命中的条目不要回读历史答案，直接退回本地兜底，
  *    免得把旧版本留下来的脏内容又翻出来。
  *
@@ -76,6 +78,68 @@ public final class AiGuard {
             if (flat.contains(word)) return true;
         }
         return false;
+    }
+
+    /**
+     * 把碰线的词从句子里抠掉，剩下的弄通顺后返回（2026-10-24 马先生定的口径）。
+     *
+     * 用户一口气写一大段描述，里面夹了个把违禁词不代表他要找那种片子——整句拒掉太傻，
+     * 抠掉违禁词、把剩下的句子理顺再发给模型就行。全抠光了（整句都是违禁词）
+     * 返回空串，调用方照旧拒答、一个字节都不外发。
+     *
+     * 2026-10-24 晚：马先生把这条从「只有 AI 键搜索」推广到**所有**大模型出口——
+     * 推荐的第二层闸门就是这个：先本地过滤违禁词，剩下的才发模型，最后拿模型的结果去匹配。
+     * 所以刷剧推荐、补演员、题材词那些出口也一律走 pass()，不再整句拒答。
+     */
+    public static String scrub(String text) {
+        if (text == null || text.isEmpty()) return "";
+        String lower = flat(text);
+        if (lower.isEmpty()) return "";
+        int[] map = new int[lower.length()]; // flat 的第 k 个字符在原文里的位置
+        int k = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == ' ' || c == '　' || c == '-' || c == '_' || c == '·' || c == '.') continue;
+            if (k < map.length) map[k++] = i;
+        }
+        boolean[] drop = new boolean[text.length()];
+        for (String word : WORDS) {
+            int from = 0;
+            while (from <= lower.length() - word.length()) {
+                int at = lower.indexOf(word, from);
+                if (at < 0) break;
+                for (int i = at; i < at + word.length() && i < map.length; i++) drop[map[i]] = true;
+                from = at + word.length();
+            }
+        }
+        StringBuilder sb = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) if (!drop[i]) sb.append(text.charAt(i));
+        return tidy(sb.toString());
+    }
+
+    /**
+     * 二级闸门的第二段：把准备发给模型的多段文本**各抠一遍**违禁词，抠完还剩下的才返回。
+     *
+     * 第 0 段是主文本（剧名 / 搜索词），其余是配料（备注、站名、类型名）。
+     * 主文本原来有内容、抠完却空了 —— 说明整句都是违禁词，返回 null，调用方就此打住不外发；
+     * 配料抠空了没关系，留空串继续。没碰线的文本原样（顺带理顺）返回。
+     */
+    public static String[] pass(String... texts) {
+        if (texts == null) return null;
+        String[] out = new String[texts.length];
+        for (int i = 0; i < texts.length; i++) out[i] = scrub(texts[i]);
+        String first = texts.length > 0 ? texts[0] : null;
+        if (first != null && !first.trim().isEmpty() && out[0].isEmpty()) return null;
+        return out;
+    }
+
+    /** 抠完词之后把句子理顺：并掉多余空格、去掉空括号、掐掉首尾挂着的标点 */
+    private static String tidy(String text) {
+        String s = text.replaceAll("[ \\t　]+", " ").trim();
+        s = s.replace("（）", "").replace("()", "").replace("[]", "").replace("《》", "").replace("【】", "");
+        s = s.replaceAll("[，,]{2,}", "，").replaceAll("[、]{2,}", "、");
+        s = s.replaceAll("^[，,、；;。.！!？?：:]+", "").replaceAll("[，,、；;。.！!？?：:]+$", "");
+        return s.trim();
     }
 
     /** 抹掉大小写和中间夹的空格、点、杠这类花招（“P O R N”“porn-hub”也得认出来），中文不受影响 */

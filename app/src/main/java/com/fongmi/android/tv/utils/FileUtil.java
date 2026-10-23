@@ -91,8 +91,8 @@ public class FileUtil {
      * 之前只做了一句 ACTION_VIEW，对端经常一点反应都没有，三个坑：
      * 1. mime 靠 guessContentTypeFromName 猜，.apk 基本猜不出来，落到 "* / *"，
      *    系统不知道该拿什么开 —— TV 上的表现就是「什么都没发生」；
-     * 2. Android 8 起装未知应用要先给授权（canRequestPackageInstalls）——但不在这儿拦：
-     *    先照老办法把安装器拉起来，系统自己会处理授权；真拉不起来了才带人去开设置；
+     * 2. Android 8 起装未知应用要先给授权（canRequestPackageInstalls）——不查、也不拦：
+     *    直接把安装器拉起来，授权的事系统自己处理；拉不起来就挂通知，绝不带人去开设置页；
      * 3. 文件原先落在 sdcard 根目录，Android 10 分区存储下常常压根没写进去，装什么装。
      *
      * 安卓 6（我们的兼容版就是 minSdk 23）还得另眼看待：
@@ -106,7 +106,8 @@ public class FileUtil {
         String left = installApk(file, name);
         if (left == null) return; // 系统安装界面已经弹出来了
         if (installNotify(file, name)) return; // 系统没接：挂通知，点它就跟文件管理器里点包一样
-        openInstallPermission();  // 连通知都发不出去才去开设置页
+        // 通知也没发出去：只记一笔，不跳设置页（能不能装交给操作系统，我们不预判）
+        DebugLog.d("Install", "推送包没能交给系统安装器：" + name);
         Notify.show(left.isEmpty() ? ResUtil.getString(R.string.push_install_fail) : ResUtil.getString(R.string.push_install_saved, left));
     }
 
@@ -258,20 +259,12 @@ public class FileUtil {
         }
     }
 
-    /** 带用户去开「允许安装未知应用」（有些盒子把设置页精简掉了，拉不起来也不崩） */
-    public static void openInstallPermission() {
-        try {
-            Intent intent;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:".concat(App.get().getPackageName())));
-            } else {
-                intent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            App.get().startActivity(intent);
-        } catch (Throwable ignored) {
-        }
-    }
+    /**
+     * 这里原本有个 openInstallPermission()：拉不起安装器就带人去开「允许安装未知应用」设置页。
+     * 2026-10-24 按马先生的意思删掉了 —— 有的电视根本没有那个设置页（红米电视就是），
+     * 跳过去等于什么都没发生，用户只看到「点完更新没反应」。能不能装交给操作系统甄别，
+     * 我们只负责把 APK 交出去（或挂条通知让它能被点到），其余一概不管。
+     */
 
     /** 安卓 6 及更早的那个全局开关。读不到就当开着的，别把人拦在门外 */
     private static boolean installNonMarketAllowed() {
