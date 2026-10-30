@@ -56,6 +56,11 @@
         style="@style/Control"
         android:text="@string/play_repeat" />
 
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/cast"
+        style="@style/Control"
+        android:text="@string/cast_pick" />
+
     <com.fongmi.android.tv.ui.custom.CustomUpDownView
         android:id="@+id/speed"
         style="@style/Control"

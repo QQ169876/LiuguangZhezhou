@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/receiveLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/player"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        app:use_controller="false" />
+
+    <!-- 待机时盖在上面的提示：广播端还没来、或者它刚收工 -->
+    <LinearLayout
+        android:id="@+id/standby"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:id="@+id/standbyText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/cast_receive_wait"
+            android:textColor="@color/white"
+            android:textSize="20sp" />
+
+        <EditText
+            android:id="@+id/standbyInput"
+            android:layout_width="220dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:hint="@string/cast_receive_manual_hint"
+            android:importantForAutofill="no"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textColorHint="#88ffffff"
+            android:textSize="16sp"
+            android:visibility="visible" />
+
+        <TextView
+            android:id="@+id/standbyManual"
+            style="@style/Control"
+            android:layout_marginTop="12dp"
+            android:focusable="true"
+            android:text="@string/cast_receive_manual" />
+
+    </LinearLayout>
+
+    <!-- 左上角：正在接收谁 / 哪部片子 -->
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|top"
+        android:padding="20dp"
+        android:shadowColor="#99000000"
+        android:shadowRadius="6"
+        android:textColor="@color/white"
+        android:textSize="16sp" />
+
+    <!-- 右上角：只留两个本地操作，播放进度一并交给广播端 -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|top"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/rotate"
+            style="@style/Control"
+            android:focusable="true"
+            android:text="@string/cast_receive_rotate" />
+
+        <TextView
+            android:id="@+id/exit"
+            style="@style/Control"
+            android:layout_marginTop="8dp"
+            android:focusable="true"
+            android:text="@string/cast_receive_exit" />
+
+    </LinearLayout>
+
+</FrameLayout>

@@ -60,4 +60,5 @@
         <item>画中画</item>
     </string-array>
 
+    <string name="cast_receive">接收广播</string>
 </resources>

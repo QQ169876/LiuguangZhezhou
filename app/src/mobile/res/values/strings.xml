@@ -60,4 +60,5 @@
         <item>PiP</item>
     </string-array>
 
+    <string name="cast_receive">Receive</string>
 </resources>

@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- 以下权限本应用完全用不到，任何第三方库带进来一律剔除（短信/彩信、通讯录、电话、定位、日历、传感器、蓝牙、悬浮窗等） -->
@@ -144,6 +146,26 @@
             android:name=".ui.activity.CrashActivity"
             android:process=":error_activity"
             android:theme="@style/Theme.Crash" />
+
+        <service
+            android:name=".cast.ScreenCastService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <activity
+            android:name=".cast.ScreenRequestActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".ui.activity.ReceiveActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden|navigation"
+            android:exported="false"
+            android:launchMode="singleTop" />
 
         <activity
             android:name=".ui.activity.MusicActivity"

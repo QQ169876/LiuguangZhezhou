@@ -1,6 +1,7 @@
 package com.fongmi.android.tv.sync;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.moontv.MoonSetting;
 import com.fongmi.android.tv.webdav.WebDavSetting;
@@ -22,7 +23,12 @@ import java.util.List;
  * 所以「谁的数据」这个问题必须在两边各自记一遍：
  *   - WebDAV 看的是「同步标识」（同步文件地址），换了标识就是另一家人的数据；
  *   - 影视站看的是「用户名」（连同站点网址），换了用户名就是另一个账号的数据。
- * 本机每条数据（按 站点key+视频id 认）在两边各留一个归属标记，
+ *
+ * 归属只认账号，不看点播源（马先生 2026-10-30 定的设计）:
+ *   - 收藏跟着同步账号走，不管怎么换点播源 —— 认人的键就是 站点key+视频id，不带点播源；
+ *   - 播放记录跟着「点播源 + 账号」匹配 —— 记录本身的主键末段就带着 cid，
+ *     不同源的记录天然是两条数据，不会互删互顶；归属账本同样按账号记。
+ * 本机每条数据在两边各留一个归属标记（键见 key()），
  * 空 = 本机自己看出来的、还没跟任何账号打过交道，算当前账号的；
  * 有值但不等于当前账号 = 别人的数据，不往当前账号推、也不跟当前账号的删除一起删。
  *
@@ -44,7 +50,7 @@ public class Owner {
             {"moontv_owner_record", "moontv_owner_favorite"}
     };
 
-    /** 用过哪些组合身份；超量就把最久没用的那份账本/基线清掉 */
+    /** 用过哪些账号组合；超量就把最久没用的那份账本/基线清掉 */
     private static final String REGISTRY = "owner_registry";
     private static final int MAX = 6;
 
@@ -58,7 +64,12 @@ public class Owner {
     private Owner() {
     }
 
-    /** 当前身份：影视站用网址+用户名，WebDAV 用同步文件地址（含同步标识）+账号 */
+    /**
+     * 当前身份：影视站用网址+用户名，WebDAV 用同步文件地址（含同步标识）+账号。
+     *
+     * 身份只认账号、不认点播源：换源不算换人（收藏要跟着账号走，换源照常同步）；
+     * 换账号（改地址/用户名/同步标识）才算换人，基线、墓碑、归属账本自动切到新账号那份。
+     */
     public static String scope(int channel) {
         return channel == DAV ? WebDavSetting.getScope() : MoonSetting.getScope();
     }
@@ -182,14 +193,30 @@ public class Owner {
     /* ---------- 数据识别 ---------- */
 
     /**
-     * 一条历史/收藏在两条通道里共同的记号：站点 key + 视频 id。
-     * 主键里后面还跟着 cid（点播源），认人的时候用前两段就够了。
+     * 一条历史/收藏在归属账本里的记号，按数据类型分开（马先生 2026-10-30 的设计）:
+     *   - 收藏（FAVORITE）：站点 key + 视频 id，**不带点播源** —— 收藏跟着账号走，
+     *     同一部片在两个源里各收藏一份，对账号来说就是同一个收藏；
+     *   - 观看记录（RECORD）：站点 key + 视频 id + 点播源 cid —— 记录跟着「源+账号」匹配，
+     *     主键末段本来就带着 cid（History/Keep 的 key 都是 site@@@vod@@@cid），
+     *     不同源的记录是两条不同的数据。
+     * 主键里没带 cid 的（老数据），按当前源算。
      */
-    public static String key(String value) {
+    public static String key(String value, int type) {
         if (value == null) return null;
         String[] parts = value.split(AppDatabase.SYMBOL);
         if (parts.length < 2) return null;
         if (parts[0].isEmpty() || parts[1].isEmpty()) return null;
-        return parts[0].concat("+").concat(parts[1]);
+        if (type == FAVORITE) return parts[0].concat("+").concat(parts[1]);
+        String cid = parts.length > 2 && !parts[2].isEmpty() ? parts[2] : String.valueOf(cid());
+        return parts[0].concat("+").concat(parts[1]).concat("+").concat(cid);
+    }
+
+    /** 当前点播源；配置还没加载出来时是 0，老数据（主键不带 cid）就记在当前源名下 */
+    private static int cid() {
+        try {
+            return VodConfig.getCid();
+        } catch (Throwable e) {
+            return 0;
+        }
     }
 }

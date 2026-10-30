@@ -13,6 +13,7 @@ import com.fongmi.android.tv.Updater;
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.api.config.WallConfig;
+import com.fongmi.android.tv.cast.CastMenu;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
@@ -141,7 +142,9 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.moontv.setOnClickListener(this::onMoonTV);
         mBinding.route.setOnClickListener(this::onRoute);
         mBinding.lanPush.setOnClickListener(this::onPush);
+        mBinding.cast.setOnClickListener(view -> CastMenu.show(this));
         mBinding.version.setOnClickListener(this::onVersion);
+        mBinding.reinstall.setOnClickListener(this::onReinstall);
         mBinding.clear.setOnClickListener(this::onClear);
         mBinding.vod.setOnLongClickListener(this::onVodEdit);
         mBinding.vodRefresh.setOnClickListener(this::onVodRefresh);
@@ -294,6 +297,11 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onVersion(View view) {
         Updater.create().force().start(this);
+    }
+
+    /** 版本号旁边那个「重新安装」：不看版本，直接把最新安装包拉到系统下载目录再装 */
+    private void onReinstall(View view) {
+        Updater.reinstall(this);
     }
 
     /** 设置页最下面那个红色按钮：挑要清哪部分数据，二次确认后动手 */

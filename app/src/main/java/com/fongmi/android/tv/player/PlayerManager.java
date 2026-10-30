@@ -148,6 +148,12 @@ public class PlayerManager implements ParseCallback {
         return spec != null ? spec.getDanmakus() : Collections.emptyList();
     }
 
+    /** 外挂字幕清单：多机同步要把它一并带给接收端，那边才有得挂 */
+    public List<Sub> getSubs() {
+        List<Sub> subs = spec == null ? null : spec.getSubs();
+        return subs == null ? Collections.emptyList() : subs;
+    }
+
     private void notifyDanmakuSourceChanged() {
         callback.onDanmakuSourceChanged(getSelectedDanmakuUri());
     }

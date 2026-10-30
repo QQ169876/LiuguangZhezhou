@@ -60,4 +60,5 @@
         <item>子母畫面</item>
     </string-array>
 
+    <string name="cast_receive">接收廣播</string>
 </resources>

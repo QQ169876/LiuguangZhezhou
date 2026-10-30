@@ -16,7 +16,6 @@ import com.fongmi.android.tv.playback.vod.BingeTypes;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.server.Server;
-import com.fongmi.android.tv.sync.SyncProfile;
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -217,7 +216,8 @@ public class VodConfig extends BaseConfig {
         config.setAssrt(Json.safeString(object, "assrt"));
         config.setNotice(Json.safeString(object, "notice"));
         config.setDanmaku(Json.safeString(object, "danmaku"));
-        SyncProfile.onVodChanged(getCid()); // 换源 = 换一批数据，同步设置跟着换并先关掉
+        // 换源不再动同步设置（2026-10-30 马先生定）：收藏跟同步账号走、观看记录按「源+账号」
+        // 在数据键里匹配，同步设置本身全局一份，换源不影响
     }
 
     private void initList(JsonObject object) {

@@ -26,12 +26,24 @@ public record CastVideo(String name, String url, long position, Map<String, Stri
     }
 
     /**
-     * 推给第三方 DLNA 设备用的地址。
-     * 片源要带 Referer / UA 才能取流时，电视和盒子上的播放器不会带这些头，
-     * 所以换成手机本机的局域网直链，由手机代取再转给大屏。
+     * 第三方 DLNA 设备用的地址：没必要绕一圈的时候就别绕。
+     * 只有在确实要带 Referer / UA 这类头时，才换成手机本机的局域网直链，
+     * 由本机代取再转给大屏——否则直接把源地址给过去，少一次转发。
      */
     public String castUrl() {
         if (headers.isEmpty() || !url.startsWith("http")) return url;
+        return relayUrl();
+    }
+
+    /**
+     * 多机同步（本项目自己的广播）用的地址：**一律**走本机中转。
+     *
+     * 为什么不看有没有头就决定：局域网里别的设备（电视、盒子）能不能拉到这个源，
+     * 事先说不准 —— 有的源在别的内核上敢 direct 失败，有的则是 DRM / 重定向差异。
+     * 走中转保证了「发送端拉得到，接收端就一定播得了」，代价是发送端多一份上行。
+     */
+    public String relayUrl() {
+        if (!url.startsWith("http")) return url;
         try {
             Server.get().start();
             String target = URLEncoder.encode(url, StandardCharsets.UTF_8.name());

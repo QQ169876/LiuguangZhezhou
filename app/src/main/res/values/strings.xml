@@ -301,8 +301,6 @@
     <string name="vod_refresh_success">Vod source updated</string>
     <string name="vod_refresh_fail">Update failed, keeping the cached source</string>
 
-    <string name="sync_profile_switch">Vod source changed. Sync settings switched over and turned off — check them, then turn sync back on.</string>
-    <string name="sync_profile_new">New vod source: sync settings were kept but turned off — check them, then turn sync back on.</string>
     <string name="setting_live">Live</string>
     <string name="setting_wall">Wallpaper</string>
     <string name="setting_player">Player setting</string>
@@ -494,14 +492,13 @@
 
     <string name="sync_risk_title">Heads-up</string>
     <string name="sync_risk_confirm">Got it</string>
+    <string name="sync_risk_moon">The site sync settings were just changed (address, account or a switch). Watch history and favorites under different accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per account, so records from another account will not be carried over.</string>
+    <string name="sync_risk_dav">The WebDAV sync settings were just changed (address, sync id, account or a switch). Watch history and favorites under different sync ids or accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per sync id, so records from another id will not be carried over.</string>
     <string name="sync_guard_title">Confirm bulk deletion</string>
     <string name="sync_guard_message">This sync would also delete %1$d watching records and %2$d favorites from the cloud (they are already gone from this device). Did you delete them on purpose?</string>
     <string name="sync_guard_delete">Delete anyway</string>
     <string name="sync_guard_keep">Keep them</string>
     <string name="sync_guard_skipped">Sync kept %1$d records: bulk deletion needs your confirmation</string>
-    <string name="sync_risk_vod">You are switching the vod source. Favorites and watch history change with the source, and sync settings have been switched over and turned off. Before enabling or running sync, decide whether local and cloud data should merge, local overwrite cloud, or cloud overwrite local — to avoid mixing them up.</string>
-    <string name="sync_risk_moon">The site sync settings were just changed (address, account or a switch). Watch history and favorites under different accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per account, so records from another account will not be carried over.</string>
-    <string name="sync_risk_dav">The WebDAV sync settings were just changed (address, sync id, account or a switch). Watch history and favorites under different sync ids or accounts are separate data, so a two-way (merge) sync could mix them. Pick which side wins: merge, cloud overwrites this device, or this device overwrites the cloud. It is remembered per sync id, so records from another id will not be carried over.</string>
     <string name="moontv_empty">Site address or account is incomplete</string>
     <string name="moontv_saved">Settings saved</string>
     <string name="moontv_lan_saved">Site config received, sync stays off. Turn it on manually after you check the account.</string>
@@ -629,6 +626,11 @@
     <!-- Update -->
     <string name="update_version">New version <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">Checking for updates…</string>
+    <string name="update_pan115">Opened the 115 drive download page — grab the APK in the browser</string>
+    <string name="update_reinstall">Reinstall</string>
+    <string name="update_pan115_fetch">正在从网盘取安装包…</string>
+    <string name="update_pan115_fail">网盘这条路没通，换个方式试试</string>
+    <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">Update</string>
     <string name="update_latest">Already up to date</string>
     <string name="update_check_fail">Can\'t reach the update server. Check the network and try again.</string>
@@ -749,4 +751,48 @@
     <string name="sync_status_running">%1$s is syncing…</string>
     <string name="sync_status_done">%1$s sync finished</string>
     <string name="sync_status_fail">%1$s sync failed</string>
+    <string name="cast_receive_wait">Waiting for broadcast…</string>
+    <string name="cast_receive_scanning">Scanning…</string>
+    <string name="cast_receive_connected">Receiving from %1$s</string>
+    <string name="cast_receive_rotate">Rotate</string>
+    <string name="cast_receive_exit">Exit</string>
+    <string name="cast_receive_manual">Connect</string>
+    <string name="cast_receive_manual_hint">Sender IP (cross subnet ok)</string>
+    <string name="cast_select_host">Select a sender</string>
+    <string name="cast_port_busy">All broadcast ports (10086-10096) are taken</string>
+    <string name="cast_started">Broadcasting</string>
+    <string name="cast_stopped">Broadcast stopped</string>
+    <string name="cast_pick">Broadcast</string>
+    <string name="cast_setting">Broadcast options</string>
+    <string name="cast_pair_code">Pairing code</string>
+    <string name="cast_max_clients">Max receivers (blank = unlimited)</string>
+    <string name="cast_auto_join">Join automatically when only one sender is found</string>
+    <string name="cast_saved">Saved</string>
+    <string name="cast_screen_on">Start screen broadcast</string>
+    <string name="cast_screen_off">Stop screen broadcast</string>
+    <string name="cast_screen_running">Broadcasting this screen to the LAN</string>
+    <string name="cast_hint_screen">No playable source; try screen broadcast in the menu</string>
+    <string name="cast_transport">Transport</string>
+    <string name="cast_screen_mode">Screen broadcast</string>
+    <string name="cast_quality">Screen quality</string>
+
+    <string-array name="cast_transport_entries">
+        <item>Auto (multicast when possible, downgrades when unstable)</item>
+        <item>Multicast first (saves the most uplink)</item>
+        <item>UDP unicast only</item>
+        <item>Relay only (most reliable, works with any source)</item>
+    </string-array>
+
+    <string-array name="cast_screen_entries">
+        <item>Off</item>
+        <item>Only when no playable source</item>
+        <item>Always</item>
+    </string-array>
+
+    <string-array name="cast_quality_entries">
+        <item>720p 30fps (stable, cool)</item>
+        <item>1080p 30fps (sharper, heavier)</item>
+        <item>Auto</item>
+    </string-array>
+    <string name="setting_cast">Multi-device sync</string>
 </resources>

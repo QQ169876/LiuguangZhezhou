@@ -36,6 +36,9 @@ import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Danmaku;
 import com.fongmi.android.tv.bean.Episode;
+import com.fongmi.android.tv.cast.CastMedia;
+import com.fongmi.android.tv.cast.CastOption;
+import com.fongmi.android.tv.cast.CastSender;
 import com.fongmi.android.tv.bean.Flag;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
@@ -135,6 +138,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private Runnable mR5;
     private boolean switching;
     private History mHistory;
+    private CastMedia mCast;
+    private Episode mEpisode;
     private boolean fullscreen;
     private boolean useParse;
 
@@ -358,6 +363,11 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.video.setOnClickListener(view -> onVideo());
         mBinding.change.setOnClickListener(view -> onChange());
         mBinding.content.setOnClickListener(view -> onContent());
+        mBinding.control.action.cast.setOnClickListener(view -> onBroadcast());
+        mBinding.control.action.cast.setOnLongClickListener(view -> {
+            CastOption.show(this);
+            return true;
+        });
         mBinding.control.action.text.setOnClickListener(this::onTrack);
         mBinding.control.action.audio.setOnClickListener(this::onTrack);
         mBinding.control.action.video.setOnClickListener(this::onTrack);
@@ -476,6 +486,22 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void setVodId(String id) {
         getIntent().putExtra("id", id);
+    }
+
+    /** 短按 = 广播开关：把本机正在放的同步给局域网上其它设备 */
+    private void onBroadcast() {
+        if (CastSender.get().sending()) {
+            CastSender.get().stop();
+            Notify.show(R.string.cast_stopped);
+        } else {
+            Notify.show(CastSender.get().start(media()) ? R.string.cast_started : R.string.cast_port_busy);
+        }
+    }
+
+    /** 广播要读的那些播放信息：播放器每次现取，标题/集数跟着界面更新 */
+    private CastMedia media() {
+        if (mCast == null) mCast = new CastMedia(this::player);
+        return mCast.title(getVodName()).ep(mEpisode == null ? "" : mEpisode.getName());
     }
 
     @Override
@@ -712,6 +738,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void renderEpisodeSelection(Episode item) {
+        mEpisode = item;
         notifyItemChanged(mBinding.episode, mEpisodeAdapter);
         mBinding.episode.setSelectedPosition(mEpisodeAdapter.getPosition());
     }
@@ -1600,6 +1627,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     protected void onDestroy() {
+        if (mCast != null) mCast.alive(false);
+        CastSender.get().stop(); // 播放页没了就别占着端口
         mClock.release();
         saveHistory(true);
         MoonSync.touch();

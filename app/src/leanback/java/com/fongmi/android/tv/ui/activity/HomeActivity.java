@@ -33,6 +33,7 @@ import com.fongmi.android.tv.api.config.WallConfig;
 import com.fongmi.android.tv.bean.Cache;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Func;
+import com.fongmi.android.tv.cast.CastMenu;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.bean.Site;
@@ -289,6 +290,8 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         items.add(Func.create(R.string.home_keep));
         items.add(Func.create(R.string.home_push));
         if (MusicActivity.enabled()) items.add(Func.create(R.string.home_music));
+        items.add(Func.create(R.string.home_receive));
+        items.add(Func.create(R.string.home_cast));
         items.add(Func.create(R.string.home_setting));
         mFuncAdapter.setItems(items, new BaseDiffCallback<Func>());
     }
@@ -411,6 +414,8 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         else if (item.getResId() == R.string.home_push) PushActivity.start(this);
         else if (item.getResId() == R.string.home_search) SearchActivity.start(this);
         else if (item.getResId() == R.string.home_music) MusicActivity.start(this);
+        else if (item.getResId() == R.string.home_receive) ReceiveActivity.start(this);
+        else if (item.getResId() == R.string.home_cast) CastMenu.show(this);
         else if (item.getResId() == R.string.home_setting) SettingActivity.start(this);
     }
 

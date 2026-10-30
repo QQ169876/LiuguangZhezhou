@@ -151,6 +151,11 @@ public class VodPlaybackState {
         return detailKey.equals(key) && detailId.equals(id);
     }
 
+    /** 当前这部片子所在站点的 key：找下一季时要先看自己这家有没有 */
+    String getDetailKey() {
+        return detailKey;
+    }
+
     void setDetailRequest(String key, String id) {
         detailKey = key == null ? "" : key;
         detailId = id == null ? "" : id;

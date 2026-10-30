@@ -30,8 +30,8 @@ public class SelfHost {
     /** 线路名：在 Updater 里跟 GitHub 那几条线路区分开 */
     public static final String ROUTE = "self://";
 
-    /** 网盘域名：主用 169876.xyz，备 12356.cool（二级域名保持一致，都是 www） */
-    private static final String[] HOSTS = {"https://www.169876.xyz/dav", "https://www.12356.cool/dav"};
+    /** 网盘域名：主用 169876.xyz，备 169876.us.kg、12356.cool（都是同一份网盘的不同入口） */
+    private static final String[] HOSTS = {"https://www.169876.xyz/dav", "https://www.169876.us.kg/dav", "https://www.12356.cool/dav"};
     private static final String ROOT = "/apk/流光褶皱/";
     private static final String USER = "0007";
     private static final String PASS = "00003@";

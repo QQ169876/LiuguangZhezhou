@@ -25,4 +25,10 @@
         android:title="@string/nav_setting"
         android:visible="false" />
 
+    <item
+        android:id="@+id/receive"
+        android:icon="@drawable/ic_nav_cast"
+        android:title="@string/cast_receive"
+        android:visible="false" />
+
 </menu>

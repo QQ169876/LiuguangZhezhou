@@ -3,6 +3,7 @@ package com.fongmi.android.tv.server.process;
 import android.util.Base64;
 
 import com.fongmi.android.tv.App;
+import com.fongmi.android.tv.cast.CastRelay;
 import com.fongmi.android.tv.server.Nano;
 import com.fongmi.android.tv.server.impl.Process;
 import com.github.catvod.net.OkHttp;
@@ -41,6 +42,8 @@ public class Cast implements Process {
     public Response doResponse(IHTTPSession session, String url, Map<String, String> files) {
         try {
             Map<String, String> params = session.getParms();
+            String id = params.get("id"); // 多机同步给的是短牌（地址太长塞不进 UDP 包时用）
+            if (id != null && !id.isEmpty()) return transfer(CastRelay.url(id), CastRelay.headers(id));
             String target = params.get("url");
             if (target == null || target.isEmpty()) return Nano.error(EMPTY);
             Map<String, String> headers = decode(params.get("h"));

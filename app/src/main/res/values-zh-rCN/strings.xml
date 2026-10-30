@@ -300,8 +300,6 @@
     <string name="vod_refresh_success">点播源已更新</string>
     <string name="vod_refresh_fail">更新失败，继续使用缓存源数据</string>
 
-    <string name="sync_profile_switch">点播源已切换，同步设置已跟随切换并取消启用，确认无误后请手动开启</string>
-    <string name="sync_profile_new">点播源已更换，沿用之前的同步设置并取消启用，确认无误后请手动开启</string>
     <string name="setting_live">直播</string>
     <string name="setting_wall">壁纸</string>
     <string name="setting_player">播放设置</string>
@@ -493,14 +491,13 @@
 
     <string name="sync_risk_title">操作风险提示</string>
     <string name="sync_risk_confirm">我知道了</string>
+    <string name="sync_risk_moon">影视站的同步设置刚改动过（地址、账号或开关）。不同账号的观看记录、收藏属于不同数据，直接双向同步（合并）可能把两边数据混在一起。请确认本次操作以哪边为准：合并数据、使用云端覆盖本机、或使用本机覆盖云端。本机已按账号分开记账，别的账号的记录不会被带过去。</string>
+    <string name="sync_risk_dav">WebDAV 的同步设置刚改动过（地址、同步标识、账号或开关）。不同同步标识、不同账号里的观看记录、收藏属于不同数据，直接双向同步（合并）可能把两边数据混在一起。请确认本次操作以哪边为准：合并数据、使用云端覆盖本机、或使用本机覆盖云端。本机已按同步标识分开记账，别的同步标识的记录不会被带过去。</string>
     <string name="sync_guard_title">批量删除确认</string>
     <string name="sync_guard_message">本机上少了 %1$d 条观看记录、%2$d 条收藏，同步后网盘/影视站上的这些也会被删掉。是你在 App 里删的吗？</string>
     <string name="sync_guard_delete">是我删的，同步删除</string>
     <string name="sync_guard_keep">不是，先不删</string>
     <string name="sync_guard_skipped">本次同步保留了 %1$d 条记录：批量删除需要你确认后才执行</string>
-    <string name="sync_risk_vod">你正在切换点播源。收藏和观看记录会随点播源变化，同步设置也已跟随切换并取消启用。开启同步或执行同步前，请确认本机记录、收藏与云端是否需要合并、使用本机覆盖云端、或使用云端覆盖本机，避免数据互相混淆。</string>
-    <string name="sync_risk_moon">影视站的同步设置刚改动过（地址、账号或开关）。不同账号的观看记录、收藏属于不同数据，直接双向同步（合并）可能把两边数据混在一起。请确认本次操作以哪边为准：合并数据、使用云端覆盖本机、或使用本机覆盖云端。本机已按账号分开记账，别的账号的记录不会被带过去。</string>
-    <string name="sync_risk_dav">WebDAV 的同步设置刚改动过（地址、同步标识、账号或开关）。不同同步标识、不同账号里的观看记录、收藏属于不同数据，直接双向同步（合并）可能把两边数据混在一起。请确认本次操作以哪边为准：合并数据、使用云端覆盖本机、或使用本机覆盖云端。本机已按同步标识分开记账，别的同步标识的记录不会被带过去。</string>
     <string name="moontv_empty">站点网址或账号没填完整</string>
     <string name="moontv_saved">设置已保存</string>
     <string name="moontv_lan_saved">已收到影视站配置，同步保持关闭，请确认站点账号后再手动开启</string>
@@ -629,6 +626,11 @@
     <!-- Update -->
     <string name="update_version">发现新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在检测更新…</string>
+    <string name="update_pan115">已打开 115 网盘下载页，请在浏览器里下载安装包</string>
+    <string name="update_reinstall">重新安装</string>
+    <string name="update_pan115_fetch">正在从网盘取安装包…</string>
+    <string name="update_pan115_fail">网盘这条路没通，换个方式试试</string>
+    <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">更新</string>
     <string name="update_latest">当前已是最新版</string>
     <string name="update_check_fail">没连上更新服务器，请检查网络后再试</string>
@@ -739,4 +741,48 @@
     <string name="sync_status_running">%1$s同步中…</string>
     <string name="sync_status_done">%1$s同步完成</string>
     <string name="sync_status_fail">%1$s同步失败</string>
+    <string name="cast_receive_wait">正在等待广播…</string>
+    <string name="cast_receive_scanning">正在扫描…</string>
+    <string name="cast_receive_connected">正在接收 %1$s</string>
+    <string name="cast_receive_rotate">旋转画面</string>
+    <string name="cast_receive_exit">退出</string>
+    <string name="cast_receive_manual">连接指定地址</string>
+    <string name="cast_receive_manual_hint">填广播端 IP（可跨网段）</string>
+    <string name="cast_select_host">选择一个广播端</string>
+    <string name="cast_port_busy">广播端口都被占了（10086~10096）</string>
+    <string name="cast_started">已开始广播</string>
+    <string name="cast_stopped">已停止广播</string>
+    <string name="cast_pick">广播</string>
+    <string name="cast_setting">广播选项</string>
+    <string name="cast_pair_code">配对码</string>
+    <string name="cast_max_clients">最大接收数（留空 = 不限制）</string>
+    <string name="cast_auto_join">只扫到一台广播端时自动接入</string>
+    <string name="cast_saved">已保存</string>
+    <string name="cast_screen_on">开始屏幕广播</string>
+    <string name="cast_screen_off">停止屏幕广播</string>
+    <string name="cast_screen_running">正在把本机屏幕广播给局域网</string>
+    <string name="cast_hint_screen">拿不到播放地址，可在广播菜单里开启屏幕广播</string>
+    <string name="cast_transport">广播链路</string>
+    <string name="cast_screen_mode">屏幕广播</string>
+    <string name="cast_quality">屏幕画质</string>
+
+    <string-array name="cast_transport_entries">
+        <item>自动（能组播就组播，不稳自动降级）</item>
+        <item>组播优先（最省发送端上行）</item>
+        <item>只用 UDP 单播</item>
+        <item>只走中转（最稳、万源可用）</item>
+    </string-array>
+
+    <string-array name="cast_screen_entries">
+        <item>关</item>
+        <item>仅取不到播放地址时</item>
+        <item>总是</item>
+    </string-array>
+
+    <string-array name="cast_quality_entries">
+        <item>720p 30帧（稳、发热小）</item>
+        <item>1080p 30帧（清楚但费机器）</item>
+        <item>自动</item>
+    </string-array>
+    <string name="setting_cast">多机同步</string>
 </resources>

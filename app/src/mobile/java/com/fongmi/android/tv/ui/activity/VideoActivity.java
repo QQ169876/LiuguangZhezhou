@@ -20,6 +20,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.annotation.Nullable;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -45,6 +46,9 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.DanmakuApi;
 import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.cast.CastMedia;
+import com.fongmi.android.tv.cast.CastOption;
+import com.fongmi.android.tv.cast.CastSender;
 import com.fongmi.android.tv.bean.Danmaku;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.Flag;
@@ -148,6 +152,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean switching;
     private boolean sourceExhausted;
     private History mHistory;
+    private CastMedia mCast;
+    private Episode mEpisode;
     private boolean fullscreen;
     private boolean useParse;
     private boolean rotate;
@@ -340,7 +346,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.content.setOnLongClickListener(view -> onCopy());
         mBinding.actor.setOnLongClickListener(view -> onActorFollow());
         mBinding.control.back.setOnClickListener(view -> onBack());
-        mBinding.control.cast.setOnClickListener(view -> onCast());
+        mBinding.control.cast.setOnClickListener(view -> onBroadcast());
+        mBinding.control.cast.setOnLongClickListener(view -> onCast());
         mBinding.control.info.setOnClickListener(view -> onInfo());
         mBinding.control.keep.setOnClickListener(view -> onKeep());
         mBinding.control.play.setOnClickListener(view -> checkPlay());
@@ -703,6 +710,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void renderEpisodeSelection(Episode item) {
+        mEpisode = item;
         notifyItemChanged(mBinding.episode, mEpisodeAdapter);
         scrollToPosition(mBinding.episode, mEpisodeAdapter.getPosition());
     }
@@ -1060,8 +1068,30 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else finish();
     }
 
-    private void onCast() {
-        CastDialog.create(player()).history(mHistory).show(this);
+    /** 长按 = 菜单：广播选项，以及原来的投屏 / 局域网推送（DLNA 那套） */
+    private boolean onCast() {
+        String[] items = {getString(R.string.cast_setting), getString(R.string.push)};
+        new AlertDialog.Builder(this).setTitle(R.string.cast_pick).setItems(items, (dialog, which) -> {
+            if (which == 0) CastOption.show(this);
+            else CastDialog.create(player()).history(mHistory).show(this);
+        }).show();
+        return true;
+    }
+
+    /** 短按 = 广播开关：把本机正在放的同步给局域网上其它设备 */
+    private void onBroadcast() {
+        if (CastSender.get().sending()) {
+            CastSender.get().stop();
+            Notify.show(R.string.cast_stopped);
+        } else {
+            Notify.show(CastSender.get().start(media()) ? R.string.cast_started : R.string.cast_port_busy);
+        }
+    }
+
+    /** 广播要读的那些播放信息：播放器每次现取，标题/集数跟着界面更新 */
+    private CastMedia media() {
+        if (mCast == null) mCast = new CastMedia(this::player);
+        return mCast.title(getVodName()).ep(mEpisode == null ? "" : mEpisode.getName());
     }
 
     private void onInfo() {
@@ -1865,6 +1895,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     protected void onDestroy() {
+        if (mCast != null) mCast.alive(false);
+        CastSender.get().stop(); // 播放页没了就别占着端口
         mClock.release();
         saveHistory(true);
         MoonSync.touch();

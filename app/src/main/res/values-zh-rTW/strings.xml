@@ -300,8 +300,6 @@
     <string name="vod_refresh_success">點播源已更新</string>
     <string name="vod_refresh_fail">更新失敗，繼續使用快取來源資料</string>
 
-    <string name="sync_profile_switch">點播源已切換，同步設定已跟隨切換並取消啟用，確認無誤後請手動開啟</string>
-    <string name="sync_profile_new">點播源已更換，沿用之前的同步設定並取消啟用，確認無誤後請手動開啟</string>
     <string name="setting_live">直播</string>
     <string name="setting_wall">壁紙</string>
     <string name="setting_player">播放設定</string>
@@ -498,7 +496,6 @@
     <string name="sync_guard_delete">是我刪的，同步刪除</string>
     <string name="sync_guard_keep">不是，先不刪</string>
     <string name="sync_guard_skipped">本次同步保留了 %1$d 條記錄：批次刪除需要你確認後才執行</string>
-    <string name="sync_risk_vod">你正在切換點播源。收藏和觀看記錄會隨點播源變化，同步設定也已跟隨切換並取消啟用。開啟同步或執行同步前，請確認本機記錄、收藏與雲端是否需要合併、使用本機覆蓋雲端、或使用雲端覆蓋本機，避免資料互相混淆。</string>
     <string name="sync_risk_moon">影視站的同步設定剛改動過（位址、帳號或開關）。不同帳號的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按帳號分開記帳，別的帳號的記錄不會被帶過去。</string>
     <string name="sync_risk_dav">WebDAV 的同步設定剛改動過（位址、同步標識、帳號或開關）。不同同步標識、不同帳號裡的觀看記錄、收藏屬於不同資料，直接雙向同步（合併）可能把兩邊資料混在一起。請確認本次操作以哪邊為準：合併資料、使用雲端覆蓋本機、或使用本機覆蓋雲端。本機已按同步標識分開記帳，別的同步標識的記錄不會被帶過去。</string>
     <string name="moontv_empty">站點網址或帳號沒填完整</string>
@@ -628,6 +625,11 @@
     <string name="update_version">發現新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在檢查更新…</string>
     <string name="update_confirm">更新</string>
+    <string name="update_pan115">已打開 115 網盤下載頁，請在瀏覽器裡下載安裝包</string>
+    <string name="update_reinstall">重新安裝</string>
+    <string name="update_pan115_fetch">正在從網盤取安裝包…</string>
+    <string name="update_pan115_fail">網盤這條路沒通，換個方式試試</string>
+    <string name="update_reinstall_fail">安裝包沒取下來，檢查網絡後再試</string>
     <string name="update_latest">目前已是最新版</string>
     <string name="update_check_fail">連不上更新伺服器，請檢查網路後再試</string>
     <string name="update_checking">正在檢查中，請稍候…</string>
@@ -737,4 +739,48 @@
     <string name="sync_status_running">%1$s同步中…</string>
     <string name="sync_status_done">%1$s同步完成</string>
     <string name="sync_status_fail">%1$s同步失敗</string>
+    <string name="cast_receive_wait">正在等待廣播…</string>
+    <string name="cast_receive_scanning">正在掃描…</string>
+    <string name="cast_receive_connected">正在接收 %1$s</string>
+    <string name="cast_receive_rotate">旋轉畫面</string>
+    <string name="cast_receive_exit">結束</string>
+    <string name="cast_receive_manual">連線指定位址</string>
+    <string name="cast_receive_manual_hint">填廣播端 IP（可跨網段）</string>
+    <string name="cast_select_host">選擇一個廣播端</string>
+    <string name="cast_port_busy">廣播埠都被佔了（10086~10096）</string>
+    <string name="cast_started">已開始廣播</string>
+    <string name="cast_stopped">已停止廣播</string>
+    <string name="cast_pick">廣播</string>
+    <string name="cast_setting">廣播選項</string>
+    <string name="cast_pair_code">配對碼</string>
+    <string name="cast_max_clients">最大接收數（留空 = 不限制）</string>
+    <string name="cast_auto_join">只掃到一台廣播端時自動接入</string>
+    <string name="cast_saved">已儲存</string>
+    <string name="cast_screen_on">開始螢幕廣播</string>
+    <string name="cast_screen_off">停止螢幕廣播</string>
+    <string name="cast_screen_running">正在把本機螢幕廣播給區域網路</string>
+    <string name="cast_hint_screen">拿不到播放位址，可在廣播選單裡開啟螢幕廣播</string>
+    <string name="cast_transport">廣播線路</string>
+    <string name="cast_screen_mode">螢幕廣播</string>
+    <string name="cast_quality">螢幕畫質</string>
+
+    <string-array name="cast_transport_entries">
+        <item>自動（能群播就群播，不穩自動降級）</item>
+        <item>群播優先（最省發送端上行）</item>
+        <item>只用 UDP 單播</item>
+        <item>只走中轉（最穩、萬能可用）</item>
+    </string-array>
+
+    <string-array name="cast_screen_entries">
+        <item>關</item>
+        <item>僅取不到播放位址時</item>
+        <item>總是</item>
+    </string-array>
+
+    <string-array name="cast_quality_entries">
+        <item>720p 30幀（穩、發熱小）</item>
+        <item>1080p 30幀（清楚但費機器）</item>
+        <item>自動</item>
+    </string-array>
+    <string name="setting_cast">多機同步</string>
 </resources>

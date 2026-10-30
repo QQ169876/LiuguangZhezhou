@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.core.content.pm.ShortcutInfoCompat;
@@ -34,6 +35,8 @@ import com.fongmi.android.tv.player.extractor.Source;
 import com.fongmi.android.tv.receiver.ShortcutReceiver;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.ui.activity.ReceiveActivity;
+import com.fongmi.android.tv.cast.CastMenu;
 import com.fongmi.android.tv.ui.custom.SplashOverlay;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.FragmentStateManager;
@@ -169,6 +172,31 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         mBinding.navigation.getMenu().findItem(R.id.setting).setVisible(true);
         mBinding.navigation.getMenu().findItem(R.id.music).setVisible(MusicActivity.enabled());
         mBinding.navigation.getMenu().findItem(R.id.live).setVisible(LiveConfig.hasUrl());
+        mBinding.navigation.getMenu().findItem(R.id.receive).setVisible(true);
+        castLongPress();
+    }
+
+    /**
+     * 长按底栏那个「接收广播」图标 → 弹出多机同步菜单（接收 / 屏幕广播 / 选项）。
+     *
+     * 底栏项目数被 Material 卡死在 5 个，塞不下第六个按钮，所以这里借用长按：
+     * 点一下照旧直接进接收页，长按才展开菜单。
+     *
+     * ⚠️ 要靠 Material 内部那一层的子视图去做，属于 best-effort：
+     * 万一将来它换了内部结构拿不到子视图，长按就只是没反应 ——
+     * 反正设置页里还有一个「多机同步」的入口，不会变成死路。
+     */
+    private void castLongPress() {
+        try {
+            ViewGroup menu = (ViewGroup) mBinding.navigation.getChildAt(0);
+            View target = menu.findViewById(R.id.receive);
+            if (target == null) return;
+            target.setOnLongClickListener(view -> {
+                CastMenu.show(this);
+                return true;
+            });
+        } catch (Throwable ignored) {
+        }
     }
 
     private boolean openMusic() {
@@ -221,6 +249,10 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
 
     @Override
     public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.receive) {
+            ReceiveActivity.start(this); // 这是一个独立页面，不参与底栏的切换
+            return false;
+        }
         if (item.getItemId() == R.id.setting) return mManager.change(1);
         if (item.getItemId() == R.id.music) return openMusic();
         if (item.getItemId() == R.id.vod) return mManager.change(0);

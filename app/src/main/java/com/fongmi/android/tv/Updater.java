@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.Uri;
 import android.os.Process;
 import android.view.View;
 
@@ -18,6 +19,8 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.SelfHost;
 import com.fongmi.android.tv.ui.dialog.UpdateDialog;
 import com.fongmi.android.tv.utils.DebugLog;
+import com.fongmi.android.tv.utils.Pan115;
+import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Download;
 import com.fongmi.android.tv.utils.FileUtil;
 import com.fongmi.android.tv.utils.GhRoute;
@@ -48,9 +51,19 @@ import okhttp3.Response;
 
 /**
  * 版本检测与下载。
- * 线路策略：直连优先 → 公益加速代理（自动测速挑最快） → 本地 SOCKS5 兜底。
+ * 安装包的通道优先级（马先生 2026-10-30 定）：
+ *   1. 115 网盘直下（主）：App 自己拿账号登录 115，找到本机型最新包取 CDN 直链，
+ *      下下来直接交给系统安装器，下完登出。分享链接的免登录额度只有 1T，
+ *      耗尽后必须登录才能下载，所以登录这步绕不过去。
+ *   2. 浏览器打开分享页（备）：凭据没配（构建时没带 local.properties）或网上这条路
+ *      断了，交给浏览器让用户手动下。
+ *   3. 自建网盘 / GitHub（兜底）：设备上连浏览器都没有（多数电视）才走到这一步。
+ * 版本检测仍从自建网盘 / GitHub 的 json 读，115 那边只放安装包。
  */
 public class Updater implements Download.Callback, UpdateListener {
+
+    /** 主更新通道：115 网盘分享页（带提取码） */
+    private static final String PAN115 = "https://115cdn.com/s/swsuswd3hcv?password=0007";
 
     private static final int PROBE_TIMEOUT = 6000;
     /** 自建源的备用域名（12356.cool，走 CDN）首连慢，探测给它多一倍时间 */
@@ -772,7 +785,79 @@ public class Updater implements Download.Callback, UpdateListener {
     @Override
     public void onConfirm(View view) {
         view.setEnabled(false);
-        waitReady(view, 0);
+        if (pan115(view)) return;  // 主通道：115 账号登录，下完登出
+        if (openPan115()) return;  // 设备没装 App 可用通道（凭据没配）时退回浏览器
+        waitReady(view, 0);       // 备用：自建网盘 / GitHub
+    }
+
+    /**
+     * 115 主通道：后台登录 → 找本机型的最新包 → 取直链 → 下完交给系统安装器 → 登出。
+     * 凭据没配（Clean 构建没带 local.properties）或中途失败，一律退回原来的路子，
+     * 不让用户在这一点上卡住。
+     */
+    private boolean pan115(View view) {
+        if (!Pan115.ready()) return false;
+        Notify.show(R.string.update_pan115_fetch);
+        Task.execute(() -> {
+            File file = Pan115.fetch(apkName());
+            App.post(() -> {
+                if (file != null && file.exists() && isInstallable(file)) {
+                    install(file);
+                    dismiss();
+                } else {
+                    Notify.show(R.string.update_pan115_fail);
+                    if (openPan115()) return;
+                    waitReady(view, 0);
+                }
+            });
+        });
+        return true;
+    }
+
+    /**
+     * 重新安装（设置页那个按钮）：不看版本号，直接把最新的安装包拉下来交给系统安装器，
+     * 并顺手在**系统下载目录**留一份，用户想拷到别的机器上装也行。
+     * 凭据没配时没法走网盘，退回「检查更新」那条老路，按钮不至于按了没反应。
+     */
+    public static void reinstall(FragmentActivity activity) {
+        if (!Pan115.ready()) { // 凭据没配：走网盘那条用不了，退回检查更新
+            if (activity != null) create().force().start(activity);
+            return;
+        }
+        Notify.show(R.string.update_pan115_fetch);
+        Task.execute(() -> {
+            File file = Pan115.fetch(null);
+            boolean usable = isInstallable(file);
+            if (usable) FileUtil.saveToDownload(file, file.getName());
+            App.post(() -> {
+                if (!usable) {
+                    Notify.show(R.string.update_reinstall_fail);
+                    return;
+                }
+                FileUtil.installApkAsync(file, file.getName(), result -> {
+                    if (result == null) return; // 系统弹了安装界面，没我们的事了
+                    if (FileUtil.installNotify(file, file.getName())) return;
+                    DebugLog.d("Install", "重装包没能交给系统安装器：" + file.getName());
+                });
+            });
+        });
+    }
+
+    /**
+     * 打开 115 网盘的分享页。设备上有浏览器（手机基本都有）就交给浏览器，
+     * 这条通道上的下载登录后手动完成；一个都接不住返回 false，退回本机直下。
+     */
+    private boolean openPan115() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(PAN115)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            App.get().startActivity(intent);
+            Notify.show(R.string.update_pan115);
+            dismiss();
+            return true;
+        } catch (Exception e) {
+            DebugLog.d("Update", "没有能打开 115 分享页的浏览器，退回本机直下");
+            return false;
+        }
     }
 
     /**
@@ -888,9 +973,9 @@ public class Updater implements Download.Callback, UpdateListener {
 
     /**
      * 交给安装器之前，先用系统把包解析一遍：下到一半的、被代理替换过的、压根不是 APK 的，
-     * 这里就会返回空。以前什么都不查直接开装，才会出现「安装包是空的」。
+     * 这里就会返回 false。以前什么都不查直接开装，才会出现「安装包是空的」。
      */
-    private boolean isInstallable(File file) {
+    private static boolean isInstallable(File file) {
         if (file == null || !file.exists() || file.length() <= 0) return false;
         try {
             PackageInfo info = App.get().getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), 0);

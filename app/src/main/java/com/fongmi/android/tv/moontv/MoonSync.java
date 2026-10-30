@@ -11,6 +11,7 @@ import com.github.catvod.utils.Prefers;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.History;
 import com.fongmi.android.tv.bean.Keep;
+import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.utils.AliveBeat;
@@ -472,6 +473,9 @@ public class MoonSync {
             Entry entry = items.get(i);
             JSONObject item = entry.item;
             String name = entry.source.concat("+").concat(entry.id);
+            // 播放记录跟着「点播源 + 账号」匹配：站点不在当前源里，这条记录属于别的源，
+            // 不往当前源的本机库里拉（换了那个源再同步时自然会对上）
+            if (!knownSite(entry.source)) continue;
             if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             mark(owner, name);
             long saveTime = visible(entry.time(), i);
@@ -530,6 +534,9 @@ public class MoonSync {
         for (Entry entry : sort(remote)) {
             JSONObject item = entry.item;
             String name = entry.source.concat("+").concat(entry.id);
+            // 收藏跟着账号走，但本机库按源存：站点不在当前源里就先不落本地，
+            // 站点上那份还在，等用到那个源时会拉下来
+            if (!knownSite(entry.source)) continue;
             if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             mark(owner, name);
             long saveTime = entry.time();
@@ -579,7 +586,7 @@ public class MoonSync {
             // SyncGuard 只管反过来的那一种：本机误删 → 一同步把站点上的也删了。
             Set<String> delRecords = diff(loadSet(baseRecord()), remoteRecords);
             Set<String> delFavorites = diff(loadSet(baseFavorite()), remoteFavorites);
-            removed += deleteLocalHistory(delRecords, cid, ownerRecord);
+            removed += deleteLocalHistory(delRecords, ownerRecord);
             removed += deleteLocalKeep(delFavorites, ownerFavorite);
         }
         pruneTomb();
@@ -639,16 +646,17 @@ public class MoonSync {
      */
     public static void tombstoneLocal() {
         if (!MoonSetting.isSyncable()) return;
-        int cid = VodConfig.getCid();
         JSONObject ownerRecord = ownerRecord();
         JSONObject ownerFavorite = ownerFavorite();
         Map<String, List<String>> recordKeys = new HashMap<>();
         Map<String, List<String>> keepKeys = new HashMap<>();
-        for (History item : AppDatabase.get().getHistoryDao().findByCid(cid)) {
+        // 清空动的是整库（Clear.history / Clear.all 删的是全部记录和收藏），
+        // 所以墓碑要把每个点播源名下的都记上，不能只记当前源
+        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
             group(recordKeys, ownerRecord, siteKey(item));
         }
-        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(cid)) {
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
             group(keepKeys, ownerFavorite, siteKey(item));
         }
@@ -899,11 +907,12 @@ public class MoonSync {
         return count;
     }
 
-    private static int deleteLocalHistory(Set<String> siteKeys, int cid, JSONObject owner) {
+    private static int deleteLocalHistory(Set<String> siteKeys, JSONObject owner) {
         if (siteKeys.isEmpty()) return 0;
         int count = 0;
+        // 站点上的那条记录就是这个账号的数据（同一个站点 key 可能同时存在于多个点播源），
+        // 站点上没了，本机各源名下的那份都要删，不限当前源
         for (History item : AppDatabase.get().getHistoryDao().findAll()) {
-            if (item.getCid() != cid) continue;
             String name = siteKey(item);
             if (!siteKeys.contains(name)) continue;
             if (foreign(owner, name)) continue; // 站点上没了的是当前账号的，别的账号那份留在本地
@@ -917,7 +926,8 @@ public class MoonSync {
     private static int deleteLocalKeep(Set<String> siteKeys, JSONObject owner) {
         if (siteKeys.isEmpty()) return 0;
         int count = 0;
-        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
+        // 收藏跟着账号走：站点上删掉的这个收藏，本机各源名下的同一份都删
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
             String name = siteKey(item);
             if (!siteKeys.contains(name)) continue;
             if (foreign(owner, name)) continue;
@@ -933,6 +943,15 @@ public class MoonSync {
 
     private static String siteKey(Keep item) {
         return item.getSiteKey().concat("+").concat(item.getVodId());
+    }
+
+    /** 这个站点 key 在当前点播源里存不存在（站点不在就是别的源的数据） */
+    private static boolean knownSite(String source) {
+        if (source == null || source.isEmpty()) return false;
+        for (Site site : VodConfig.get().getSites()) {
+            if (source.equals(site.getKey())) return true;
+        }
+        return false;
     }
 
     private static String toSiteKey(String localKey) {
@@ -966,13 +985,14 @@ public class MoonSync {
         return set;
     }
 
+    /**
+     * 本机这一账号名下的收藏有哪些。收藏跟着账号走、不看点播源：
+     * 本机按源分开存（同一个收藏在不同源里可能各有一条），这里按 站点key+视频id 收成一个键，
+     * 否则站在 B 源同步时会把 A 源那份当成「本机没有」而删掉站点上的收藏。
+     */
     private static Set<String> localKeepKeys() {
-        return localKeepKeys(VodConfig.getCid());
-    }
-
-    private static Set<String> localKeepKeys(int cid) {
         Set<String> set = new HashSet<>();
-        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(cid)) {
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
             if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
             set.add(siteKey(item));
         }
@@ -1159,7 +1179,9 @@ public class MoonSync {
         JSONObject tomb = loadTomb(tombFavorite());
         JSONObject owner = ownerFavorite();
         boolean dirty = false;
-        for (Keep item : AppDatabase.get().getKeepDao().getVodByCid(VodConfig.getCid())) {
+        // 收藏跟着账号走：本机所有点播源名下的收藏都要推上去（每条里挑最近的那份），
+        // 只看当前源的话，换源之后别的源那份会因为「本机没有」被当成已删
+        for (Keep item : newestKeepPerSite()) {
             String source = item.getSiteKey();
             String id = item.getVodId();
             if (source.isEmpty() || id.isEmpty()) continue;
@@ -1188,6 +1210,19 @@ public class MoonSync {
         }
         if (dirty) Owner.save(Owner.MOON, Owner.FAVORITE, owner);
         return new int[]{add, update};
+    }
+
+    /** 本机所有收藏按 站点key+视频id 归并成一条（同一收藏在多个源里各存一份时取最新的那份） */
+    private static List<Keep> newestKeepPerSite() {
+        Map<String, Keep> picked = new LinkedHashMap<>();
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+            if (item.getType() != 0) continue;
+            String name = siteKey(item);
+            if (item.getSiteKey().isEmpty() || item.getVodId().isEmpty()) continue;
+            Keep old = picked.get(name);
+            if (old == null || item.getCreateTime() > old.getCreateTime()) picked.put(name, item);
+        }
+        return new ArrayList<>(picked.values());
     }
 
     /* ---------- 工具 ---------- */

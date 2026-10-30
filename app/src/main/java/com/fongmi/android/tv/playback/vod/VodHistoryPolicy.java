@@ -16,6 +16,9 @@ import com.fongmi.android.tv.utils.Util;
 
 public class VodHistoryPolicy {
 
+    /** 续播时往前让多少：3 秒 —— 够把上一集最后那点画面补回来，又不至于重看得烦 */
+    private static final long REWIND_MS = 3000L;
+
     public History findOrCreate(String key, String mark, Vod item) {
         History history = History.find(key);
         history = history == null ? create(key, item) : history;
@@ -111,7 +114,17 @@ public class VodHistoryPolicy {
         return history.copy();
     }
 
+    /**
+     * 起播位置：拿记录里的进度**往前让 REWIND_MS**（马先生 2026-10-30）。
+     *
+     * 为什么要回退：上次退出那一刻的画面其实已经看过了，从原位置起播等于那一小段
+     * 直接跳过去，剧情接不上；往回拧几秒能把上下文再过一遍，看着就顺了。
+     * 只回退不前进，贴着片头的就从头播。
+     */
     public long startPositionMs(History history) {
-        return history == null ? C.TIME_UNSET : Math.max(history.getOpening(), history.getPosition());
+        if (history == null) return C.TIME_UNSET;
+        long base = Math.max(history.getOpening(), history.getPosition());
+        if (base < 0) return C.TIME_UNSET; // 没记过进度（含 C.TIME_UNSET）
+        return Math.max(0, base - REWIND_MS);
     }
 }

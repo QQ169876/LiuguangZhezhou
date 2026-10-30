@@ -271,7 +271,7 @@ public class SyncManager {
         Backup backup = data.getData();
         List<History> history = new ArrayList<>();
         for (History item : backup.getHistory()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.RECORD);
             if (name == null) {
                 history.add(item);
             } else if (takeover || !Owner.foreign(Owner.DAV, bookRecord, name)) {
@@ -280,7 +280,7 @@ public class SyncManager {
         }
         List<Keep> keep = new ArrayList<>();
         for (Keep item : backup.getKeep()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.FAVORITE);
             if (name == null) {
                 keep.add(item);
             } else if (takeover || !Owner.foreign(Owner.DAV, bookFavorite, name)) {
@@ -295,11 +295,11 @@ public class SyncManager {
     /** 同步完这批数据都算进了当前同步标识的名下，记一笔 */
     private static void absorb(WebDavData data, JSONObject bookRecord, JSONObject bookFavorite) {
         for (History item : data.getData().getHistory()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.RECORD);
             if (name != null) Owner.mark(Owner.DAV, bookRecord, name);
         }
         for (Keep item : data.getData().getKeep()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.FAVORITE);
             if (name != null) Owner.mark(Owner.DAV, bookFavorite, name);
         }
     }
@@ -308,7 +308,7 @@ public class SyncManager {
     private static List<History> foreignHistory(JSONObject book) {
         List<History> result = new ArrayList<>();
         for (History item : AppDatabase.get().getHistoryDao().findAll()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.RECORD);
             if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
         }
         return result;
@@ -317,7 +317,7 @@ public class SyncManager {
     private static List<Keep> foreignKeep(JSONObject book) {
         List<Keep> result = new ArrayList<>();
         for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.FAVORITE);
             if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
         }
         return result;
@@ -737,29 +737,30 @@ public class SyncManager {
     }
 
     /** 上次同步时本机有、现在本机没有了的观看记录 */
+    /**
+     * 上次同步时本机有、现在本机没有了的观看记录。
+     * 换点播源不算删：记录的键里带着 cid，另一个源的那批数据照样在本机库里，
+     * 被排除在参与名单之外的只有「换了账号」的那部分，不在这儿。
+     */
     private static List<History> lostHistory(WebDavData base, WebDavData local, JSONObject book) {
         List<History> lost = new ArrayList<>();
         if (base == null) return lost; // 没同步过，无从比较
-        int cid = VodConfig.getCid();
         Set<String> keys = keys(local.getData().getHistory(), SyncManager::key);
         for (History item : base.getData().getHistory()) {
-            if (item.getCid() != cid) continue; // 换过点播源，那是另一套数据，不算删
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.RECORD);
             if (name != null && Owner.foreign(Owner.DAV, book, name)) continue; // 别的同步标识的，本来就不在本机
             if (!keys.contains(key(item))) lost.add(item);
         }
         return lost;
     }
 
-    /** 上次同步时本机有、现在本机没有了的收藏 */
+    /** 上次同步时本机有、现在本机没有了的收藏（收藏跟账号走，哪个源的都算） */
     private static List<Keep> lostKeep(WebDavData base, WebDavData local, JSONObject book) {
         List<Keep> lost = new ArrayList<>();
         if (base == null) return lost;
-        int cid = VodConfig.getCid();
         Set<String> keys = keys(local.getData().getKeep(), SyncManager::key);
         for (Keep item : base.getData().getKeep()) {
-            if (item.getCid() != cid) continue;
-            String name = Owner.key(item.getKey());
+            String name = Owner.key(item.getKey(), Owner.FAVORITE);
             if (name != null && Owner.foreign(Owner.DAV, book, name)) continue;
             if (!keys.contains(key(item))) lost.add(item);
         }
