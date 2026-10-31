@@ -424,7 +424,9 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             // 屏幕广播根本没有「播放器」，那字段一直是 pause —— 照着它把 playWhenReady 设成 false，
             // 播放器就连包都不去收，界面上就是一块永远「缓冲中」的黑屏（这次日志里就是这么黑的）。
             boolean udp = CastMode.isUdp(packet.mode());
-            play(url, udp ? 0 : packet.position(), udp || CastPacket.STATE_PLAY.equals(packet.state()), packet.speed(), packet.subs());
+            // 屏幕广播（含 HTTP 主动拉流）也是直播管道：张嘴就播、从头播、不 seek
+            boolean live = udp || CastPacket.KIND_SCREEN.equals(packet.kind());
+            play(url, live ? 0 : packet.position(), live || CastPacket.STATE_PLAY.equals(packet.state()), packet.speed(), packet.subs());
             return;
         }
         follow(packet);
@@ -479,15 +481,15 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         if (player == null) return;
         int mode = packet.mode();
         boolean udp = CastMode.isUdp(mode);
-        // 直播管道同理：state 只管视频播放器那一档，UDP 一律当作「一直在播」，
+        // 屏幕广播（含 HTTP 拉流）跟 UDP 一样是直播管道：只跟播/暂停，不对位、不 seek
+        boolean live = udp || CastPacket.KIND_SCREEN.equals(packet.kind());
+        // 直播管道同理：state 只管视频播放器那一档，屏幕/ UDP 一律当作「一直在播」，
         // 否则广播端一句 pause 就能把接收端按死成黑屏
-        boolean shouldPlay = udp || CastPacket.STATE_PLAY.equals(packet.state());
+        boolean shouldPlay = live || CastPacket.STATE_PLAY.equals(packet.state());
         if (player.getPlayWhenReady() != shouldPlay) player.setPlayWhenReady(shouldPlay);
-        // ⚠️ 组播 / 单播收到的就是广播端此刻发出的那一包，**所有接收端天然同步**，
-        // 这里再拿心跳里的 position 去对位毫无意义（对的是广播端从头播的位置，
-        // 而本机是从「接进来的那一刻」开始算的），只会在每个心跳上白白 seek 一次、
-        // 把画面按在地上摩擦。所以 UDP 这两档只跟播/暂停，位置一概不管。
-        if (CastMode.isUdp(mode)) {
+        // ⚠️ 直播流收到的就是广播端此刻发出的那一包，**所有接收端天然同步**，
+        // 这里再拿心跳里的 position 去对位毫无意义，只会把画面按在地上摩擦。
+        if (live) {
             report(mode);
             syncTitle(packet);
             return;

@@ -61,6 +61,14 @@ public final class CastMux {
     }
 
     /**
+     * 有新客户端通过 HTTP 拉进来：把节目表计时清零，下一帧就会补一份 PAT/PMT，
+     * 让这个「中途才连上」的接收端能立刻拿到节目参数出画。
+     */
+    public void requestHeader() {
+        lastPatMs = 0L;
+    }
+
+    /**
      * 塞一帧视频（Annex-B，带起始码），ptsUs 是这一帧的呈现时刻（微秒）。
      * PCR 跟着关键帧走，并且保证不超过 100ms 就有一次（标准要求的下限）。
      */

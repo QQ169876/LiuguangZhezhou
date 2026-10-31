@@ -28,7 +28,10 @@ public final class CastOutlet implements CastBus.Listener {
     private final String kind;
 
     private volatile String url = "";
+    private volatile String title = "";
+    private volatile String ep = "";
     private volatile Map<String, String> headers = Collections.emptyMap();
+    private volatile Map<String, String> subs = Collections.emptyMap();
     private volatile int mode = CastMode.HTTP;
     private volatile String group = "";
     private volatile int mport;
@@ -56,6 +59,8 @@ public final class CastOutlet implements CastBus.Listener {
             close();
             return false;
         }
+        this.title = title == null ? "" : title;
+        this.ep = ep == null ? "" : ep;
         alive = true;
         // 屏幕那一路没有「源」这个概念，本身就是能直传的；视频则要等解析出地址才知道
         tsSource = CastPacket.KIND_SCREEN.equals(kind) || CastMode.isTs(url);
@@ -79,6 +84,14 @@ public final class CastOutlet implements CastBus.Listener {
             return;
         }
         if (CastMode.isUdp(mode)) startTx(); // 换了流就把原来那个拉取线程换掉
+    }
+
+    /**
+     * 屏幕广播专用：把本机 {@code /screen} 的 HTTP 主动拉流地址报给接收端。
+     * 这是不依赖 AP 组播的可靠一档，所以屏幕广播把它作为首选；UDP 仍保留作低延迟备选。
+     */
+    public void screenUrl(String url) {
+        share(CastPacket.KIND_SCREEN, "", "", url, Collections.emptyMap(), Collections.emptyMap());
     }
 
     public boolean sending() {
@@ -111,6 +124,9 @@ public final class CastOutlet implements CastBus.Listener {
     /* ---------------- 往外给 ---------------- */
 
     public void share(String kind, String title, String ep, String url, Map<String, String> headers, Map<String, String> subs) {
+        // 记一份：万一 UDP 那两档要降到 HTTP，得把源地址（连带字幕）原样再报一次给接收端
+        this.headers = headers == null ? Collections.emptyMap() : headers;
+        this.subs = subs == null ? Collections.emptyMap() : subs;
         bus.share(kind, title, ep, url, headers, subs);
     }
 
@@ -139,6 +155,17 @@ public final class CastOutlet implements CastBus.Listener {
      * 那些容器得重新封装才能流式发，现阶段没做，也不打算做。
      */
     private void pick() {
+        // 屏幕广播：HTTP 主动拉流是「不依赖 AP 组播」的首选档（地址在 screenHttp）；
+        // 万一本机服务起不来（地址空），才退回组播/单播 UDP
+        if (CastPacket.KIND_SCREEN.equals(kind) && !screenHttp.isEmpty()) {
+            mode = CastMode.HTTP;
+            bad = 0;
+            group = CastMode.group(Util.getAndroidId() + "|" + System.nanoTime());
+            apply();
+            bus.share(kind, title, ep, screenHttp, Collections.emptyMap(), Collections.emptyMap());
+            tx.close();
+            return;
+        }
         mode = CastMode.initial(CastSetting.getTransport(), tsSource);
         // 屏幕那一路没有「源地址」可中转，万一用户把偏好选成了只走中转，这里得兜回组播
         if (mode == CastMode.HTTP && CastPacket.KIND_SCREEN.equals(kind)) mode = CastMode.MULTICAST;
@@ -173,12 +200,28 @@ public final class CastOutlet implements CastBus.Listener {
         int next = CastMode.fallback(mode);
         bad = 0;
         if (next == CastMode.NONE) return;
-        // 屏幕广播降无可降：单播就是它的底线，再往下降（中转）就没有画面了
-        if (next == CastMode.HTTP && CastPacket.KIND_SCREEN.equals(kind)) return;
         mode = next;
         apply();
-        if (CastMode.isUdp(mode)) tx.retarget(mode, mode == CastMode.MULTICAST ? group : "", mport);
-        else tx.close();
+        if (CastMode.isUdp(mode)) {
+            tx.retarget(mode, mode == CastMode.MULTICAST ? group : "", mport);
+        } else {
+            // 降到 HTTP：屏幕报 /screen 主动拉流地址；视频得把**源地址**再报一遍
+            // （接收端在 HTTP 档就是拿着这个地址自己去拉流，报错报空它就永远黑屏）。
+            // share 会置 dirty，下一次心跳一定带上 —— 已经连上的接收端也能跟着换轨。
+            tx.close();
+            if (CastPacket.KIND_SCREEN.equals(kind)) {
+                bus.share(kind, title, ep, screenHttp, Collections.emptyMap(), Collections.emptyMap());
+            } else {
+                bus.share(null, title, ep, url, headers, subs);
+            }
+        }
+    }
+
+    /** 屏幕广播的 HTTP 主动拉流地址（{@code http://本机IP:端口/screen}） */
+    private String screenHttp = "";
+
+    public void setScreenHttp(String url) {
+        this.screenHttp = url == null ? "" : url;
     }
 
     /* ---------------- 总线回调 ---------------- */

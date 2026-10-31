@@ -346,7 +346,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.content.setOnLongClickListener(view -> onCopy());
         mBinding.actor.setOnLongClickListener(view -> onActorFollow());
         mBinding.control.back.setOnClickListener(view -> onBack());
-        mBinding.control.cast.setOnClickListener(view -> onBroadcast());
+        mBinding.control.cast.setOnClickListener(view -> onPush());
         mBinding.control.cast.setOnLongClickListener(view -> onCast());
         mBinding.control.info.setOnClickListener(view -> onInfo());
         mBinding.control.keep.setOnClickListener(view -> onKeep());
@@ -1068,17 +1068,26 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else finish();
     }
 
-    /** 长按 = 菜单：广播选项，以及原来的投屏 / 局域网推送（DLNA 那套） */
+    /** 长按 = 菜单：广播（开关）、广播选项。默认的短按走 DLNA 推送 */
     private boolean onCast() {
-        String[] items = {getString(R.string.cast_setting), getString(R.string.push)};
+        boolean sending = CastSender.get().sending();
+        String[] items = {
+                getString(sending ? R.string.cast_video_off : R.string.cast_video_on),
+                getString(R.string.cast_setting)
+        };
         new AlertDialog.Builder(this).setTitle(R.string.cast_pick).setItems(items, (dialog, which) -> {
-            if (which == 0) CastOption.show(this);
-            else CastDialog.create(player()).history(mHistory).show(this);
+            if (which == 0) onBroadcast();
+            else CastOption.show(this);
         }).show();
         return true;
     }
 
-    /** 短按 = 广播开关：把本机正在放的同步给局域网上其它设备 */
+    /** 短按 = DLNA 推送：选一台局域网渲染设备把当前片子推过去（默认行为） */
+    private void onPush() {
+        CastDialog.create(player()).history(mHistory).show(this);
+    }
+
+    /** 长按菜单里的「广播」开关：把本机正在放的同步给局域网上其它设备 */
     private void onBroadcast() {
         if (CastSender.get().sending()) {
             CastSender.get().stop();

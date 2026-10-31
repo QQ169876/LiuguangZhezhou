@@ -12,6 +12,7 @@ import com.fongmi.android.tv.server.process.Local;
 import com.fongmi.android.tv.server.process.Media;
 import com.fongmi.android.tv.server.process.Parse;
 import com.fongmi.android.tv.server.process.Proxy;
+import com.fongmi.android.tv.server.process.Screen;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Asset;
 
@@ -42,6 +43,7 @@ public class Nano extends NanoHTTPD {
         process = new ArrayList<>();
         process.add(new Action());
         process.add(new Cast());
+        process.add(new Screen());
         process.add(new Cache());
         process.add(new Local());
         process.add(new Media());
@@ -63,6 +65,11 @@ public class Nano extends NanoHTTPD {
 
     public static Response error(Response.Status status, String text) {
         return newFixedLengthResponse(status, MIME_PLAINTEXT, text);
+    }
+
+    /** 给「源源不断」的流用：边产生边分块推，不预设长度（屏幕广播的 TS 走这里） */
+    public static Response stream(Response.IStatus status, String mime, InputStream input) {
+        return newChunkedResponse(status, mime, input);
     }
 
     @Override

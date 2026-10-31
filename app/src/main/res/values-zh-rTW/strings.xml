@@ -767,6 +767,8 @@
     <string name="cast_saved">已儲存</string>
     <string name="cast_screen_on">開始螢幕廣播</string>
     <string name="cast_screen_off">停止螢幕廣播</string>
+    <string name="cast_video_on">開始廣播</string>
+    <string name="cast_video_off">停止廣播</string>
     <string name="cast_screen_running">正在把本機螢幕廣播給區域網路</string>
     <string name="cast_screen_fail_launch">螢幕廣播沒能起來，麻煩再點一次</string>
     <string name="cast_hint_screen">拿不到播放位址，可在廣播選單裡開啟螢幕廣播</string>

@@ -21,6 +21,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.DisplayMetrics;
 import android.view.Surface;
 
@@ -60,6 +61,8 @@ public class ScreenCastService extends Service {
 
     private CastOutlet outlet;
     private CastMux mux;
+    private ScreenStream stream;
+    private PowerManager.WakeLock wake;
     private MediaProjection projection;
     private VirtualDisplay display;
     private MediaCodec video;
@@ -220,12 +223,42 @@ public class ScreenCastService extends Service {
             }
         }, new Handler(Looper.getMainLooper()));
         outlet = new CastOutlet(CastPacket.KIND_SCREEN);
+        // 先把本机 HTTP 拉流地址准备好：屏幕广播首选这一档（接收端主动连，不依赖 AP 组播）
+        try {
+            com.fongmi.android.tv.server.Server.get().start();
+            String screen = com.fongmi.android.tv.server.Server.get().getAddress("/screen");
+            outlet.setScreenHttp(screen);
+            DebugLog.d(TAG, "屏幕拉流地址 " + screen);
+        } catch (Throwable e) {
+            DebugLog.d(TAG, "本机 HTTP 服务起不来，退回 UDP：" + e.getClass().getSimpleName());
+        }
         if (!outlet.open(Util.getDeviceName(), "")) {
             DebugLog.d(TAG, "广播端服务没能开起来（端口被占？）");
             return false;
         }
         DebugLog.d(TAG, "广播服务已就位 设备=" + Util.getDeviceName());
-        mux = new CastMux(outlet::write);
+        // 息屏保活：CPU 一睡，VirtualDisplay 就不再往编码器喂帧，广播等于悄悄停摆。
+        // 只在广播期间持有，收摊立刻还回去。撑不住系统杀后台（那是 MIUI 的规矩），
+        // 但能保证「只要进程还活着，息屏后画面照发」。
+        try {
+            wake = ((PowerManager) getSystemService(Context.POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "oktv:screencast");
+            wake.setReferenceCounted(false);
+            wake.acquire();
+        } catch (Throwable e) {
+            DebugLog.d(TAG, "保活锁没拿到：" + e.getClass().getSimpleName());
+        }
+        // HTTP 主动拉流分发器：新客户端连上时让编码线程补一份节目表
+        stream = new ScreenStream(() -> {
+            CastMux m = mux;
+            if (m != null) m.requestHeader();
+        });
+        ScreenStream.set(stream);
+        // TS 同时走两路口：原来的 UDP（组播/单播）+ HTTP 分发（不依赖 AP 组播）
+        mux = new CastMux((chunk, len) -> {
+            outlet.write(chunk, len);
+            ScreenStream s = stream;
+            if (s != null) s.publish(chunk, len);
+        });
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         return startEncode(targetHeight(Math.max(metrics.widthPixels, metrics.heightPixels), Math.min(metrics.widthPixels, metrics.heightPixels)));
     }
@@ -258,7 +291,11 @@ public class ScreenCastService extends Service {
             Surface input = video.createInputSurface();
             video.start();
             surface = input;
-            display = projection.createVirtualDisplay("oktv-cast", width, target, metrics.densityDpi, 0, input, null, null);
+            // ⚠️ flags 必须带 AUTO_MIRROR：MediaProjection 录屏的标准用法。
+            // 之前传 0，小米等设备在画面「不是本 surface 主动刷新」时就不往编码器喂帧
+            // ——日志里表现为「编码开始」之后永远没有「首帧已发出」。
+            int flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR;
+            display = projection.createVirtualDisplay("oktv-cast", width, target, metrics.densityDpi, flags, input, null, null);
             startAudio();
             drainThread = new Thread(this::drain, "cast-screen");
             drainThread.setDaemon(true);
@@ -519,6 +556,18 @@ public class ScreenCastService extends Service {
         if (mux != null) {
             mux.flush();
             mux = null;
+        }
+        if (stream != null) {
+            stream.close();
+            stream = null;
+        }
+        ScreenStream.set(null);
+        if (wake != null) {
+            try {
+                wake.release();
+            } catch (Throwable ignored) {
+            }
+            wake = null;
         }
         CastOutlet target = outlet;
         outlet = null;
