@@ -56,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 接收广播的全屏页。
@@ -115,6 +116,8 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     private int askedMode = CastMode.NONE;
     private long askedAt;
     private long sincePlay;
+    private int probed;
+    private AlertDialog chooser;
     private String dataUrl = "";
     private WifiManager.MulticastLock lock;
     private final Runnable retry = this::rescan;
@@ -232,10 +235,35 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         if (bus == null) return;
         if (list.isEmpty()) {
             binding.standbyText.setText(R.string.cast_receive_wait);
+            diag(0, 0);
             return;
         }
         scanning = true;
+        probed = list.size();
+        diag(probed, bus.hosts().size());
         bus.scan(list);
+    }
+
+    /**
+     * 待机页上的自检数据：本机 IP、这一轮撒了多少个地址、回来几个包。
+     *
+     * 为什么写在屏上而不是只在日志里：老盒子（这次的小米盒子就是 Android 6）那类设备
+     * 不一定开着调试日志，而这种「这台机器看不见那台机器」的毛病，
+     * 一眼看到「本机 IP 多少、几个回包」，比翻日志快得多 —— 「0 个回包」和「根本没拿到 IP」完全是两种修法。
+     */
+    private void diag(int probedCount, int replies) {
+        Set<String> ips = CastNet.selfIps();
+        String head = ips.isEmpty() ? getString(R.string.cast_receive_diag_noip)
+                : ResUtil.getString(R.string.cast_receive_diag_self, TextUtils.join(" / ", ips));
+        String text = head + "\n" + ResUtil.getString(R.string.cast_receive_diag_scan, probedCount, replies);
+        if (replies == 0 && !ips.isEmpty()) text += "\n" + getString(R.string.cast_receive_diag_tip);
+        binding.standbyInfo.setText(text);
+        DebugLog.d(TAG, "自检 IP=" + TextUtils.join(",", ips) + " 探了 " + probedCount + " 个 / 回包 " + replies + " 个");
+    }
+
+    private void dismissChooser() {
+        if (chooser != null && chooser.isShowing()) chooser.dismiss();
+        chooser = null;
     }
 
     private void connectManual() {
@@ -267,6 +295,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             join(hosts.get(0));
             return;
         }
+        if (chooser != null && chooser.isShowing()) return; // 清单还在屏上就别再叠一层
         List<CastHost> items = new ArrayList<>(hosts);
         String[] labels = new String[items.size()];
         for (int i = 0; i < items.size(); i++) {
@@ -275,7 +304,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             labels[i] = playing.isEmpty() ? item.getLabel() : item.getLabel() + "　" + playing;
         }
         // 取消了也别把这一页卡死：继续按周期重扫，用户改主意时列表会自己回来
-        new AlertDialog.Builder(this).setTitle(R.string.cast_select_host)
+        chooser = new AlertDialog.Builder(this).setTitle(R.string.cast_select_host)
                 .setItems(labels, (dialog, which) -> join(items.get(which)))
                 .setNegativeButton(android.R.string.cancel, (dialog, which) -> scheduleRetry())
                 .setOnCancelListener(dialog -> scheduleRetry())
@@ -284,6 +313,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
 
     private void join(CastHost host) {
         if (bus == null || host == null) return;
+        dismissChooser();
         lastUuid = host.getUuid();
         standby = false;
         pickDataPort(host.getIp()); // 单播那一档要先把自己的收包端口告诉对方，所以得赶在报名之前
@@ -302,6 +332,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         App.removeCallbacks(watchdog);
         playUrl = "";
         releaseLock();
+        dismissChooser();
         if (player != null) player.setPlayWhenReady(false);
         binding.standby.setVisibility(View.VISIBLE);
         binding.standbyText.setText(R.string.cast_receive_wait);
@@ -316,9 +347,13 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
 
     @Override
     public void onFound(CastHost host) {
-        // 广播端又回来了就立刻接上（uuid 相同才算「同一台」）
         App.post(() -> {
-            if (standby && host.getUuid().equals(lastUuid)) join(host);
+            if (!standby || host == null) return;
+            // ⚠️ 慢机器（老盒子）上，回包常常迟到若扫描窗口之后：它肯出现就是一次机会，别放过
+            diag(probed, bus == null ? 0 : bus.hosts().size());
+            DebugLog.d(TAG, "扫到 " + host.getLabel() + " " + host.getIp() + " 正在放：" + host.getPlaying());
+            if (bus != null && CastSetting.isAutoJoin() && bus.hosts().size() == 1) join(host);
+            else if (host.getUuid().equals(lastUuid)) join(host);
         });
     }
 
@@ -742,6 +777,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         App.removeCallbacks(hide);
         App.removeCallbacks(watchdog);
         releaseLock();
+        dismissChooser();
         if (bus != null) {
             bus.leave();
             bus.close();

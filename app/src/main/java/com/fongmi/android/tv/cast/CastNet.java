@@ -118,6 +118,33 @@ public final class CastNet {
         return self.isEmpty() ? "" : self.iterator().next();
     }
 
+    /**
+     * 每个网段的定向广播地址（192.168.3.255 那一类的），外加整机的 255.255.255.255。
+     *
+     * 为什么要额外探这几个：有的路由器把「这台主机 → 那台主机」的单播掐了（组播/广播隔离除外），
+     * 却放行发往广播地址的包；广播端照样听得见，而它的回包是单播回到我们自己的端口，通常没事。
+     * 一网段的规模就几个包，多撒这一把不亏。
+     */
+    public static List<String> broadcasts() {
+        List<String> result = new ArrayList<>();
+        for (NetworkInterface nif : interfaces()) {
+            for (InterfaceAddress item : nif.getInterfaceAddresses()) {
+                InetAddress address = item.getAddress();
+                if (!(address instanceof Inet4Address) || address.isLoopbackAddress()) continue;
+                short bits = item.getNetworkPrefixLength();
+                if (bits < 1 || bits > 30) continue;
+                long ip = toLong(address);
+                if (ip <= 0) continue;
+                if (address.getHostAddress().startsWith("169.254.")) continue;
+                long value = (ip & mask(bits)) | ((1L << (32 - bits)) - 1);
+                String host = toIp(value);
+                if (!result.contains(host)) result.add(host);
+            }
+        }
+        result.add("255.255.255.255");
+        return result;
+    }
+
     private static long toLong0(String ip) {
         if (ip == null || ip.isEmpty()) return 0L;
         try {

@@ -745,6 +745,10 @@
     <string name="cast_receive_exit">結束</string>
     <string name="cast_receive_manual">連線指定位址</string>
     <string name="cast_receive_manual_hint">填廣播端 IP（可跨網段）</string>
+    <string name="cast_receive_diag_self">本機 IP：%1$s</string>
+    <string name="cast_receive_diag_scan">掃了 %1$d 個位址，收到 %2$d 個回包</string>
+    <string name="cast_receive_diag_noip">這台機器沒拿到區域網路 IP：先看一眼網路線或 Wi-Fi</string>
+    <string name="cast_receive_diag_tip">一個回包都沒有：先確認手機那邊已經開了廣播，而且跟這台機器在同一個 Wi-Fi。要是路由器開了「AP 隔離」，就在上面的框裡直接填手機的 IP。</string>
     <string name="cast_receive_link">%1$s鏈路</string>
     <string name="cast_receive_opening">正在拉流…</string>
     <string name="cast_receive_retry">正在重新起播…</string>

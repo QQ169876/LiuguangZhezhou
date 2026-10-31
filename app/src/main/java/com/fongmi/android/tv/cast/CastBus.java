@@ -77,8 +77,10 @@ public final class CastBus {
     private static final long PEER_TTL = 12000L;
     /** 接收端眼里：广播端这么久没心跳就算断了 */
     private static final long LOST_MS = 6000L;
-    /** 发完探测包再等多久收回应 */
-    private static final long SCAN_WAIT_MS = 4000L;
+    /** 发完探测包再等多久收回应（老盒子一网段的包得花好几秒才撒完，留够余量） */
+    private static final long SCAN_WAIT_MS = 6000L;
+    /** 扫到的广播端多久没再打招呼就当它走了 */
+    private static final long SCAN_KEEP_MS = 20000L;
     /** 一次把整个网段的 254 个地址撒出去，24 条线够快又不至于把小路由器打死 */
     private static final int SCAN_THREADS = 24;
     /** 收包线程的醒转间隔：既能响应关闭，又不空转 */
@@ -314,10 +316,12 @@ public final class CastBus {
      */
     public void scan(Collection<String> targets) {
         ensureClient();
-        found.clear();
+        // ⚠️ 别整个清空：慢机器（老盒子）上回包常常晚于那 4 秒的窗口，
+        // 上一轮擦得干干净净，就等于把慢半拍的那一半广播端永远筛掉了。改成只除淘汰下来的旧条目。
+        expire(SCAN_KEEP_MS);
         final int generation = ++epoch;
-        if (targets == null || targets.isEmpty()) {
-            listener.onScanEnd(0);
+        if (targets == null || targets.isEmpty() && CastNet.broadcasts().isEmpty()) {
+            listener.onScanEnd(found.size());
             return;
         }
         ExecutorService pool = scanPool();
@@ -326,9 +330,22 @@ public final class CastBus {
             final String host = ip.trim();
             pool.execute(() -> probe(host, generation));
         }
+        for (String ip : CastNet.broadcasts()) {
+            if (ip == null || ip.trim().isEmpty()) continue;
+            final String host = ip.trim();
+            pool.execute(() -> probe(host, generation));
+        }
         schedule(() -> {
             if (generation == epoch) listener.onScanEnd(found.size());
         }, SCAN_WAIT_MS);
+    }
+
+    /** 把这段时间（毫秒）没再露面的广播端清掉：走了的别老占着清单 */
+    private void expire(long keepMs) {
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, CastHost> entry : found.entrySet()) {
+            if (now - entry.getValue().getSeen() > keepMs) found.remove(entry.getKey());
+        }
     }
 
     public void cancelScan() {

@@ -18,12 +18,13 @@
     <!-- 待机时盖在上面的提示：广播端还没来、或者它刚收工 -->
     <LinearLayout
         android:id="@+id/standby"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp">
 
         <TextView
             android:id="@+id/standbyText"
@@ -33,6 +34,19 @@
             android:text="@string/cast_receive_wait"
             android:textColor="@color/white"
             android:textSize="20sp" />
+
+        <!-- 扫不到的时候，把「本机 IP / 扫了多少地址 / 几个回包」直接写在屏上：
+             老盒子那类设备上不一定开着调试日志，这一行就是第一手证据 -->
+        <TextView
+            android:id="@+id/standbyInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:textColor="#B3FFFFFF"
+            android:textSize="13sp"
+            tools:text="本机 IP：192.168.3.20\n扫了 254 个地址，收到 0 个回包" />
 
         <EditText
             android:id="@+id/standbyInput"

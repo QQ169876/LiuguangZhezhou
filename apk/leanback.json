@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.130",
-  "desc": "手机版设置页缓存/版本/重装整行排版；接收端顶栏自动隐藏；接收端黑屏看门狗（显示链路原因、自动换链路重试）",
-  "code": 690,
-  "tag": "v5.6.130-liuguang"
+  "name": "流光褶皱TV v5.6.131",
+  "desc": "接收端排障：待机页显示本机IP/扫了多少地址/几个回包；扫描不再每轮全清（老盒子回包晚到也能接上）；补发定向广播与255.255.255.255探测；王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng) 王 (wáng)",
+  "code": 691,
+  "tag": "v5.6.131-liuguang"
 }

@@ -747,6 +747,10 @@
     <string name="cast_receive_exit">退出</string>
     <string name="cast_receive_manual">连接指定地址</string>
     <string name="cast_receive_manual_hint">填广播端 IP（可跨网段）</string>
+    <string name="cast_receive_diag_self">本机 IP：%1$s</string>
+    <string name="cast_receive_diag_scan">扫了 %1$d 个地址，收到 %2$d 个回包</string>
+    <string name="cast_receive_diag_noip">这台机器没拿到局域网 IP：先看一眼网线或 Wi-Fi</string>
+    <string name="cast_receive_diag_tip">一个回包都没有：先确认手机那边已经开了广播，并且跟这台机器在同一个 Wi-Fi。要是路由器开了「AP 隔离」，就在上面的框里直接填手机的 IP。</string>
     <string name="cast_receive_link">%1$s链路</string>
     <string name="cast_receive_opening">正在拉流…</string>
     <string name="cast_receive_retry">正在重新起播…</string>

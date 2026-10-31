@@ -757,6 +757,10 @@
     <string name="cast_receive_exit">Exit</string>
     <string name="cast_receive_manual">Connect</string>
     <string name="cast_receive_manual_hint">Sender IP (cross subnet ok)</string>
+    <string name="cast_receive_diag_self">Device IP: %1$s</string>
+    <string name="cast_receive_diag_scan">Probed %1$d addresses, %2$d answered</string>
+    <string name="cast_receive_diag_noip">No LAN IP on this box — check the cable / Wi-Fi</string>
+    <string name="cast_receive_diag_tip">Nobody answered. Make sure the sender is already casting, and that it sits on the same Wi-Fi. Router running AP isolation? Type the sender IP in the box above.</string>
     <string name="cast_receive_link">%1$s link</string>
     <string name="cast_receive_opening">正在拉流…</string>
     <string name="cast_receive_retry">正在重新起播…</string>
