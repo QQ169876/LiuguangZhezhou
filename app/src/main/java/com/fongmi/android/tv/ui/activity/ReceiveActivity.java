@@ -6,15 +6,30 @@ import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
+import androidx.media3.common.Tracks;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.RenderersFactory;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.ExtractorsFactory;
+import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.ui.PlayerView;
 import androidx.viewbinding.ViewBinding;
 
@@ -31,9 +46,11 @@ import com.fongmi.android.tv.cast.CastTx;
 import com.fongmi.android.tv.databinding.ActivityReceiveBinding;
 import com.fongmi.android.tv.player.track.TrackUtil;
 import com.fongmi.android.tv.ui.base.BaseActivity;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Util;
+import com.github.catvod.net.OkHttp;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,6 +63,9 @@ import java.util.Map;
  * 这一页**没有播放控制**：进度、暂停、换集全听广播端的，界面上只留两个本地操作
  * —— 旋转画面（每台设备各转各的）和退出。
  *
+ * 顶栏（左边在播什么 + 右边那两个按钮）走的是普通播放器那一套：点一下屏或者按一下遥控器就浮出来，
+ * 几秒没人动自己淡下去，不挡画面；待机等人来的时候它一直挂着，不然只剩一块黑屏没人知道该干嘛。
+ *
  * 状态上有三种：扫描中 → 跟播中 → 待机（广播端收工了）
  * 从「待机」回到「跟播」是自动的：广播端一回来，自己就接上并接着播。
  *
@@ -54,14 +74,28 @@ import java.util.Map;
  * - 组播：udp://组地址:端口，加入这个组；
  * - 单播：udp://本机IP:本机端口，报端口给广播端，让它往这儿发。
  * ⚠️ 后两种在部分 AP 上可能收不稳，这时候本页会把质量反馈打回去，由广播端统一往下降一档。
+ *
+ * 「连上了却只有一块黑屏」是最难猜的一种毛病，所以这里先看住它：
+ * 起播之后盯着有没有真的画面出来，没有就把原因写在顶栏（哪条链路 / 缓冲还是出错），
+ * 同时催广播端换链路；出错信息也留在屏上，比一闪而过的 toast 好认得多。
  */
 public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
+
+    private static final String TAG = "CastRx";
 
     /** 待机时重扫的间隔 */
     private static final long RETRY_MS = 3000L;
     /** 单播端口的取材范围 */
     private static final int PORT_FROM = 41100;
     private static final int PORT_TO = 41300;
+    /** 顶栏多久没人动就淡下去 */
+    private static final long MENU_MS = 4000L;
+    /** 看门狗多久来看一眼 */
+    private static final long WATCH_MS = 5000L;
+    /** 超过这个时间还没画面，就算这条链路不行了 */
+    private static final long NO_FRAME_MS = 12000L;
+    /** 同一条地址最多重开几次 —— UDP 接晚了常常重开一次就好了 */
+    private static final int MAX_RETRY = 3;
 
     private ActivityReceiveBinding binding;
     private CastBus bus;
@@ -76,9 +110,16 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     private int stalls;
     private int clean;
     private int dataPort;
+    private int lastMode = CastMode.HTTP;
+    private int retries;
+    private int askedMode = CastMode.NONE;
+    private long askedAt;
+    private long sincePlay;
     private String dataUrl = "";
     private WifiManager.MulticastLock lock;
     private final Runnable retry = this::rescan;
+    private final Runnable hide = this::fadeOutMenu;
+    private final Runnable watchdog = this::checkPlaying;
 
     public static void start(Context context) {
         context.startActivity(new Intent(context, ReceiveActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -94,8 +135,10 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     protected void initView(Bundle savedInstanceState) {
         binding.standbyText.setText(R.string.cast_receive_scanning);
         binding.status.setText("");
+        binding.hint.setText("");
         bus = new CastBus(this, Util.getAndroidId(), Util.getDeviceName());
         bus.setAuth(CastSetting.getCode(), 0); // 接收端自身没有人数上限的说法，这里只用来配配对码
+        showMenu(); // 待机页得一直挂着那两个按钮，别让人对着黑屏发愣
         startScan(Collections.emptyList());
     }
 
@@ -104,6 +147,67 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         binding.exit.setOnClickListener(view -> finish());
         binding.rotate.setOnClickListener(view -> rotate());
         binding.standbyManual.setOnClickListener(view -> connectManual());
+        binding.receiveLayout.setOnTouchListener((view, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) pokeMenu();
+            return false; // 别把点击吃掉：按钮自己还得响应
+        });
+    }
+
+    /* ============================ 顶栏显隐 ============================ */
+
+    /** 屏幕上有动静：没影的就浮出来，已经在屏上的重新开始倒计时 */
+    private void pokeMenu() {
+        if (binding.topBar.getVisibility() != View.VISIBLE) {
+            showMenu();
+            return;
+        }
+        App.removeCallbacks(hide);
+        if (!standby) App.post(hide, MENU_MS);
+    }
+
+    private void showMenu() {
+        App.removeCallbacks(hide);
+        if (binding.topBar.getVisibility() != View.VISIBLE) {
+            binding.topBar.setVisibility(View.VISIBLE);
+            binding.topBar.setAlpha(0f);
+        }
+        binding.topBar.animate().alpha(1f).setDuration(180).start();
+        if (!standby) App.post(hide, MENU_MS);
+    }
+
+    private void fadeOutMenu() {
+        App.removeCallbacks(hide);
+        // 焦点还在按钮上就再等等：遥控器派的场合，收掉了用户会按空
+        if (binding.rotate.hasFocus() || binding.exit.hasFocus()) {
+            App.post(hide, MENU_MS);
+            return;
+        }
+        binding.topBar.animate().alpha(0f).setDuration(220).withEndAction(() -> binding.topBar.setVisibility(View.INVISIBLE)).start();
+    }
+
+    /** 遥控器：按一下先把顶栏叫出来（退出键除外，该让人出去的还是得出去） */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
+            if (binding.topBar.getVisibility() != View.VISIBLE) {
+                showMenu();
+                return true;
+            }
+            App.removeCallbacks(hide);
+            if (!standby) App.post(hide, MENU_MS);
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /** 顶栏第二行：把「现在到底怎么了」说清楚，别让用户对着一块黑屏自己猜 */
+    private void setHint(String text) {
+        if (binding.hint.getText().toString().equals(text)) return;
+        binding.hint.setText(text);
+        if (!text.isEmpty()) showMenu(); // 有话要说就把顶栏浮出来，说完自然会收
+    }
+
+    private String linkText(int mode) {
+        return ResUtil.getString(R.string.cast_receive_link, CastMode.text(mode));
     }
 
     /* ============================ 扫描与选择 ============================ */
@@ -186,18 +290,25 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         bus.join(host);
         binding.standby.setVisibility(View.GONE);
         binding.status.setText(ResUtil.getString(R.string.cast_receive_connected, host.getLabel()));
+        setHint("");
+        DebugLog.d(TAG, "接入广播端 " + host.getLabel() + " " + host.getIp());
+        showMenu();
     }
 
     /** 回到待机：广播端收工了 / 联系不上了。不退出，等着它回来 */
     private void idle() {
         standby = true;
         App.removeCallbacks(retry);
+        App.removeCallbacks(watchdog);
         playUrl = "";
         releaseLock();
         if (player != null) player.setPlayWhenReady(false);
         binding.standby.setVisibility(View.VISIBLE);
         binding.standbyText.setText(R.string.cast_receive_wait);
         binding.status.setText("");
+        setHint("");
+        DebugLog.d(TAG, "回到待机，等广播端回来");
+        showMenu();
         scheduleRetry();
     }
 
@@ -251,11 +362,22 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
 
     private void tick(CastPacket packet) {
         String url = resolve(packet);
-        if (url.isEmpty()) return; // 只有位置没有地址（比如广播端还没拿到播放地址）：等下一个包
+        lastMode = packet.mode();
+        DebugLog.d(TAG, "心跳 mode=" + CastMode.text(packet.mode()) + " state=" + packet.state() + " pos=" + packet.position() + " url=" + mask(url));
+        if (url.isEmpty()) {
+            // 只有位置没有地址：要么广播端还没拿到播放地址（等下一个包就行），
+            // 要么是本机的收包通道没开出来（UDP 那两档要占端口 / 认自己的 IP），后者得让广播端改走中转
+            if (!CastMode.isUdp(packet.mode())) return;
+            setHint(getString(R.string.cast_receive_no_link));
+            DebugLog.d(TAG, "本机没算出收包地址（udp）mode=" + CastMode.text(packet.mode()));
+            askDowngrade();
+            return;
+        }
         if (!url.equals(playUrl)) {
             playUrl = url;
             stalls = 0;
             clean = 0;
+            retries = 0;
             playTitle = packet.title();
             playEp = packet.ep();
             // ⚠️ UDP 那两档是「直播管道」：收到什么播什么，不能 seek —— 底下会自己说清楚
@@ -264,6 +386,13 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             return;
         }
         follow(packet);
+    }
+
+    /** 地址又长又带 token，日志里留个头尾就够了 */
+    private String mask(String url) {
+        if (url.isEmpty()) return "(空)";
+        if (url.length() <= 48) return url;
+        return url.substring(0, 32) + "…" + url.substring(url.length() - 12);
     }
 
     /**
@@ -372,6 +501,77 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         if (position > 0) seek(position); // 0 = 从头播（直播管道也走这条），不用多此一举去 seek
         target.setPlayWhenReady(playWhenReady);
         binding.status.setText(ResUtil.getString(R.string.cast_receive_connected, playTitle.isEmpty() ? playEp : playTitle + "　" + playEp));
+        setHint(linkText(lastMode));
+        DebugLog.d(TAG, "起播 " + CastMode.text(lastMode) + " " + mask(url));
+        App.removeCallbacks(watchdog);
+        sincePlay = System.currentTimeMillis();
+        App.post(watchdog, WATCH_MS);
+    }
+
+    /**
+     * 看门狗：地址给了、流也起了，可画面迟迟不来 —— 这种最容易变成「黑屏干等」。
+     *
+     * 到点问一句：还没就绪就是在拉流（写清楚是哪条链路）；就绪了却没有视频轨，
+     * 说明这条路上压根没画面；超过 {@link #NO_FRAME_MS} 就催广播端换一档链路（降级顺序见 {@link CastMode}）。
+     */
+    private void checkPlaying() {
+        if (standby || player == null) return;
+        int state = player.getPlaybackState();
+        boolean video = hasVideoTrack();
+        if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
+            setHint(video ? "" : getString(R.string.cast_receive_no_video));
+            if (!video) App.post(watchdog, WATCH_MS); // 只有声音的话再等等，别急着下结论
+            return;
+        }
+        long waited = System.currentTimeMillis() - sincePlay;
+        DebugLog.d(TAG, "起播 " + waited + "ms 仍未出画 state=" + name(state) + " mode=" + CastMode.text(lastMode) + " 视频轨=" + video);
+        if (waited > NO_FRAME_MS) {
+            setHint(linkText(lastMode) + " · " + getString(R.string.cast_receive_stall));
+            askDowngrade(); // 直接催它降一档，省得在这儿干等
+        } else {
+            setHint(linkText(lastMode) + " · " + getString(R.string.cast_receive_opening));
+        }
+        App.post(watchdog, WATCH_MS);
+    }
+
+    /**
+     * 催广播端降一档链路。
+     *
+     * 之所以要掐着节奏：接收端每次打招呼都会捎上「我这儿不行」，广播端那边见一次就降一档，
+     * 要是每秒都喊，组播 → 单播 → 中转会在几秒内一口气降到底，等于没给中间那档机会。
+     * 所以同一条链路只催一次，换过链路（或隔了一个窗口还没动静）才再开口。
+     */
+    private void askDowngrade() {
+        long now = System.currentTimeMillis();
+        if (bus == null) return;
+        if (lastMode == askedMode && now - askedAt < NO_FRAME_MS) return;
+        askedMode = lastMode;
+        askedAt = now;
+        DebugLog.d(TAG, "催广播端降链路，当前 " + CastMode.text(lastMode));
+        bus.report(2);
+    }
+
+    /** 现在有没有真正的画面轨：那种「只有声音没有图像」的黑屏，靠它认出来 */
+    private boolean hasVideoTrack() {
+        Tracks tracks = player.getCurrentTracks();
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int i = 0; i < group.length; i++) if (group.isTrackSelected(i)) return true;
+        }
+        return false;
+    }
+
+    /** UDP 是断一下就接不回来的直播管道：出错时重新开一次，接晚了常常一次就救回来 */
+    private void retryOnce() {
+        if (retries++ >= MAX_RETRY) return;
+        App.post(() -> {
+            if (standby || player == null) return;
+            DebugLog.d(TAG, "重新起播一次 mode=" + CastMode.text(lastMode));
+            setHint(linkText(lastMode) + " · " + getString(R.string.cast_receive_retry));
+            player.prepare();
+            sincePlay = System.currentTimeMillis();
+            App.post(watchdog, WATCH_MS);
+        }, 1500L);
     }
 
     /** 外挂字幕跟着过去：广播端挂了什么就列什么，一个 Baltics 都不用改 */
@@ -419,8 +619,8 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     /**
      * 单播端口：挑一个没人占的，交给播放器去绑，并把端口号报给广播端。
      *
- * 为什么要在报名之前定下来：广播端那边一见到 JOIN 就开始往这个端口发货，
- * 晚一步报，前面几个包就落在没人听的端口上了 —— TS 本身能从中间接起来，丢几个包不致命，但没必要白丢。
+     * 为什么要在报名之前定下来：广播端那边一见到 JOIN 就开始往这个端口发货，
+     * 晚一步报，前面几个包就落在没人听的端口上了 —— TS 本身能从中间接起来，丢几个包不致命，但没必要白丢。
      */
     private void pickDataPort(String hostIp) {
         if (dataPort > 0) return;
@@ -437,28 +637,67 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         if (bus != null) bus.setDataPort(dataPort);
     }
 
+    /**
+     * 起播放器。
+     *
+     * ⚠️ 这里刻意照着本机播片那套参数配：解码失败允许回落、挂上 FFmpeg 那几个扩展解码、
+     * TS 的时间戳搜索范围放大到默认的十倍、取流走本机那套 OkHttp。
+     * 早先为省事用 {@code new ExoPlayer.Builder(this)} 的默认值，结果不少机器上就是
+     * 「连上了但只有一块黑屏」——缺的不是地址，是把这条流接下来扯到底的那点配置。
+     */
     private ExoPlayer ensurePlayer() {
         if (player != null) return player;
-        ExoPlayer created = new ExoPlayer.Builder(this).build();
+        RenderersFactory renderers = new DefaultRenderersFactory(this)
+                .setEnableDecoderFallback(true)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
+        ExoPlayer created = new ExoPlayer.Builder(this, renderers).setMediaSourceFactory(sourceFactory()).build();
+        created.setAudioAttributes(AudioAttributes.DEFAULT, true);
+        created.setHandleAudioBecomingNoisy(true);
         created.setRepeatMode(Player.REPEAT_MODE_OFF);
         created.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
-                if (playbackState == Player.STATE_BUFFERING) stalls++;
+                DebugLog.d(TAG, "播放器状态 " + name(playbackState) + " mode=" + CastMode.text(lastMode) + " 视频轨=" + hasVideoTrack());
+                if (playbackState == Player.STATE_BUFFERING) {
+                    stalls++;
+                    setHint(linkText(lastMode) + " · " + getString(R.string.cast_receive_opening));
+                } else if (playbackState == Player.STATE_READY) {
+                    setHint(hasVideoTrack() ? "" : getString(R.string.cast_receive_no_video));
+                }
             }
 
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
-                Notify.show(String.valueOf(error.getMessage()));
+                String msg = String.valueOf(error.getMessage());
+                Notify.show(msg);
+                // 出错原因留在屏幕上：toast 一闪而过，事后没人说得清刚才那块黑屏是怎么来的
+                setHint(linkText(lastMode) + " · " + msg);
+                DebugLog.d(TAG, "播放出错 " + msg + " mode=" + CastMode.text(lastMode) + " url=" + mask(playUrl));
                 // 播不动：立刻让广播端知道，它会顺着往下掉一档链路
                 stalls = 0;
                 clean = 0;
-                if (bus != null) bus.report(2);
+                askedAt = 0L; // 出错跟干等是两回事，这里的催额度重新算
+                askDowngrade();
+                retryOnce(); // UDP 接晚了不一定是真出错，重新起一次常常就好了
             }
         });
         binding.player.setPlayer(created);
         player = created;
         return created;
+    }
+
+    private MediaSource.Factory sourceFactory() {
+        OkHttpDataSource.Factory http = new OkHttpDataSource.Factory(OkHttp.player());
+        DataSource.Factory data = new DefaultDataSource.Factory(App.get(), http);
+        ExtractorsFactory extractors = new DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES * 10);
+        return new DefaultMediaSourceFactory(data, extractors);
+    }
+
+    private static String name(int state) {
+        if (state == Player.STATE_IDLE) return "idle";
+        if (state == Player.STATE_BUFFERING) return "buffering";
+        if (state == Player.STATE_READY) return "ready";
+        return "ended";
     }
 
     /* ============================ 旋转 ============================ */
@@ -500,6 +739,8 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     protected void onDestroy() {
         super.onDestroy();
         App.removeCallbacks(retry);
+        App.removeCallbacks(hide);
+        App.removeCallbacks(watchdog);
         releaseLock();
         if (bus != null) {
             bus.leave();

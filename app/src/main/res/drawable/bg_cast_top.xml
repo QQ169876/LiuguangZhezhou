@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- 接收页顶栏的护眼底：上深下透，字压在画面上也看得清，跟一般播放器那一层一样 -->
+    <gradient
+        android:angle="270"
+        android:centerColor="#66000000"
+        android:endColor="#00000000"
+        android:startColor="#CC000000" />
+
+</shape>

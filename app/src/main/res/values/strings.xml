@@ -627,6 +627,7 @@
     <string name="update_version">New version <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">Checking for updates…</string>
     <string name="update_reinstall">Reinstall</string>
+    <string name="setting_reinstall_hint">重装当前版本</string>
     <string name="update_reinstall_fetch">正在取安装包…</string>
     <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">Update</string>
@@ -756,6 +757,12 @@
     <string name="cast_receive_exit">Exit</string>
     <string name="cast_receive_manual">Connect</string>
     <string name="cast_receive_manual_hint">Sender IP (cross subnet ok)</string>
+    <string name="cast_receive_link">%1$s link</string>
+    <string name="cast_receive_opening">正在拉流…</string>
+    <string name="cast_receive_retry">正在重新起播…</string>
+    <string name="cast_receive_stall">迟迟没有画面，已请广播端换链路</string>
+    <string name="cast_receive_no_video">这条流里没有画面（只有声音？）</string>
+    <string name="cast_receive_no_link">本机没能开出收包通道，已请广播端改走中转</string>
     <string name="cast_select_host">Select a sender</string>
     <string name="cast_port_busy">All broadcast ports (10086-10096) are taken</string>
     <string name="cast_started">Broadcasting</string>

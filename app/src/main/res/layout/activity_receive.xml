@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/receiveLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -56,39 +57,73 @@
 
     </LinearLayout>
 
-    <!-- 左上角：正在接收谁 / 哪部片子 -->
-    <TextView
-        android:id="@+id/status"
-        android:layout_width="wrap_content"
+    <!-- 顶栏：左边在接收什么，右边两个本地操作。没人动几秒就淡出去，跟播放器那一层一个做法 -->
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="start|top"
-        android:padding="20dp"
-        android:shadowColor="#99000000"
-        android:shadowRadius="6"
-        android:textColor="@color/white"
-        android:textSize="16sp" />
+        android:layout_gravity="top"
+        android:background="@drawable/bg_cast_top"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="26dp"
+        android:visibility="invisible"
+        tools:visibility="visible">
 
-    <!-- 右上角：只留两个本地操作，播放进度一并交给广播端 -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="end|top"
-        android:orientation="vertical"
-        android:padding="20dp">
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/rotate"
-            style="@style/Control"
-            android:focusable="true"
-            android:text="@string/cast_receive_rotate" />
+            <TextView
+                android:id="@+id/status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:shadowColor="#99000000"
+                android:shadowRadius="6"
+                android:singleLine="true"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
 
-        <TextView
-            android:id="@+id/exit"
-            style="@style/Control"
-            android:layout_marginTop="8dp"
-            android:focusable="true"
-            android:text="@string/cast_receive_exit" />
+            <TextView
+                android:id="@+id/hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:shadowColor="#99000000"
+                android:shadowRadius="6"
+                android:textColor="#CCFFFFFF"
+                android:textSize="13sp"
+                tools:text="中转链路 · 正在拉流…" />
 
-    </LinearLayout>
+        </androidx.appcompat.widget.LinearLayoutCompat>
+
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/rotate"
+                style="@style/Control"
+                android:focusable="true"
+                android:text="@string/cast_receive_rotate" />
+
+            <TextView
+                android:id="@+id/exit"
+                style="@style/Control"
+                android:layout_marginTop="8dp"
+                android:focusable="true"
+                android:text="@string/cast_receive_exit" />
+
+        </androidx.appcompat.widget.LinearLayoutCompat>
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
 
 </FrameLayout>

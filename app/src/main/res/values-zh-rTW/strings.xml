@@ -626,6 +626,7 @@
     <string name="update_check">正在檢查更新…</string>
     <string name="update_confirm">更新</string>
     <string name="update_reinstall">重新安裝</string>
+    <string name="setting_reinstall_hint">重裝當前版本</string>
     <string name="update_reinstall_fetch">正在取安裝包…</string>
     <string name="update_reinstall_fail">安裝包沒取下來，檢查網絡後再試</string>
     <string name="update_latest">目前已是最新版</string>
@@ -744,6 +745,12 @@
     <string name="cast_receive_exit">結束</string>
     <string name="cast_receive_manual">連線指定位址</string>
     <string name="cast_receive_manual_hint">填廣播端 IP（可跨網段）</string>
+    <string name="cast_receive_link">%1$s鏈路</string>
+    <string name="cast_receive_opening">正在拉流…</string>
+    <string name="cast_receive_retry">正在重新起播…</string>
+    <string name="cast_receive_stall">遲遲沒有畫面，已請廣播端換鏈路</string>
+    <string name="cast_receive_no_video">這條流裡沒有畫面（只有聲音？）</string>
+    <string name="cast_receive_no_link">本機沒能開出收包通道，已請廣播端改走中轉</string>
     <string name="cast_select_host">選擇一個廣播端</string>
     <string name="cast_port_busy">廣播埠都被佔了（10086~10096）</string>
     <string name="cast_started">已開始廣播</string>
