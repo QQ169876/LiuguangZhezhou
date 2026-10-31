@@ -625,10 +625,8 @@
     <string name="update_version">發現新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在檢查更新…</string>
     <string name="update_confirm">更新</string>
-    <string name="update_pan115">已打開 115 網盤下載頁，請在瀏覽器裡下載安裝包</string>
     <string name="update_reinstall">重新安裝</string>
-    <string name="update_pan115_fetch">正在從網盤取安裝包…</string>
-    <string name="update_pan115_fail">網盤這條路沒通，換個方式試試</string>
+    <string name="update_reinstall_fetch">正在取安裝包…</string>
     <string name="update_reinstall_fail">安裝包沒取下來，檢查網絡後再試</string>
     <string name="update_latest">目前已是最新版</string>
     <string name="update_check_fail">連不上更新伺服器，請檢查網路後再試</string>

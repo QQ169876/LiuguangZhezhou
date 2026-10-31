@@ -585,10 +585,12 @@
                 android:textSize="18sp" />
 
         </androidx.appcompat.widget.LinearLayoutCompat>
+        <!-- 缓存 / 版本 / 重新安装：三格并列，各自独立聚焦，遥控器左右就能走过去 -->
         <androidx.appcompat.widget.LinearLayoutCompat
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <androidx.appcompat.widget.LinearLayoutCompat
@@ -600,21 +602,28 @@
                 android:background="@drawable/selector_item"
                 android:focusable="true"
                 android:focusableInTouchMode="true"
-                android:orientation="horizontal">
+                android:gravity="center_vertical"
+                android:nextFocusDown="@id/clear"
+                android:nextFocusRight="@id/version"
+                android:orientation="vertical"
+                android:padding="12dp">
 
                 <com.google.android.material.textview.MaterialTextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="16dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
                     android:text="@string/setting_cache"
                     android:textColor="@color/white"
-                    android:textSize="18sp" />
+                    android:textSize="16sp" />
 
                 <com.google.android.material.textview.MaterialTextView
                     android:id="@+id/cacheText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="end"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
                     android:textColor="@color/white"
                     android:textSize="18sp"
                     tools:text="1.0 MB" />
@@ -625,44 +634,65 @@
                 android:id="@+id/version"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="16dp"
                 android:layout_weight="1"
                 android:background="@drawable/selector_item"
                 android:focusable="true"
                 android:focusableInTouchMode="true"
-                android:orientation="horizontal">
+                android:gravity="center_vertical"
+                android:nextFocusDown="@id/clear"
+                android:nextFocusLeft="@id/cache"
+                android:nextFocusRight="@id/reinstall"
+                android:orientation="vertical"
+                android:padding="12dp">
 
                 <com.google.android.material.textview.MaterialTextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="16dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
                     android:text="@string/setting_version"
                     android:textColor="@color/white"
-                    android:textSize="18sp" />
+                    android:textSize="16sp" />
 
                 <com.google.android.material.textview.MaterialTextView
                     android:id="@+id/versionText"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="16dp"
-                    android:layout_weight="1"
-                    android:gravity="end"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
                     android:textColor="@color/white"
                     android:textSize="18sp"
-                    tools:text="1.2.1" />
+                    tools:text="5.6.128" />
 
-                <!-- 「检查版本」和「重新安装」并排：前者看有没有新版，后者不管版本直接拉包装 -->
+            </androidx.appcompat.widget.LinearLayoutCompat>
+
+            <!-- 不管有没有新版本，直接把当前版本的安装包拉下来重装 -->
+            <androidx.appcompat.widget.LinearLayoutCompat
+                android:id="@+id/reinstall"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/selector_item"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:gravity="center"
+                android:nextFocusDown="@id/clear"
+                android:nextFocusLeft="@id/version"
+                android:orientation="vertical"
+                android:padding="12dp">
+
                 <com.google.android.material.textview.MaterialTextView
-                    android:id="@+id/reinstall"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/selector_item"
-                    android:focusable="true"
-                    android:focusableInTouchMode="true"
+                    android:gravity="center"
                     android:text="@string/update_reinstall"
                     android:textColor="@color/white"
                     android:textSize="18sp" />
 
             </androidx.appcompat.widget.LinearLayoutCompat>
+
         </androidx.appcompat.widget.LinearLayoutCompat>
 
         <androidx.appcompat.widget.LinearLayoutCompat

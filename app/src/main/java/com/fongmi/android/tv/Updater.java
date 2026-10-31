@@ -7,7 +7,6 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
-import android.net.Uri;
 import android.os.Process;
 import android.view.View;
 
@@ -19,7 +18,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.SelfHost;
 import com.fongmi.android.tv.ui.dialog.UpdateDialog;
 import com.fongmi.android.tv.utils.DebugLog;
-import com.fongmi.android.tv.utils.Pan115;
+import com.fongmi.android.tv.utils.Gitee;
 import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Download;
 import com.fongmi.android.tv.utils.FileUtil;
@@ -51,19 +50,14 @@ import okhttp3.Response;
 
 /**
  * 版本检测与下载。
- * 安装包的通道优先级（马先生 2026-10-30 定）：
- *   1. 115 网盘直下（主）：App 自己拿账号登录 115，找到本机型最新包取 CDN 直链，
- *      下下来直接交给系统安装器，下完登出。分享链接的免登录额度只有 1T，
- *      耗尽后必须登录才能下载，所以登录这步绕不过去。
- *   2. 浏览器打开分享页（备）：凭据没配（构建时没带 local.properties）或网上这条路
- *      断了，交给浏览器让用户手动下。
- *   3. 自建网盘 / GitHub（兜底）：设备上连浏览器都没有（多数电视）才走到这一步。
- * 版本检测仍从自建网盘 / GitHub 的 json 读，115 那边只放安装包。
+ * 安装包的通道优先级（马先生 2026-10-31 定）：
+ *   1. Gitee 发行仓（主，默认）：公开的仓库里只放版本文件和打好包的安装包，
+ *      国内直连、下载快，不再依赖 115 网盘的登录额度。
+ *   2. 自建网盘（备）：版本文件里带本机型包的完整地址，也是直连，gitee 取不到包时接着走它。
+ *   3. GitHub Release（兜底）：前面两条都不通时才走，过公益加速代理，慢还可能撞上旧缓存。
+ * 三个源的探测并发，版本文件都只读 json，谁给的版本新算谁的。
  */
 public class Updater implements Download.Callback, UpdateListener {
-
-    /** 主更新通道：115 网盘分享页（带提取码） */
-    private static final String PAN115 = "https://115cdn.com/s/swsuswd3hcv?password=0007";
 
     private static final int PROBE_TIMEOUT = 6000;
     /** 自建源的备用域名（12356.cool，走 CDN）首连慢，探测给它多一倍时间 */
@@ -219,14 +213,51 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 定用哪份：自建源和 GitHub 比版本号，谁新用谁；一样新就用自建源（下载快、不经代理）。
-     * 自建源上没有这台机型对应的包（apk 为空）时，仍然走 GitHub。
+     * 定用哪份：Gitee（默认主）→ 自建网盘 → GitHub，比版本号谁新用谁；一样新的优先 Gitee。
+     * 自建源上没有这台机型对应的包（apk 为空）时，仍然往下走。
      */
     private static Probe pick(List<Probe> probes, Probe self) {
+        Probe gitee = giteeOf(probes);
         Probe best = newest(probes);
+        if (gitee != null && gitee.code > 0 && (best == null || gitee.code >= best.code)) return gitee;
         if (self == null || self.apk == null || self.apk.isEmpty()) return best;
         if (best == null || self.code >= best.code) return self;
         return best;
+    }
+
+    /** 自建源和 Gitee 都是直连自己的东西：地址本来就是完整的，不能往前面拼加速前缀 */
+    private static boolean straight(String route) {
+        return SelfHost.is(route) || Gitee.is(route);
+    }
+
+    /** 预热结果里已经含 Gitee 那份的话，就不用再问一遍了 */
+    private static Probe giteeOf(List<Probe> probes) {
+        if (probes == null) return null;
+        for (Probe item : probes) if (Gitee.is(item.route)) return item;
+        return null;
+    }
+
+    /**
+     * 问 Gitee 发行仓要版本文件（默认主通道）。
+     * 走的不是 GhRoute 那几条线路 —— 国内直连，不用代理，也不用任何认证。
+     */
+    private static Probe giteeProbe() {
+        long start = System.currentTimeMillis();
+        Request request = new Request.Builder().url(Gitee.jsonUrl())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .get().build();
+        try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
+            if (!res.isSuccessful() || res.body() == null) return null;
+            String body = res.body().string();
+            int code = new JSONObject(body).optInt("code");
+            if (code <= 0) return null;
+            DebugLog.d("Update", "Gitee 返回 code=" + code + " 用时 " + (System.currentTimeMillis() - start) + "ms");
+            return new Probe(Gitee.ROUTE, System.currentTimeMillis() - start, body, code);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -424,10 +455,10 @@ public class Updater implements Download.Callback, UpdateListener {
             // 刚确认过没有新版本，自动检查就别反复去问了（手动点不受此限）
             if (probes == null && !forced && recentlyNone()) return;
             Probe self = selfOf(probes);
-            // 自建源和 GitHub 线路一起探：以前是先探完 GitHub 再探网盘，两趟串着等，慢一倍
-            if (probes == null || self == null) {
-                Found found = probeBoth(probes == null, forced); // GitHub 那份已经有了就只补探自建源
-                if (probes == null) probes = found.probes;
+            // Gitee 是默认主通道：预热那份里没有它就还得补问一次
+            if (probes == null || self == null || giteeOf(probes) == null) {
+                Found found = probeBoth(probes == null, forced); // GitHub 那份已经有了就只补探 Gitee 和自建源
+                if (found.probes != null && !found.probes.isEmpty()) probes = merge(probes, found.probes);
                 if (self == null) self = found.self;
             }
             // 手动点的，探测全挂就自动再试一轮，别让用户干等着以为没点到
@@ -458,15 +489,17 @@ public class Updater implements Download.Callback, UpdateListener {
             if (!forced && !tag.isEmpty() && tag.equals(Setting.getUpdateSkip())) return;
             if (code <= BuildConfig.VERSION_CODE) {
                 if (code > 0) {
-                    // 只有自建源亲口说「你就是最新」才敢长时间不去问；要是这句话来自 GitHub，
-                    // 很可能是代理攥着旧缓存，歇一小会儿就得再问（否则就是"发新版了检测不到"）
-                    if (SelfHost.is(best.route)) warmNone = System.currentTimeMillis();
+                    // 只有直连那两家（自建网盘 / Gitee）亲口说「你就是最新」才敢长时间不去问；
+                    // 要是这句话来自 GitHub，很可能是代理攥着旧缓存，歇一小会儿就得再问
+                    // （否则就是"发新版了检测不到"）
+                    if (straight(best.route)) warmNone = System.currentTimeMillis();
                     else warmNoneSoft = System.currentTimeMillis();
                 }
                 if (forced) App.post(() -> Notify.show(R.string.update_latest));
                 return;
             }
-            String url = best.apk == null || best.apk.isEmpty() ? getApk(tag) : best.apk;
+            // 自建源的版本文件里带着本机型的包地址；Gitee / GitHub 上没有，按 tag 拼
+            String url = best.apk == null || best.apk.isEmpty() ? (Gitee.is(best.route) ? Gitee.apk(tag) : getApk(tag)) : best.apk;
             if (url.isEmpty()) {
                 fail(R.string.update_check_fail);
                 return;
@@ -474,10 +507,13 @@ public class Updater implements Download.Callback, UpdateListener {
             apk = url;
             // 先弹框：确定有新版本就立刻告诉用户，别让他对着「正在检测更新…」干等
             App.post(() -> show(activity, name, desc));
-            if (SelfHost.is(best.route)) {
-                // 自建源就这一条路，不用再挑线路测速
+            if (straight(best.route)) {
+                // 自建源和 Gitee 都是直连，就这一条路，不用再挑线路测速。
+                // 但别的源还是要留在备用名单里 —— 万一这一条下载中途挂了，还能自动换下家，
+                // 不能说「默认通道连不上就更新不了」（2026-10-31 马先生：通道要能退得回来）。
                 route = best;
-                download = createDownload(SelfHost.ROUTE);
+                backupProbes(probes, best);
+                download = createDownload(best.route);
             } else {
                 // 挑哪条线路下、整包多大，这些放后台接着做，用户看更新说明的工夫刚好干完
                 prepare(probes);
@@ -547,12 +583,14 @@ public class Updater implements Download.Callback, UpdateListener {
         // 校验：装之前确认这是个真 APK（>20MB 且 zip 头），别把代理的报错页丢给安装器
         Download download = Download.create(url(route, apk), getFile()).expect(size).verify(20L * 1024 * 1024);
         // 自建源是直连自己的网盘：不走加速线路，但要带上认证
-        return SelfHost.is(route) ? download.header("Authorization", SelfHost.auth()).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60))) : download.client(GhRoute.stream(route));
+        if (SelfHost.is(route)) return download.header("Authorization", SelfHost.auth()).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60)));
+        // Gitee 也是直连，同样不能往地址前面拼加速前缀
+        return download.client(Gitee.is(route) ? OkHttp.client(TimeUnit.SECONDS.toMillis(60)) : GhRoute.stream(route));
     }
 
-    /** 自建源的包地址本来就是完整的，不能再往前面拼加速前缀 */
+    /** 自建源、Gitee 的包地址本来就是完整的，不能再往前面拼加速前缀 */
     private static String url(String route, String apk) {
-        return SelfHost.is(route) ? apk : GhRoute.wrap(route, apk);
+        return straight(route) ? apk : GhRoute.wrap(route, apk);
     }
 
     /**
@@ -578,52 +616,88 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 自建源和 GitHub 线路的探测。
+     * Gitee / 自建源 / GitHub 线路的探测。
      *
-     * 手动点「检查更新」（forced）：两边同时探，GitHub 那边连全部线路一起试，慢一点也要查准。
-     * 日常的自动检查：更新包主要放在自建网盘上，所以**先问网盘**——网盘亲口给了结论
-     * （不管是"有新包"还是"你就是最新"）就收工，一条 GitHub 代理都不用去试，省掉那几趟握手；
-     * 只有网盘没搭理、或者这台机型的包不在网盘上，才去问 GitHub 那几条线路。
-     *
-     * 以前是不管三七二十一，每次都把十几条代理挨个试一遍，光是试线路就要好几秒。
+     * 顺序（2026-10-31 起）：**先问 Gitee**（默认主通道，国内直连最快），它给了版本就算数；
+     * Gitee 没搭理再补问自建网盘（网盘上有这台机型的包才够），两条都没说法才去试 GitHub
+     * 那几条代理线路 —— 走代理还要一趟趟握手，日常能不试就不试。
+     * 手动点「检查更新」时不省这几趟：三个源一起探，慢一点也要查准。
      */
     private static Found probeBoth(boolean github, boolean forced) {
         Found found = new Found();
         if (!github) {
-            found.self = selfProbe();
+            Found quiet = probeQuiet();
+            found.probes = quiet.probes;
+            found.self = quiet.self;
             return found;
         }
-        ExecutorService pool = Executors.newFixedThreadPool(2);
+        // 显式写成 Callable：方法引用既能当 Callable 又能当 Runnable（返回值丢掉），不写清楚编译器分不出来
+        Callable<Probe> giteeTask = Updater::giteeProbe;
+        Callable<Probe> selfTask = Updater::selfProbe;
+        ExecutorService pool = Executors.newFixedThreadPool(3);
         try {
-            // 显式写成 Callable：方法引用既能当 Callable 又能当 Runnable（返回值丢掉），不写清楚编译器分不出来
-            Callable<Probe> selfTask = Updater::selfProbe;
+            Future<Probe> gitee = pool.submit(giteeTask);
             Future<Probe> self = pool.submit(selfTask);
             boolean askGithub = forced;
+            // 两个请求是同时在跑的，所以按「同一个总时限的剩余时间」去等，
+            // 别让 Gitee 磨蹭掉自建网盘的时间（以前两趟串着等最坏要二十二秒）
+            long deadline = System.currentTimeMillis() + SELF_ALT_TIMEOUT + 2000;
+            Probe gp = await(gitee, Math.max(1, deadline - System.currentTimeMillis()));
+            if (gp != null) {
+                found.probes = new ArrayList<>();
+                found.probes.add(gp);
+            }
             if (!forced) {
-                try {
-                    found.self = self.get(SELF_ALT_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
-                } catch (Exception ignored) {
-                }
-                askGithub = found.self == null || found.self.apk == null || found.self.apk.isEmpty();
+                found.self = await(self, Math.max(1, deadline - System.currentTimeMillis()));
+                // Gitee 有结论就收工，连 GitHub 都不用问；Gitee 没搭理才看网盘上有没有本机型的包
+                askGithub = gp == null && (found.self == null || found.self.apk == null || found.self.apk.isEmpty());
             }
             if (askGithub) {
                 Callable<List<Probe>> probeTask = () -> probeAll(getRoutes(forced), getJsonUrl(), BuildConfig.VERSION_CODE);
                 Future<List<Probe>> probes = pool.submit(probeTask);
+                List<Probe> result = null;
                 try {
-                    found.probes = probes.get(PROBE_DEADLINE + PROBE_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
+                    result = probes.get(PROBE_DEADLINE + PROBE_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
                 } catch (Exception ignored) {
                 }
-            }
-            if (found.self == null) {
-                try {
-                    found.self = self.get(SELF_ALT_TIMEOUT + 2000, TimeUnit.MILLISECONDS);
-                } catch (Exception ignored) {
+                if (result != null && !result.isEmpty()) {
+                    if (found.probes == null) found.probes = result;
+                    else found.probes.addAll(result);
                 }
             }
+            if (found.self == null) found.self = await(self, SELF_ALT_TIMEOUT + 2000);
         } finally {
             pool.shutdownNow();
         }
         return found;
+    }
+
+    /** GitHub 那份已经探到了，这里只补探 Gitee 和自建网盘 */
+    private static Found probeQuiet() {
+        Found found = new Found();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Probe> gitee = pool.submit((Callable<Probe>) Updater::giteeProbe);
+            Future<Probe> self = pool.submit((Callable<Probe>) Updater::selfProbe);
+            Probe gp = await(gitee, PROBE_TIMEOUT + 2000);
+            if (gp != null) {
+                found.probes = new ArrayList<>();
+                found.probes.add(gp);
+            }
+            found.self = await(self, SELF_ALT_TIMEOUT + 2000);
+        } finally {
+            pool.shutdownNow();
+        }
+        return found;
+    }
+
+    /** 等到它出结果，超时或出错就算没探到 */
+    private static Probe await(Future<Probe> future, long timeout) {
+        try {
+            return future.get(timeout, TimeUnit.MILLISECONDS);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /**
@@ -691,8 +765,9 @@ public class Updater implements Download.Callback, UpdateListener {
         Probe direct = null;
         List<Probe> others = new ArrayList<>();
         for (Probe item : probes) {
-            // 自建源是另一条路：能走到这说明挑中的不是它，别拿它去测速（量不出速度还白下一截）
-            if (item == null || SelfHost.is(item.route)) continue;
+            // 自建源和 Gitee 是另一条路：能走到这说明挑中的不是它们，
+            // 别拿它们去测速（量不出速度还白下一截）
+            if (item == null || straight(item.route)) continue;
             if (fixed != null && item.route.equals(fixed)) return keep(probes, item);
             if (GhRoute.isDirect(item.route)) direct = item;
             else others.add(item);
@@ -785,53 +860,25 @@ public class Updater implements Download.Callback, UpdateListener {
     @Override
     public void onConfirm(View view) {
         view.setEnabled(false);
-        if (pan115(view)) return;  // 主通道：115 账号登录，下完登出
-        if (openPan115()) return;  // 设备没装 App 可用通道（凭据没配）时退回浏览器
-        waitReady(view, 0);       // 备用：自建网盘 / GitHub
+        waitReady(view, 0); // 走检查时挑好的那条线路下
     }
 
     /**
-     * 115 主通道：后台登录 → 找本机型的最新包 → 取直链 → 下完交给系统安装器 → 登出。
-     * 凭据没配（Clean 构建没带 local.properties）或中途失败，一律退回原来的路子，
-     * 不让用户在这一点上卡住。
-     */
-    private boolean pan115(View view) {
-        if (!Pan115.ready()) return false;
-        Notify.show(R.string.update_pan115_fetch);
-        Task.execute(() -> {
-            File file = Pan115.fetch(apkName());
-            App.post(() -> {
-                if (file != null && file.exists() && isInstallable(file)) {
-                    install(file);
-                    dismiss();
-                } else {
-                    Notify.show(R.string.update_pan115_fail);
-                    if (openPan115()) return;
-                    waitReady(view, 0);
-                }
-            });
-        });
-        return true;
-    }
-
-    /**
-     * 重新安装（设置页那个按钮）：不看版本号，直接把最新的安装包拉下来交给系统安装器，
+     * 重新安装（设置页那个按钮）：不看版本号，直接把 Gitee 上的安装包拉下来交给系统安装器，
      * 并顺手在**系统下载目录**留一份，用户想拷到别的机器上装也行。
-     * 凭据没配时没法走网盘，退回「检查更新」那条老路，按钮不至于按了没反应。
+     * Gitee 取不到包就退回「检查更新」那条老路，按钮不至于按了没反应。
      */
     public static void reinstall(FragmentActivity activity) {
-        if (!Pan115.ready()) { // 凭据没配：走网盘那条用不了，退回检查更新
-            if (activity != null) create().force().start(activity);
-            return;
-        }
-        Notify.show(R.string.update_pan115_fetch);
+        Notify.show(R.string.update_reinstall_fetch);
         Task.execute(() -> {
-            File file = Pan115.fetch(null);
+            String url = Gitee.apk(latestTag());
+            File file = url.isEmpty() ? null : fetchReinstall(url);
             boolean usable = isInstallable(file);
             if (usable) FileUtil.saveToDownload(file, file.getName());
             App.post(() -> {
                 if (!usable) {
                     Notify.show(R.string.update_reinstall_fail);
+                    if (activity != null) create().force().start(activity);
                     return;
                 }
                 FileUtil.installApkAsync(file, file.getName(), result -> {
@@ -843,20 +890,27 @@ public class Updater implements Download.Callback, UpdateListener {
         });
     }
 
-    /**
-     * 打开 115 网盘的分享页。设备上有浏览器（手机基本都有）就交给浏览器，
-     * 这条通道上的下载登录后手动完成；一个都接不住返回 false，退回本机直下。
-     */
-    private boolean openPan115() {
+    /** 直接从 Gitee 一次性把包拉下来（它的 CDN 不认 Range，走不了断点续传） */
+    private static File fetchReinstall(String url) {
         try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(PAN115)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            App.get().startActivity(intent);
-            Notify.show(R.string.update_pan115);
-            dismiss();
-            return true;
+            return Download.create(url, Path.cache("update.apk")).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60))).get();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** 问 Gitee 要最新版本文件的 tag，用来拼安装包地址 */
+    private static String latestTag() {
+        Request request = new Request.Builder().url(Gitee.jsonUrl())
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .get().build();
+        try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
+            if (!res.isSuccessful() || res.body() == null) return "";
+            return new JSONObject(res.body().string()).optString("tag");
         } catch (Exception e) {
-            DebugLog.d("Update", "没有能打开 115 分享页的浏览器，退回本机直下");
-            return false;
+            return "";
         }
     }
 
@@ -903,15 +957,32 @@ public class Updater implements Download.Callback, UpdateListener {
         }
     }
 
+    /** 除了中意的那条，其余拿得到新版本的都排进备用名单，下载失败时挨个替上来 */
+    private void backupProbes(List<Probe> probes, Probe pick) {
+        backup.clear();
+        if (probes == null || pick == null) return;
+        for (Probe item : probes) {
+            if (item == null || item == pick || item.code <= 0) continue;
+            if (backup.contains(item)) continue;
+            backup.add(item);
+        }
+    }
+
     /**
-     * 下载失败自动换下一条线路重来
+     * 下载失败自动换下一条线路重来。
+     * 注意每条线路的包地址不一定相同（自建网盘给的是完整地址，Gitee / GitHub 要按 tag 拼），
+     * 换的时候必须按新线路重新算，不然会拿着 A 的地址去走 B 的路，照样下不动。
      */
     private boolean next() {
-        if (backup.isEmpty() || apk == null || apk.isEmpty()) return false;
+        if (backup.isEmpty()) return false;
         Probe item = backup.remove(0);
         route = item;
         size = 0; // 换线路重新量一次大小：记住的那个可能是上一条线路瞎报的
         Prefers.put("update_size", 0L);
+        if (item.apk != null && !item.apk.isEmpty()) apk = item.apk;
+        else if (Gitee.is(item.route)) apk = Gitee.apk(tag);
+        else apk = getApk(tag);
+        if (apk == null || apk.isEmpty()) return next();
         download = createDownload(item.route);
         download.start(this);
         return true;

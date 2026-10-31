@@ -626,10 +626,8 @@
     <!-- Update -->
     <string name="update_version">New version <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">Checking for updates…</string>
-    <string name="update_pan115">Opened the 115 drive download page — grab the APK in the browser</string>
     <string name="update_reinstall">Reinstall</string>
-    <string name="update_pan115_fetch">正在从网盘取安装包…</string>
-    <string name="update_pan115_fail">网盘这条路没通，换个方式试试</string>
+    <string name="update_reinstall_fetch">正在取安装包…</string>
     <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">Update</string>
     <string name="update_latest">Already up to date</string>

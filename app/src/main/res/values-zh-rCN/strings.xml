@@ -626,10 +626,8 @@
     <!-- Update -->
     <string name="update_version">发现新版本 <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">正在检测更新…</string>
-    <string name="update_pan115">已打开 115 网盘下载页，请在浏览器里下载安装包</string>
     <string name="update_reinstall">重新安装</string>
-    <string name="update_pan115_fetch">正在从网盘取安装包…</string>
-    <string name="update_pan115_fail">网盘这条路没通，换个方式试试</string>
+    <string name="update_reinstall_fetch">正在取安装包…</string>
     <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">更新</string>
     <string name="update_latest">当前已是最新版</string>
