@@ -632,6 +632,7 @@
     <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">更新</string>
     <string name="update_latest">当前已是最新版</string>
+    <string name="update_rescue">前两条通道都取不到，正在临时开放 GitHub 仓库取最新版</string>
     <string name="update_check_fail">没连上更新服务器，请检查网络后再试</string>
     <string name="update_checking">正在检查中，请稍候…</string>
     <string name="update_skip">已跳过这一版，下次出新版本再提醒你</string>
@@ -643,8 +644,10 @@
     <string name="update_keep">安装包已另存到 <xliff:g name="path">%s</xliff:g>，安装界面没弹出的话去那儿手动装</string>
     <string name="update_install_manual">这台设备拉不起安装界面，安装包已放到 <xliff:g name="path">%s</xliff:g>，请手动安装</string>
     <string name="setting_route">更新线路</string>
-    <string name="route_auto">自动（直连优先）</string>
-    <string name="route_direct">直连 GitHub</string>
+    <string name="route_auto">自动（码云 → 网盘 → GitHub）</string>
+    <string name="route_gitee">码云（国内直连，默认主通道）</string>
+    <string name="route_self">网盘（自建，直连）</string>
+    <string name="route_github">GitHub（直连优先，不通自动过代理，兜底）</string>
     <string name="route_custom">自定义 SOCKS5…</string>
     <string name="route_hint">代理地址，如 192.168.1.100:1080</string>
     <string name="route_bad">地址或端口不对，端口要填数字</string>
@@ -653,7 +656,7 @@
     <string name="route_delete">删除这个代理</string>
     <string name="route_removed">代理已删除</string>
     <string name="route_socks_prefix">SOCKS5 %1$s</string>
-    <string name="route_list_tip">选择更新走的线路，自己添加的可以用右边的删除按钮去掉</string>
+    <string name="route_list_tip">选择更新走哪条路。自动按「码云 → 网盘 → GitHub」的顺序来；手动指定后优先走它，它不通会自动退回其它通道。</string>
     <string name="route_lan_tip">手机扫二维码，在网页里填好点确定，设备这边自动写入</string>
     <string name="route_clear">清除并恢复自动</string>
     <string name="route_scan">扫码录入</string>

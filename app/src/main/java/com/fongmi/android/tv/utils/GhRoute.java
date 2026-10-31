@@ -49,21 +49,35 @@ public class GhRoute {
     /** 自动模式只跑实测最快的三台，别把时间浪费在挨个试线路上 */
     private static final int AUTO_COUNT = 3;
 
+    /**
+     * 只在「临时开放 GitHub 仓库」那条绝路上用的代理：改仓库公开/私有要调 api.github.com 发 PATCH，
+     * 直连万一被掐就没戏了，留一台能出国的高速代理当备路。
+     * 平时完全不碰它 —— 更新的探测和下载都不走这里。
+     */
+    private static final String RESCUE_SOCKS = "user01:521521@43.165.3.81:6669";
+
     static {
-        // SOCKS5 的用户名密码由 java.net.Authenticator 提供，只认我们配的那台代理
+        // SOCKS5 的用户名密码由 java.net.Authenticator 提供，只认我们配的那台代理（外加绝路那台备路）
         Authenticator.setDefault(new Authenticator() {
             @Override
             protected PasswordAuthentication getPasswordAuthentication() {
                 if (!"SOCKS5".equalsIgnoreCase(getRequestingScheme())) return null;
-                String socks = Setting.getSocks();
-                if (!validSocks(socks)) return null;
-                String user = user(socks);
-                if (user.isEmpty()) return null;
                 String host = getRequestingHost();
-                if (host != null && !host.equalsIgnoreCase(socksHost(socks))) return null;
-                return new PasswordAuthentication(user, pass(socks).toCharArray());
+                if (host == null) return null;
+                return auth(host, Setting.getSocks());
             }
         });
+    }
+
+    private static PasswordAuthentication auth(String host, String socks) {
+        if (validSocks(socks) && socksHost(socks).equalsIgnoreCase(host)) {
+            String user = user(socks);
+            if (!user.isEmpty()) return new PasswordAuthentication(user, pass(socks).toCharArray());
+        }
+        if (socksHost(RESCUE_SOCKS).equalsIgnoreCase(host)) {
+            return new PasswordAuthentication(user(RESCUE_SOCKS), pass(RESCUE_SOCKS).toCharArray());
+        }
+        return null;
     }
 
     /** 内置公益加速（不可删除） + 用户自己存的自定义代理（可删除） */
@@ -205,6 +219,23 @@ public class GhRoute {
         for (String socks : Setting.getRouteCustoms()) if (validSocks(socks)) result.add(SOCKS5 + socks);
         String socks = Setting.getSocks();
         if (validSocks(socks)) result.add(SOCKS5 + socks);
+        return result;
+    }
+
+    /**
+     * 调 GitHub API（改仓库公开/私有）时试的路：直连优先，其次绝路备路代理，最后用户自己存的。
+     *
+     * 跟 {@link #candidates()} 分开是因为这一步要发 PATCH 而不是 GET，
+     * **公益加速一律不放行**（实测 gh.qninq.cn 回 403、其余两家连 PATCH 都不转），
+     * 排在后面只会白白多等几十秒，所以这张表里没有它们。
+     */
+    public static List<String> rescueRoutes() {
+        List<String> result = new ArrayList<>();
+        result.add("");
+        result.add(SOCKS5 + RESCUE_SOCKS);
+        for (String socks : Setting.getRouteCustoms()) if (validSocks(socks) && !result.contains(SOCKS5 + socks)) result.add(SOCKS5 + socks);
+        String socks = Setting.getSocks();
+        if (validSocks(socks) && !result.contains(SOCKS5 + socks)) result.add(SOCKS5 + socks);
         return result;
     }
 

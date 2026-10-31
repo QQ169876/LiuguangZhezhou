@@ -102,6 +102,23 @@ public class AiJudge {
             + "只要下一季，最多 4 个；确定没有下一季就返回空数组。"
             + "只输出 JSON，不要任何解释：{\"titles\":[\"名称1\"],\"tags\":[],\"has_next\":true}";
 
+    /**
+     * 「这个系列/这部已经没有下一季了，那接着看什么」：拿口味去问（马先生 2026-11-01）。
+     * 跟上面几问不一样的是这一问**带着用户自己的数据**：常看的题材、几乎不碰的题材、
+     * 关注过的演员、最近看过和收藏过的剧名。模型照这些挑，比只给个剧名瞎猜准得多。
+     * 口味里「几乎不碰」那一项是从收藏/播放记录里一次都没出现过的类别反推出来的
+     * （收藏里没有爱情剧，就别往人家眼前推爱情剧），模型必须尊重。
+     */
+    private static final String SYSTEM_NEXT_TASTE = "你是影视推荐助手。用户刚看完一部作品，这个系列（或这部）已经没有下一季/下一部了，他要一部接一部接着看。"
+            + "请按下面给的**用户口味**推荐真实存在、在影视站里能搜到的**剧名**（要剧名，不是题材词）："
+            + "1. 优先跟它是同一种形态、同一个地区（按给出的「剧种」「地区」；漫剧就给漫剧，短剧就给真人短剧）；"
+            + "2. 优先包含指定主演、或用户关注过的演员的作品 —— 有的人是冲着某个演员看的；"
+            + "3. 贴合「常看的题材」，**避开「几乎不碰」的题材**，那条是硬约束，碰了等于白推荐；"
+            + "4. 不要给电影、综艺、解说、混剪、盘点、番外，也不要给当前这部、它的前作续作和「已看过」名单里的；"
+            + "5. 最像的排在最前，最多 6 个。宁可少给，绝不编造不存在的剧。"
+            + "另外给 2~3 个这类剧的题材词（每个 2~8 字，用来在站里搜同类，也要是同一形态的）。"
+            + "只输出 JSON，不要任何解释：{\"titles\":[\"剧名1\",\"剧名2\"],\"tags\":[\"题材词\"],\"has_next\":false}";
+
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, List<String>> SUGGEST = new ConcurrentHashMap<>();
@@ -434,7 +451,7 @@ public class AiJudge {
      * 同一个剧名换形态/产地后还拿旧答案，跨类别就是这么来的。现在形态一变旧答案自动作废。
      */
     private static String nextKey(String name, String kindWord, String region, int mode) {
-        String head = mode == MODE_MOVIE ? "movie·" : mode == MODE_SERIAL ? "serial·" : "";
+        String head = mode == MODE_MOVIE ? "movie·" : mode == MODE_SERIAL ? "serial·" : mode == MODE_TASTE ? "taste·" : "";
         return head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
     }
 
@@ -451,10 +468,11 @@ public class AiJudge {
             + "给全称，不要给解说、混剪、盘点、番外、综艺，也不要给已经看过的。"
             + "只输出 JSON，不要任何解释：{\"titles\":[\"名称1\"],\"tags\":[\"题材词\"],\"has_next\":true}";
 
-    /** 问「下一部」的三种口径：同类剧 / 系列下一季 / 单部作品（续作优先，没有再给同类） */
+    /** 问「下一部」的四种口径：同类剧 / 系列下一季 / 单部作品（续作优先，没有再给同类）/ 没下一季了按口味推荐 */
     private static final int MODE_GENERIC = 0;
     private static final int MODE_SERIAL = 1;
     private static final int MODE_MOVIE = 2;
+    private static final int MODE_TASTE = 3;
 
     /**
      * 问一句「下一部该看什么」：让模型报出同类剧名（系列剧则报下一季的各种写法）。
@@ -476,7 +494,21 @@ public class AiJudge {
         askNext(name, typeName, region, kindWord, actor, seriesMain, seriesIndex, MODE_MOVIE, callback);
     }
 
+    /**
+     * 没下一季/下一部时的「接着看什么」：带口味去问（马先生 2026-11-01 —— 《镖人》只到第二季，
+     * 那就问模型：参照它（动漫/AI漫剧/短剧），优先同类型的、或者含某个主演/他关注演员的作品）。
+     * 口味由调用方从播放记录、收藏、关注的演员里攒（BingeTaste），这里只负责组织成话。
+     */
+    public static void recommend(String name, String typeName, String region, String kindWord, String actor,
+                                 List<String> liked, List<String> avoided, List<String> stars, NextCallback callback) {
+        askNext(name, typeName, region, kindWord, actor, "", 0, MODE_TASTE, callback, liked, avoided, stars);
+    }
+
     private static void askNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode, NextCallback callback) {
+        askNext(name, typeName, region, kindWord, actor, seriesMain, seriesIndex, mode, callback, null, null, null);
+    }
+
+    private static void askNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode, NextCallback callback, List<String> liked, List<String> avoided, List<String> stars) {
         if (name == null || name.isEmpty()) {
             replyNext(callback, null);
             return;
@@ -506,7 +538,7 @@ public class AiJudge {
         POOL.execute(() -> {
             Next next = null;
             try {
-                next = requestNext(safe[0], safe[1], region, kindWord, safe[2], seriesMain, seriesIndex, mode);
+                next = requestNext(safe[0], safe[1], region, kindWord, safe[2], seriesMain, seriesIndex, mode, liked, avoided, stars);
             } catch (Throwable e) {
                 next = null;
                 DebugLog.d("AiJudge", "下一部推荐模型不可用，退回本地词表：" + name);
@@ -529,9 +561,10 @@ public class AiJudge {
         }
     }
 
-    private static Next requestNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode) throws Exception {
+    private static Next requestNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode, List<String> liked, List<String> avoided, List<String> stars) throws Exception {
         boolean serial = mode == MODE_SERIAL;
         boolean movie = mode == MODE_MOVIE;
+        boolean taste = mode == MODE_TASTE;
         StringBuilder sb = new StringBuilder();
         sb.append(movie ? "作品名：" : "剧名：").append(name);
         sb.append("\n类型：").append(TextUtils.isEmpty(typeName) ? "未知" : typeName);
@@ -543,10 +576,17 @@ public class AiJudge {
         if (movie && seriesIndex > 0) sb.append("\n这是系列里的第").append(seriesIndex).append("部，系列名：").append(seriesMain);
         String watched = watched(name);
         if (!watched.isEmpty()) sb.append("\n已看过（不要推荐）：").append(watched);
+        if (taste) { // 把攒出来的口味摊给模型：常看的、几乎不碰的、关注过的演员
+            if (liked != null && !liked.isEmpty()) sb.append("\n用户常看的题材：").append(TextUtils.join("、", liked));
+            if (avoided != null && !avoided.isEmpty()) sb.append("\n用户几乎不碰的题材（务必避开）：").append(TextUtils.join("、", avoided));
+            if (stars != null && !stars.isEmpty()) sb.append("\n用户关注过的演员（优先考虑他们的作品）：").append(TextUtils.join("、", stars));
+        }
         sb.append(serial
                 ? "\n问：这个系列最新到第几季？第" + seriesIndex + "季之后还有没有下一季（有没有完结）？有就把下一季的名称写法都列出来，已经完结就直说没有。"
                 : movie
                 ? "\n问：这部作品有没有下一部/续作？有就把续作可能的名称写法都列出来，顺便推荐几部同类型的；确定没有续作就 has_next 给 false。"
+                : taste
+                ? "\n问：它已经没有下一季/下一部了。参照上面的口味，接下来该看哪几部？优先同形态同地区、优先含指定主演或关注演员的作品，避开不碰的题材，给出剧名。"
                 : "\n问：接下来该看哪几部同类的剧？给出剧名。");
 
         JSONObject user = new JSONObject();
@@ -556,7 +596,7 @@ public class AiJudge {
         JSONObject body = new JSONObject();
         body.put("model", AiSetting.getModel());
         body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", serial ? SYSTEM_NEXT_SEASON : movie ? SYSTEM_NEXT_MOVIE : SYSTEM_NEXT)).put(user));
+        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", serial ? SYSTEM_NEXT_SEASON : movie ? SYSTEM_NEXT_MOVIE : taste ? SYSTEM_NEXT_TASTE : SYSTEM_NEXT)).put(user));
 
         Request request = new Request.Builder()
                 .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")

@@ -16,9 +16,12 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 694
-        versionName rootProject.legacy ? "5.6.134-legacy" : "5.6.134"
+        versionCode 697
+        versionName rootProject.legacy ? "5.6.137-legacy" : "5.6.137"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
+        // GitHub 令牌只从本机的 local.properties 注入（该文件不入库）：
+        // 写死在源码里会被 GitHub 的 secret scanning 拒收，令牌还会随公开仓库泄露
+        buildConfigField "String", "GH_TOKEN", "\"" + (localProps.getProperty('gh_token') ?: "").trim() + "\""
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString(), "eventBusIndex": "com.fongmi.android.tv.event.EventIndex"]
@@ -119,7 +122,7 @@ androidComponents {
         def mode = flavors['mode'] ?: 'mode'
         def abi = flavors['abi'] ?: 'abi'
         variant.outputs.each { output ->
-            def mark = rootProject.legacy ? "5.6.134-legacy" : "5.6.134"
+            def mark = rootProject.legacy ? "5.6.136-legacy" : "5.6.136"
             output.outputFileName.set("${mode}${mark}-${abi}.apk")
         }
     }

@@ -45,6 +45,7 @@ import com.fongmi.android.tv.cast.CastSync;
 import com.fongmi.android.tv.cast.CastTx;
 import com.fongmi.android.tv.databinding.ActivityReceiveBinding;
 import com.fongmi.android.tv.player.track.TrackUtil;
+import com.fongmi.android.tv.player.ui.PlayerRotate;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
@@ -141,6 +142,12 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         binding.hint.setText("");
         bus = new CastBus(this, Util.getAndroidId(), Util.getDeviceName());
         bus.setAuth(CastSetting.getCode(), 0); // 接收端自身没有人数上限的说法，这里只用来配配对码
+        // 尺寸一变就按真实画面重算一次旋转的缩放。
+        // ⚠️ 光盯 PlayerView 自己不够：待机时（还没接上流）用户常常已经把角度转好了，
+        // 那一刻画面尺寸是 0，算出来的缩放是错的；等流接上、画面尺寸出来了，
+        // PlayerView 自己尺寸没变，是不会再触发的 —— 表现就是「比例没错，画面缩在中间一小块」。
+        // 所以这里盯的是画面那一层，见 PlayerRotate.watch。
+        PlayerRotate.watch(binding.player, () -> degree);
         showMenu(); // 待机页得一直挂着那两个按钮，别让人对着黑屏发愣
         startScan(Collections.emptyList());
     }
@@ -748,23 +755,17 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
 
     /* ============================ 旋转 ============================ */
 
-    /** 旋转画面：每台设备自己转自己的，不影响别的屏，也不关广播端的事 */
+    /**
+     * 旋转画面：每台设备自己转自己的，不影响别的屏，也不关广播端的事。
+     *
+     * ⭐ 跟一般视频播放共用 {@link PlayerRotate}：转之前**先把渲染层换成 TextureView**
+     * （SurfaceView 不跟父 View 的旋转，转完只会看到压扁的半屏），缩放按画面实际尺寸算，
+     * 不再拿窗口长短边硬拉 —— 那样竖屏源转完比例还是不对（马先生 2026-11-01 指出）。
+     */
     private void rotate() {
         degree = (degree + 90) % 360;
-        PlayerView view = binding.player;
-        view.setRotation(degree);
-        view.post(this::applyScale);
-    }
-
-    /** 转 90/270 度后画面会变窄，按屏幕长短边比拉回来才满屏 */
-    private void applyScale() {
-        PlayerView view = binding.player;
-        int width = view.getWidth();
-        int height = view.getHeight();
-        if (width <= 0 || height <= 0) return;
-        float scale = degree % 180 == 0 ? 1f : Math.max(width, height) / (float) Math.max(1, Math.min(width, height));
-        view.setScaleX(scale);
-        view.setScaleY(scale);
+        PlayerRotate.rotate(binding.player, player, degree);
+        DebugLog.d(TAG, "旋转画面 " + degree + "°");
     }
 
     /* ============================ 生命周期 ============================ */

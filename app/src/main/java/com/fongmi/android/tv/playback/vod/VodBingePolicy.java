@@ -19,6 +19,7 @@ import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Task;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +27,8 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** 刷剧：一部短剧播完后，跨站搜同题材的下一部，一部接一部往下播 */
 class VodBingePolicy {
@@ -39,6 +42,7 @@ class VodBingePolicy {
     private final Runnable timeoutTask = this::onTimeout;
     private final Runnable pickTask = this::pickNow;
     private final Runnable probeTimeoutTask = this::onProbeTimeout;
+    private final Runnable probeGraceTask = this::onProbeGrace;
     private final Runnable aiTimeoutTask = this::onAiTimeout;
 
     private final Random random = new Random();
@@ -63,6 +67,7 @@ class VodBingePolicy {
     private String seriesMain = ""; // 当前这部所属的系列：主标题（去掉「第X季」这类后缀）
     private int seriesIndex = -1; // 当前是系列里的第几季；名字里没写就是 -1
     private boolean serialMode; // 名字里明写着第几季：只认这个系列的下一季，绝不换别的剧
+    private boolean serialMarked; // 名字里明写着第几季/第几部（跟 serialMode 分开记：降级那两步会把它清掉，退路的判断还得认它）
     private String region = "";
     private String typeName = ""; // 站点给的分类（如「爱情/都市」），搜同类用得上
     private String actor = ""; // 当前这部的主演（红果那招：看《A》也推同主演的《B》）
@@ -70,13 +75,42 @@ class VodBingePolicy {
     private int keywordIndex;
     private int serial;
     private int failures;
+    private int dropNotNext; // 这一批里「不是这个系列的下一季」丢了多少部
+    private int dropWatched; // 这一批里「播放记录里已经有」丢了多少部
+    private int dropKind;    // 这一批里「剧种/产地不对」丢了多少部
+    private int dropRejected; // 这一批里「以前推过、接不上」丢了多少部
+    private int dropTaste; // 这一批里「不合口味」丢了多少部
+    private boolean tasteFallback; // 已经走过「按口味问大模型要同类」这条退路
+    private List<String> currentTags; // 当前这部命中的题材词：口味判「不碰」时要给它让路
+    private int searchSites; // 这一个词一共问了几个站
+    private int searchReplies; // 这一个词已经回来了几个站（攒齐了就不用再等）
     private boolean active;
     private boolean waitingDetail; // 已选中一部、正在等详情回来校验
     private boolean preparing; // 预加载中：搜索照旧跑，但 pick 只备货不切换
     private Vod pending; // 提前备好的下一部，真播完直接接上
 
+    /** 一批并行验几部：一部一部串行试的话，验不过就要多等一个 PROBE_TIMEOUT，用户看到的就是干等 */
+    private static final int PROBE_PARALLEL = 3;
     /** 切过去之前先验货：后台拉一次详情，确认真能播再切，播不了的当场丢掉，不切、不留历史 */
-    private static final ExecutorService PROBE = Executors.newSingleThreadExecutor();
+    private static final ExecutorService PROBE = Executors.newFixedThreadPool(PROBE_PARALLEL);
+    /** 排在后面的候选先验过了，给排前面的这么久的机会跟上，跟不上就切先验过的那个 */
+    private static final long PROBE_GRACE = 500L;
+    /** 站点可靠度的加减分幅度：次次验得过加满，次次验不过扣满 */
+    private static final int SITE_BONUS = 10;
+    /** 新鲜度加分：今年的加满，去年的少一点，三年前的就不加了（短剧追新） */
+    private static final int FRESH_BONUS = 6;
+    /** 画像兴趣的加减分上限：看完过这类就往上加，弃过这类就往下扣 */
+    private static final int PROFILE_BONUS = 12;
+    /** 打散：连着推同一题材族的扣分（轻量 MMR，别让用户连吃三部一模一样的） */
+    private static final int REPEAT_PENALTY = 6;
+    /** 一个词搜回来是空的、还有站没回时，最多再等这么久就换下一个词（不用干等 SEARCH_TIMEOUT 那 6 秒） */
+    private static final long EMPTY_GRACE = 1500L;
+    /** 等大模型按口味报同类作品，最多等这么久 */
+    private static final long TASTE_AI_GRACE = 6000L;
+    /** 口味加分：命中收藏/历史里常看的题材 */
+    private static final int TASTE_BONUS = 6;
+    /** 口味扣分：命中「收藏和历史里一次都没出现过」的题材 */
+    private static final int TASTE_PENALTY = 8;
     /** 按站点分类拉池子用的：跟验货分开跑，别互相堵着 */
     private static final ExecutorService CATEGORY = Executors.newSingleThreadExecutor();
     /** 分类池子已经在路上时，最多再等这么久再挑——等它一到，挑中的大概率就是正经短剧 */
@@ -95,12 +129,18 @@ class VodBingePolicy {
     private static final long MOVIE_AI_GRACE = 3000L;
     /** 够一部电影的篇幅：单集又短得多的（短视频片段、MV）不往下接 */
     private static final long MOVIE_MIN_MS = 40 * 60 * 1000L;
+    /** 年份：站里写「2025」或「更新至2025」的都认得出来 */
+    private static final Pattern YEAR = Pattern.compile("(?:19|20)\\d{2}");
     /** 一轮里最多拿几个大模型给的剧名去搜：多了万一模型瞎编，白跑好几次搜索 */
     private static final int AI_TITLE_MAX = 3;
     private int epoch; // 每次作废重来（interrupt/reset/forceNext）都 +1，迟到的异步回调据此自行作废
-    private boolean probing; // 正在后台验货
-    private Vod probingItem; // 正在验的这一部
+    private boolean probing; // 有一批正在后台验货
+    private final List<Vod> probeBatch = new ArrayList<>(); // 这一批按分数排好的候选（新→旧按分数降序）
+    private final List<Vod> probingItems = new ArrayList<>(); // 这一批里还在等详情的
+    private final List<Vod> probePassed = new ArrayList<>(); // 这一批里已经验过的
+    private boolean gracePosted; // 「再给排前面的半秒机会」那个定时任务排了没
     private int probingEpoch;
+    private final List<Integer> pickedFamilies = new ArrayList<>(); // 最近挑中的题材族（新→旧），连着同一族就打散
 
     VodBingePolicy(VodPlaybackController controller, VodPlaybackState state, VodPlaybackHost host) {
         this.controller = controller;
@@ -122,11 +162,10 @@ class VodBingePolicy {
         active = false;
         preparing = false;
         pending = null; // 备的货也不要了，免得跟换源抢结果
-        probing = false; // 验货也停，回来的结果一律作废
-        probingItem = null;
+        endProbe(); // 验货也停，回来的结果一律作废
         waitingAi = false;
         epoch++;
-        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask, aiTimeoutTask);
+        clearTimers();
     }
 
     /** 没有下一集了：刷剧开着的又是短剧，就去找下一部；返回 true 表示接管了 */
@@ -201,15 +240,14 @@ class VodBingePolicy {
             host.onBingeEnd();
             return;
         }
-        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask, aiTimeoutTask);
+        clearTimers();
         pool.clear();
         active = false;
         waitingDetail = false;
         waitingAi = false;
         preparing = false;
         pending = null;
-        probing = false;
-        probingItem = null;
+        endProbe();
         epoch++; // 上一轮没回来的验货结果一律作废
         begin();
     }
@@ -234,10 +272,16 @@ class VodBingePolicy {
         seriesIndex = BingeTags.serialOf(host.getVodName());
         if (singlePart && seriesIndex <= 0) seriesIndex = 0; // 《杀死比尔》这类没写第几部的：它自己算第一部，下一部自然是第二部
         serialMode = !seriesMain.isEmpty() && (seriesIndex > 0 || singlePart);
+        serialMarked = BingeTags.hasSerialMark(host.getVodName());
         keywords = serialMode ? partKeywords() : buildKeywords(host.getVodName());
         // ⚠️ 复位必须写在 applyNext 之前：模型的答案要是已经在缓存里，回调是同步回来的，
         // 写晚了会把刚拿到的答案又抹成「没问过」，后面就白等一轮
         keywordIndex = 0;
+        // ⚠️ tried 每轮重新开始：它记的是「这一轮试过没成的」，不该跨轮累积 ——
+        // 提前备货那一轮要是验货抽风没过（《镖人》第三季明明在站里），名字就被记进黑名单，
+        // 等真播完再搜时反而被自己挡在门外，用户手动搜得到、自动却接不上。
+        // 看过的由 watched() 挡，池子里已有的由 contains(pool) 挡，都不会漏。
+        tried.clear();
         tried.add(host.getVodName());
         typePending = false; // 上一轮没回来的分类池别再挡着这一轮
         // 系列剧先在自己这部所在的站里找下一季：同一个站源的下一季最省事，搜不到再到外面找
@@ -250,12 +294,27 @@ class VodBingePolicy {
         seriesHasNext = null;
         genreFallback = false;
         similarFallback = false;
+        tasteFallback = false;
+        currentTags = BingeTags.tagsOf(host.getVodName());
+        BingeTaste.load(); // 后台翻一遍收藏/历史/关注的演员，等要问模型时口味已经备好了
         loadSeen(); // 播放记录里已经有的，这一轮别再推出来
         applyNext(host.getVodName()); // 让大模型报几部「下一部/下一季」的剧名，比本地题材词准
         DebugLog.d("Binge", "开始刷剧，系列=" + (serialMode ? seriesMain + " 第" + seriesIndex + "部/季" : "无") + "，单部=" + singlePart + "，产地=" + region + "，剧种=" + BingeTags.kindWord(kind) + "，关键词=" + keywords + "，当前=" + host.getVodName());
         active = true;
         if (!serialMode) searchByType(); // 先开一路：直接去站点的「短剧」分类里端一盘出来，比关键词搜索准（系列剧/单部不用，先找续作）
         search();
+    }
+
+    /**
+     * 这一部该叫「第X季」还是「第X部」：名字里写着季就按季、写着部就按部；
+     * 两个都没写（《杀死比尔》）才退回「单部=电影说部、剧说季」的老规矩。
+     */
+    private String serialUnit() {
+        String name = host.getVodName();
+        if (name == null) return singlePart ? "部" : "季";
+        if (name.contains("季")) return "季";
+        if (name.contains("部")) return "部";
+        return singlePart ? "部" : "季";
     }
 
     /**
@@ -312,8 +371,11 @@ class VodBingePolicy {
             if (!isHandling()) return;
             // 模型明说这个系列已经完结：别在本地写法里空转一遍，直接进入「改刷同类」
             if (Boolean.FALSE.equals(got.hasNext)) {
-                DebugLog.d("Binge", "大模型说 " + seriesMain + " 已经没有下一季了");
-                end();
+                // ⚠️ 模型说「没有下一季」不等于站里没有：《镖人》第三季站里搜得到，模型却说只到第二季——
+                // 它按官方出品的口径答，站源收录什么它不知道。所以这里**不许当场收手**，
+                // 本地那几种写法照搜完，真搜不到再走降级（端() 里会转去问同类推荐）。
+                DebugLog.d("Binge", "大模型说 " + seriesMain + " 已经没有下一季了，站里有没有还得搜完才知道");
+                if (isHandling() && pool.isEmpty() && keywordIndex >= keywords.size()) end();
                 return;
             }
             // 这时候本地那几种写法多半已经搜空了，模型给的名字直接顶到最前，马上再搜一轮
@@ -375,12 +437,17 @@ class VodBingePolicy {
      * 题材词只当兜底排在后面（万一剧名在站里没有，题材词还能捞一批同类）。
      */
     private boolean addNext(AiJudge.Next next, boolean front) {
-        int max = serialMode ? 2 : singlePart ? 4 : AI_TITLE_MAX; // 系列剧只要下一季的写法，别把队首挤满；单部的多留两个同类位置
+        // 系列剧只要下一季的写法，别把队首挤满；单部的多留两个同类位置；
+        // 按口味推荐那一步模型最多给 6 部，都收下（这时候队里本来就是空的）
+        int max = tasteFallback ? 6 : serialMode ? 2 : singlePart ? 4 : AI_TITLE_MAX;
         List<String> added = new ArrayList<>();
         for (String title : next.titles) {
             if (added.size() >= max) break;
             if (title.length() < 2 || keywords.contains(title)) continue;
             if (title.equals(host.getVodName()) || tried.contains(title)) continue;
+            // 降级推荐时别再报「本系列的下一季」：本地那几种写法刚刚全都搜空了才走到这一步，
+            // 再拿同样的名字搜一遍纯属浪费（日志 13:23 那轮又搜了一遍「持械入宋：第十一季」等四个）
+            if ((similarFallback || genreFallback || tasteFallback) && laterPart(title)) continue;
             added.add(title);
         }
         if (added.isEmpty() && next.tags.isEmpty()) return false;
@@ -416,8 +483,11 @@ class VodBingePolicy {
      */
     private List<String> partKeywords() {
         List<String> keys = new ArrayList<>();
-        String first = singlePart ? "部" : "季"; // 电影习惯叫「第二部」，剧习惯叫「第二季」，先按当前这部的来
-        String second = singlePart ? "季" : "部";
+        // ⭐ 部/季谁先搜，看**这部自己名字里写的是哪个**：整部压成一个文件的剧（《持械入宋：第十季》）
+        // 会被算成「单部」，照「单部=电影」的老规矩先搜「第11部」，把「第11季」排到第三位——
+        // 日志实证：13:19 那一轮先搜「第11部」「第十一部」，最后才轮到「第11季」，白费二十多秒。
+        String first = serialUnit();
+        String second = "部".equals(first) ? "季" : "部";
         int next = Math.max(seriesIndex, 1) + 1;
         keys.add(seriesMain); // 主标题：把整个系列都搜出来，靠 filter 挑部/季号
         keys.add(seriesMain + " 第" + next + first); // 「杀死比尔 第2部」
@@ -498,7 +568,7 @@ class VodBingePolicy {
     private void onTypeResult(Result result, List<String> names, int myEpoch) {
         if (myEpoch != epoch || !isHandling()) return;
         fromType.addAll(names);
-        onSearchResult(result);
+        onSearchResult(result, false);
     }
 
     /** 去哪些站的分类里捞：能搜的站，最多 4 个，够用了，拉多了反而慢 */
@@ -617,8 +687,26 @@ class VodBingePolicy {
                 return;
             }
         }
-        if (keywords.isEmpty()) return; // 一个词都没有（多半在等模型给名字），别空转
-        host.requestBingeSearch(sites(), keywords.get(keywordIndex++));
+        // 一个词都没有（多半在等模型给名字）：别空转，也别悬在那儿——
+        // 以前这里直接 return，active 一直是 true 又没有任何定时任务，用户看到的就是「播完停住」
+        if (keywords.isEmpty()) {
+            if (!waitingAi) end();
+            return;
+        }
+        List<Site> sites = sites();
+        String keyword;
+        if (searchHome) {
+            // 当前站这一圈只搜主标题：「镖人」一次就把整个系列都端出来，季号写法留到全站那一圈再挨个试。
+            // 以前五种写法都在当前站各搜一遍，五种 × 6 秒 = 半分钟，用户看到的就是一直「正在搜索…」
+            keyword = keywords.get(0);
+            keywordIndex = keywords.size(); // 这一个词搜完就 advance 到全站那一圈
+        } else {
+            keyword = keywords.get(keywordIndex++);
+        }
+        searchReplies = 0; // 这一个词问了几个站、回来了几个，攒齐了就不必再等（见 onSearchResult）
+        searchSites = sites.size();
+        DebugLog.d("Binge", "搜「" + keyword + "」 站数=" + sites.size() + (serialMode ? "（只要 " + seriesMain + " 第" + (Math.max(seriesIndex, 1) + 1) + " 往后）" : similarFallback ? "（降级推荐）" : ""));
+        host.requestBingeSearch(sites, keyword);
         App.post(timeoutTask, BingeSetting.SEARCH_TIMEOUT);
     }
 
@@ -684,11 +772,42 @@ class VodBingePolicy {
         return sites;
     }
 
-    /** 搜索是逐站回来的，每次都往池子里补，攒一小会儿再挑最好的 */
+    /**
+     * 搜索是逐站回来的，每次都往池子里补，攒一小会儿再挑最好的。
+     * ⚠️ 以前搜回来什么、筛掉什么都不记一笔：用户只看到一串「正在找…」的提示、最后什么也没接上，
+     * 翻日志却看不出究竟是站里没这部，还是被我们自己的门槛挡掉了。现在全记下来。
+     */
     void onSearchResult(Result result) {
+        onSearchResult(result, true);
+    }
+
+    /** counted=false：分类池那一路的结果不算在「这一个词有几个站」里 */
+    private void onSearchResult(Result result, boolean counted) {
         if (!active || result == null) return;
-        List<Vod> items = filter(result.getList());
-        if (items.isEmpty()) return;
+        if (counted) searchReplies++;
+        List<Vod> all = result.getList();
+        dropNotNext = 0;
+        dropWatched = 0;
+        dropKind = 0;
+        dropRejected = 0;
+        dropTaste = 0;
+        List<Vod> items = filter(all);
+        int total = all == null ? 0 : all.size();
+        if (items.isEmpty()) {
+            DebugLog.d("Binge", "搜回来 " + total + " 部，一部没留下（不是下一季=" + dropNotNext + " 看过=" + dropWatched + " 剧种/产地不对=" + dropKind + " 以前接过不上=" + dropRejected + " 不合口味=" + dropTaste + "）");
+            // 这一个词是空的就别干等满 SEARCH_TIMEOUT。两种情况：
+            // 1 问过的站都回来了（攒齐了）→ 立刻换下一个词，一秒都不浪费；
+            // 2 还有站没回 → 再给它 EMPTY_GRACE 这么久，到点就换词，别让用户干等 6 秒。
+            // ⚠️ 注意：开新搜索会把上一个词还在飞的站掐掉（ViewModelSearchRunner.start 会 cancel），
+            // 所以只有「攒齐了」才敢立刻走，其余情况留一点时间。
+            if (!waitingAi) {
+                boolean replied = searchSites > 0 && searchReplies >= searchSites;
+                App.removeCallbacks(timeoutTask);
+                App.post(timeoutTask, replied ? 0 : EMPTY_GRACE);
+            }
+            return;
+        }
+        DebugLog.d("Binge", "搜回来 " + total + " 部，留下 " + items.size() + " 部");
         pool.addAll(items);
         schedulePick();
     }
@@ -720,26 +839,56 @@ class VodBingePolicy {
             if (name.equals(current) || tried.contains(name)) continue;
             if (contains(pool, name) || state.hasFailedId(item.getId())) continue;
             if (BingeTags.isBanned(name)) continue;
+            if (BingeProfile.rejected(name)) { // 以前推过去、接不上的，攒够两次就不再推它
+                dropRejected++;
+                continue;
+            }
+            // 降级推荐（没有下一季了改推同类）时，不合口味的别推：收藏里没有爱情剧就别推爱情剧
+            if ((tasteFallback || genreFallback || similarFallback) && dislikedTag(name)) {
+                dropTaste++;
+                continue;
+            }
             // 系列剧只接下一季：别的剧、当季、更早的季一律不要，别的门槛也不再卡它
             // （续季常被站点分到跟本部不一样的类里，末季集数又少，拿剧种/集数去卡反而接不上）
             if (serialMode) {
-                if (!isNextSerial(name)) continue;
-                if (watched(name)) continue;
+                if (!isNextSerial(name)) {
+                    dropNotNext++;
+                    continue;
+                }
+                if (watched(name)) {
+                    dropWatched++;
+                    continue;
+                }
                 items.add(item);
                 continue;
             }
-            // 单部作品降级后的推荐：只认「同一行列的后续」或「大模型点名的同类作品」，
-            // 关键词是「爽片/动作」这类笼统词时搜出来的杂结果，这里一律不收
+            // 单部作品降级后的推荐：续作、大模型点名的，直接收，别的门槛不卡它；
+            // 剩下那些（拿「古装/穿越」这类题材词搜回来的）走下面常规那几道闸，
+            // 靠 score 排序挑最像的 —— 以前是一律拒收，结果题材词搜回来的全被丢光，
+            // 用户看到的就是一串「正在找…」之后彻底没动静（日志 13:23 那一轮正是这样）。
             if (similarFallback) {
-                if (!laterPart(name) && !matchAi(name)) continue;
-                if (watched(name)) continue;
-                items.add(item);
+                if (laterPart(name) || matchAi(name)) {
+                    if (watched(name)) dropWatched++;
+                    else items.add(item);
+                    continue;
+                }
+            }
+            if (watched(name)) { // 播放记录里有的，别再推给用户（马先生 2026-10-31）
+                dropWatched++;
                 continue;
             }
-            if (watched(name)) continue; // 播放记录里有的，别再推给用户（马先生 2026-10-31）
-            if (BingeTags.kindMismatch(name, kind)) continue; // 别串剧种：刷短剧不跳正剧，刷正剧不跳短剧
-            if (wrongType(item)) continue; // 站点自己标了分类、又明摆着是别的剧种，一样丢掉
-            if (!BingeTags.sameRegion(region, name)) continue; // 别跳到别的国籍去
+            if (BingeTags.kindMismatch(name, kind)) { // 别串剧种：刷短剧不跳正剧，刷正剧不跳短剧
+                dropKind++;
+                continue;
+            }
+            if (wrongType(item)) { // 站点自己标了分类、又明摆着是别的剧种，一样丢掉
+                dropKind++;
+                continue;
+            }
+            if (!BingeTags.sameRegion(region, name)) { // 别跳到别的国籍去
+                dropKind++;
+                continue;
+            }
             int episodes = BingeTags.parseEpisodes(item.getRemarks());
             if (episodes > 0 && episodes < BingeTags.MIN_PLAYABLE) {
                 // 集数很少，可能是整部压成一个视频的合集版：是就收，拿不准的先问大模型
@@ -757,7 +906,7 @@ class VodBingePolicy {
      * 跟 {@link #isNextSerial} 一样只往后不回头，但不要求整轮都只接续作。
      */
     private boolean laterPart(String name) {
-        if (seriesMain.isEmpty() || !BingeTags.sameSerial(seriesMain, name)) return false;
+        if (seriesMain.isEmpty() || !sameSeries(seriesMain, name)) return false;
         return BingeTags.serialOf(name) > Math.max(seriesIndex, 1);
     }
 
@@ -766,12 +915,35 @@ class VodBingePolicy {
      * ⚠️ 只往后不回头：看的是第二季就只接第三季往后，绝不能跳回第一季（马先生 2026-10-15）。
      * 季号中文「第三季」、阿拉伯「第3季」、英文「S3」、罗马「Ⅲ」写法都由 BingeTags.serialOf 统一成数字再比，
      * 不管站源怎么混写都不会比错。
-     * 同名却没写第几季的不要 —— 那多半是「整部合集」或就是当前这部，接过去等于从头再看一遍。
+     * 季号一个字都没写的（站源给下一季起了副标题，《镖人3：风起大漠》这种）也不一刀切扔掉：
+     * 名字对得上系列、又不是当前这部，先收下交给验货 —— 用户在站里手动搜得到，自动也该接得上。
      */
     private boolean isNextSerial(String name) {
-        if (!BingeTags.sameSerial(seriesMain, name)) return false;
-        // 当前这部没写第几部（《杀死比尔》）时 seriesIndex=0，它自己算第一部，所以从第二部起才算「下一部」
-        return BingeTags.serialOf(name) > Math.max(seriesIndex, 1);
+        if (!sameSeries(seriesMain, name)) return false;
+        int index = BingeTags.serialOf(name);
+        if (index > 0) {
+            // 当前这部没写第几部（《杀死比尔》）时 seriesIndex=0，它自己算第一部，所以从第二部起才算「下一部」
+            return index > Math.max(seriesIndex, 1);
+        }
+        // 认不出季号：只要不是当前这部（换站重发、拆成上下部的那种）就先收着，交给验货
+        String a = BingeTags.clean(name);
+        String b = BingeTags.clean(host.getVodName());
+        if (a.isEmpty() || b.isEmpty()) return true;
+        return !a.startsWith(b) && !b.startsWith(a);
+    }
+
+    /**
+     * 是不是同一个系列。站源常给下一季起个副标题、或把季号埋在名字中间（《镖人3：风起大漠》），
+     * 老规矩「长度差超过一个字就不算」太苛刻，搜得到却接不上就是这么来的。
+     * 主标题够长（≥3 字）才允许「被包在中间」，两字的（《镖人》）只认开头对得上的，免得撞进别的剧。
+     */
+    private boolean sameSeries(String main, String name) {
+        if (BingeTags.sameSerial(main, name)) return true;
+        String a = BingeTags.clean(main);
+        String b = BingeTags.clean(name);
+        if (a.length() < 2 || b.length() <= a.length()) return false;
+        if (b.startsWith(a)) return true;
+        return a.length() >= 3 && b.contains(a);
     }
 
     /**
@@ -833,14 +1005,14 @@ class VodBingePolicy {
         }
     }
 
-    /** 挑一部最像的出来验货，验过了才切；预加载模式下验过了先存着，等真播完再接 */
+    /** 挑几部最像的出来验货，验过了才切；预加载模式下验过了先存着，等真播完再接 */
     private void pickNow() {
-        if (!active || probing || pool.isEmpty()) return; // 已经在验一部了，不许再挑，防止双切
+        if (!active || probing || pool.isEmpty()) return; // 已经有一批在验了，不许再挑，防止双切
         final int penalty = dynamicPenalty();
         pool.sort((a, b) -> Integer.compare(scoreOf(b, penalty), scoreOf(a, penalty)));
-        Vod item = pool.remove(0);
-        tried.add(item.getName());
-        probe(item);
+        List<Vod> batch = new ArrayList<>();
+        for (int i = 0; i < PROBE_PARALLEL && !pool.isEmpty(); i++) batch.add(pool.remove(0));
+        probe(batch);
     }
 
     /** 候选总分：系列续季 + 关键词命中 + 剧种对不对 + 是不是从站点的分类池里捞的（这个最可信，加成最大） */
@@ -851,7 +1023,91 @@ class VodBingePolicy {
         if (homeKey.equals(item.getSiteKey())) score += SAME_SITE_BONUS; // 同一部别的站也有时，留在当前这个站源
         if (fromType.contains(item.getName())) score += TYPE_BONUS;
         if (matchAi(item.getName())) score += AI_TITLE_BONUS; // 大模型点名的这部：搜到了就先切它
+        score += profileScore(item.getName()); // 画像：看完过这类就往前排，弃过这类就往后压
+        score += freshScore(item.getYear()); // 新鲜度：短剧追新，今年的优先
+        score += diversityPenalty(item.getName()); // 打散：别连着推同一题材族
+        score += tasteScore(item.getName()); // 口味：常看的往前排，收藏/历史里从没出现过的往后压
+        score += Math.round(BingeProfile.siteWeight(item.getSiteKey()) * SITE_BONUS); // 这个站历次验货靠不靠谱
         return score;
+    }
+
+    /**
+     * 画像分：候选名字命中的题材词，按「看完过 / 弃过」攒下的权重加减分。
+     * 完播是最强的正信号（红果的排序里它占 35%），弃看是最强的负信号，这里两头都认。
+     */
+    private int profileScore(String name) {
+        List<String> tags = BingeTags.tagsOf(name);
+        if (tags.isEmpty()) return 0;
+        double sum = 0;
+        for (String tag : tags) sum += BingeProfile.raw(tag);
+        if (sum == 0) return 0;
+        return (int) Math.max(-PROFILE_BONUS, Math.min(PROFILE_BONUS, sum * 3));
+    }
+
+    /** 新鲜度：今年的加满、去年的少一点、三年前的不加。年份拿不到就不加不减，别瞎猜 */
+    private int freshScore(String year) {
+        int value = yearOf(year);
+        if (value <= 0) return 0;
+        int gap = Calendar.getInstance().get(Calendar.YEAR) - value;
+        if (gap <= 0) return FRESH_BONUS;
+        if (gap == 1) return FRESH_BONUS - 2;
+        if (gap == 2) return FRESH_BONUS - 4;
+        return 0;
+    }
+
+    /** 从「2025」「更新至2025」这类字段里抠年份，抠不出返回 0 */
+    private int yearOf(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        Matcher matcher = YEAR.matcher(text);
+        if (!matcher.find()) return 0;
+        try {
+            return Integer.parseInt(matcher.group());
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    /**
+     * 口味分：命中收藏/历史里常看的题材加分，命中「几乎不碰」的题材扣分。
+     * 「几乎不碰」= 那一族在收藏和播放记录里一次都没出现过（马先生：收藏里没有的类别就是不看的）。
+     */
+    private int tasteScore(String name) {
+        BingeTaste.Snap taste = BingeTaste.peek();
+        if (taste.liked.isEmpty() && taste.avoided.isEmpty()) return 0;
+        int score = 0;
+        for (String tag : BingeTags.tagsOf(name)) {
+            if (disliked(tag)) score -= TASTE_PENALTY;
+            else if (taste.liked.contains(tag)) score += TASTE_BONUS;
+        }
+        return Math.max(-TASTE_PENALTY, Math.min(TASTE_BONUS, score));
+    }
+
+    /** 这部是不是整个儿踩在「用户不碰」的题材上 */
+    private boolean dislikedTag(String name) {
+        for (String tag : BingeTags.tagsOf(name)) if (disliked(tag)) return true;
+        return false;
+    }
+
+    /**
+     * 这个题材词算不算「用户不碰的」。两条例外，免得把自己正在刷的给杀了：
+     * ① 就是当前这部自己带的词（既然在看，就不算排斥）；② 当前剧种的形态词（刷漫剧时「漫剧」不算不碰）。
+     */
+    private boolean disliked(String tag) {
+        if (tag == null || tag.isEmpty()) return false;
+        if (BingeTaste.peek().avoided.isEmpty()) return false;
+        if (currentTags != null && currentTags.contains(tag)) return false;
+        if (tag.equals(BingeTags.kindWord(kind))) return false;
+        return BingeTaste.peek().avoided.contains(tag);
+    }
+
+    /** 打散（轻量 MMR）：刚推过同一题材族的降分，隔一部之后的少降一点 */
+    private int diversityPenalty(String name) {
+        if (pickedFamilies.isEmpty()) return 0;
+        int family = BingeTags.pickFamily(BingeTags.tagsOf(name), null);
+        if (family < 0) return 0;
+        if (family == pickedFamilies.get(0)) return -REPEAT_PENALTY;
+        if (pickedFamilies.size() > 1 && family == pickedFamilies.get(1)) return -REPEAT_PENALTY / 2;
+        return 0;
     }
 
     /** 候选是不是大模型点名的那一部：站里写的名字跟模型给的可能差一两个字，互相包含都算 */
@@ -871,7 +1127,7 @@ class VodBingePolicy {
      * 当前这部没写季号时（比如就叫《庆余年》）把「庆余年 第二季」当第一季的下一部，一样顶上来。
      */
     private int serialScore(String name) {
-        if (seriesMain.isEmpty() || !BingeTags.sameSerial(seriesMain, name)) return 0;
+        if (seriesMain.isEmpty() || !sameSeries(seriesMain, name)) return 0;
         int index = BingeTags.serialOf(name);
         if (index < 0) return 0;
         int want = Math.max(1, seriesIndex) + 1;
@@ -885,59 +1141,153 @@ class VodBingePolicy {
      * 验不过就地丢掉换下一部，一部都不切、历史里一条都不留——
      * 以前是先切过去再看，播不了的再换，用户就看到连跳，历史里还留下没看过的剧。
      */
-    private void probe(Vod item) {
+    private void probe(List<Vod> items) {
+        if (items == null || items.isEmpty()) return;
         probing = true;
-        probingItem = item;
+        probeBatch.clear();
+        probeBatch.addAll(items);
+        probingItems.clear();
+        probingItems.addAll(items);
+        probePassed.clear();
+        gracePosted = false;
         probingEpoch = epoch;
+        StringBuilder names = new StringBuilder();
+        for (Vod item : items) {
+            tried.add(item.getName());
+            names.append(item.getName()).append("（").append(item.getSiteName()).append("） ");
+        }
+        DebugLog.d("Binge", "并行验货 " + items.size() + " 部：" + names);
         App.post(probeTimeoutTask, BingeSetting.PROBE_TIMEOUT);
-        PROBE.execute(() -> {
-            boolean ok = false;
-            try {
-                Result result = SiteApi.detailContent(item.getSiteKey(), item.getId());
-                ok = playable(result == null ? null : result.getVod(), item);
-            } catch (Throwable ignored) {
-                ok = false; // 拿不到详情的一律当播不了，换一部比跳过去强
-            }
-            final boolean pass = ok;
-            App.post(() -> onProbed(item, pass, probingEpoch));
-        });
+        for (Vod item : items) {
+            final int myEpoch = probingEpoch;
+            PROBE.execute(() -> {
+                boolean ok = false;
+                try {
+                    Result result = SiteApi.detailContent(item.getSiteKey(), item.getId());
+                    ok = playable(result == null ? null : result.getVod(), item);
+                } catch (Throwable ignored) {
+                    ok = false; // 拿不到详情的一律当播不了，换一部比跳过去强
+                }
+                final boolean pass = ok;
+                App.post(() -> onProbed(item, pass, myEpoch));
+            });
+        }
     }
 
     private void onProbed(Vod item, boolean ok, int myEpoch) {
-        App.removeCallbacks(probeTimeoutTask);
-        if (myEpoch != epoch || !probing || probingItem != item) return; // 这一轮已经作废或换了候选
-        probing = false;
-        probingItem = null;
-        if (ok) {
-            if (preparing) { // 快播完提前搜的：存起来，onNoNext 直接用
-                pending = item;
-                active = false;
-                preparing = false;
-                App.removeCallbacks(timeoutTask);
-                DebugLog.d("Binge", "下一部已备好 " + item.getName() + " 来自 " + item.getSiteName());
-                return;
-            }
-            DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
-            host.showBingeNext(item);
-            serial++;
-            waitingDetail = true;
-            active = false;
-            App.removeCallbacks(timeoutTask);
-            controller.selectSource(item);
+        if (myEpoch != epoch || !probing || !removeProbing(item)) return; // 这一轮已经作废、或不是这一批的
+        BingeProfile.siteMark(item.getSiteKey(), ok); // 这个站到底能不能拉出能播的详情，攒着给后面排序用
+        if (!ok) {
+            DebugLog.d("Binge", "验货没过，不切：" + item.getName());
+            if (!probingItems.isEmpty()) return; // 同批还有在飞的，等它们
+            Vod best = bestPassed(); // 同一批里可能还有别的验过了（在等排最前那个时先出结果）
+            endProbe();
+            if (best == null) next(); // 一批全军覆没才换路子
+            else switchTo(best);
             return;
         }
-        DebugLog.d("Binge", "验货没过，不切，换一部：" + item.getName());
-        next();
+        probePassed.add(item);
+        if (item == probeBatch.get(0)) { // 排最前的那个验过了：立刻切它，不必再等后面的
+            endProbe();
+            switchTo(item);
+            return;
+        }
+        if (probingItems.isEmpty()) { // 都验完了：这批里挑排最前的那个
+            Vod best = bestPassed();
+            endProbe();
+            switchTo(best);
+            return;
+        }
+        // 排后面的先验过了：给前面的半秒机会，半秒内前面的也验过就切前面的
+        if (!gracePosted) {
+            gracePosted = true;
+            App.post(probeGraceTask, PROBE_GRACE);
+        }
+    }
+
+    /** 半秒到了：不管排前面的验完没有，切这批里已经验过的、排最前的那个 */
+    private void onProbeGrace() {
+        gracePosted = false;
+        if (!probing || probePassed.isEmpty()) return;
+        Vod item = bestPassed();
+        endProbe();
+        switchTo(item);
     }
 
     private void onProbeTimeout() {
         if (!probing) return;
-        Vod item = probingItem;
-        probing = false;
-        probingItem = null;
-        if (item == null) return;
-        DebugLog.d("Binge", "验货超时，不切，换一部：" + item.getName());
+        if (!probePassed.isEmpty()) { // 有验过的就切它，别白等
+            Vod item = bestPassed();
+            endProbe();
+            DebugLog.d("Binge", "验货超时，切已经验过的 " + item.getName());
+            switchTo(item);
+            return;
+        }
+        endProbe();
+        DebugLog.d("Binge", "验货超时，一部没验过，换一批");
         next();
+    }
+
+    /** 这批里已经验过的、排最前的那个 */
+    private Vod bestPassed() {
+        for (Vod item : probeBatch) if (probePassed.contains(item)) return item;
+        return probePassed.isEmpty() ? null : probePassed.get(0);
+    }
+
+    private boolean removeProbing(Vod item) {
+        for (int i = 0; i < probingItems.size(); i++) {
+            if (probingItems.get(i) == item) {
+                probingItems.remove(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 一批验货收摊：在飞的作废，迟到的结果一律不认。
+     * ⚠️ probeBatch / probePassed 留着别清：收摊后还要挑「这批里排最前的那个」，
+     * 下一次 probe 开头本来就会重新清一遍。
+     */
+    private void endProbe() {
+        probing = false;
+        probingItems.clear();
+        gracePosted = false;
+        App.removeCallbacks(probeTimeoutTask, probeGraceTask);
+    }
+
+    /** 验过了：预加载模式下先存着，等真播完再接；否则直接切过去 */
+    private void switchTo(Vod item) {
+        if (item == null) {
+            next();
+            return;
+        }
+        recordPick(item.getName());
+        if (preparing) { // 快播完提前搜的：存起来，onNoNext 直接用
+            pending = item;
+            active = false;
+            preparing = false;
+            App.removeCallbacks(timeoutTask);
+            DebugLog.d("Binge", "下一部已备好 " + item.getName() + " 来自 " + item.getSiteName());
+            return;
+        }
+        DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
+        host.showBingeNext(item);
+        serial++;
+        waitingDetail = true;
+        active = false;
+        App.removeCallbacks(timeoutTask);
+        controller.selectSource(item);
+    }
+
+    /** 记下刚挑中的这部属于哪个题材族：连着同一族就打散，别让用户连吃三部一模一样的 */
+    private void recordPick(String name) {
+        List<String> tags = BingeTags.tagsOf(name);
+        int family = BingeTags.pickFamily(tags, null);
+        if (family < 0) return;
+        pickedFamilies.remove((Integer) family);
+        pickedFamilies.add(0, family);
+        while (pickedFamilies.size() > 3) pickedFamilies.remove(pickedFamilies.size() - 1);
     }
 
     /**
@@ -957,8 +1307,16 @@ class VodBingePolicy {
         if (BingeTags.isBanned(name)) return false;
         // 系列的下一季：只要有播放列表就接上，剧种/分类/集数门槛一概不挑（同上，续季常被误判）
         if (serialMode && isNextSerial(name) && hasEpisodes(detail)) return true;
-        // 单部作品（电影）以及它降级后推荐的同类：本来就只有一个文件，能播就算接上了
-        if (singlePart && hasEpisodes(detail)) return true;
+        // 单部作品（电影）以及它降级后推荐的同类：本来就只有一个文件，能播就算接上了。
+        // ⚠️ 降级推荐里那些拿题材词搜回来的普通同类，还是得照剧种/产地过一遍，
+        // 否则刷着国产古装剧忽然给你接一部别的剧种的（这条口子以前开得太大）
+        if (singlePart && hasEpisodes(detail)) {
+            if (similarFallback && !laterPart(name) && !matchAi(name)) {
+                if (BingeTags.kindMismatch(name, kind)) return false;
+                if (!BingeTags.sameRegion(regionBase(), String.valueOf(detail.getArea()) + detail.getTypeName() + name)) return false;
+            }
+            return true;
+        }
         // 验货也看剧种：刷正剧撞上带短剧/漫剧字样的、刷短剧撞上详情写着电视剧/国产剧的，都别切过去
         if (BingeTags.kindMismatch(name, kind)) return false;
         if (kind != BingeTags.KIND_LONG && BingeTags.hasLongMark(detail.getTypeName())) return false;
@@ -1013,6 +1371,8 @@ class VodBingePolicy {
             if (!BingeTags.sameRegion(regionBase(), info)) { // 详情里写明是别的国籍，换下一部
                 DebugLog.d("Binge", "跳过 " + item.getName() + "，产地不符（当前" + region + "）");
                 tried.add(item.getName());
+                BingeProfile.reject(item.getName()); // 记一笔：这部推过去接不上，攒够两次就不再推
+                BingeProfile.siteFail(state.getDetailKey());
                 dropHistory(item.getName()); // 别在历史里留一部压根没看过的剧
                 next();
                 return;
@@ -1033,6 +1393,8 @@ class VodBingePolicy {
             return;
         }
         tried.add(host.getVodName());
+        BingeProfile.reject(host.getVodName()); // 切过去才发现接不下去：记一笔，别下次又推它
+        BingeProfile.siteFail(state.getDetailKey());
         dropHistory(host.getVodName()); // 接不下去的这部擦掉，历史里只留真看过的
         next();
     }
@@ -1097,16 +1459,16 @@ class VodBingePolicy {
     private void end() {
         DebugLog.d("Binge", "这一轮搜到底了，没有更多候选");
         active = false;
-        probing = false;
-        probingItem = null;
+        endProbe();
         waitingAi = false;
-        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask, aiTimeoutTask);
+        clearTimers();
         if (preparing) { // 只是提前备货没备到，别打扰用户，播完时会重新搜
             preparing = false;
             return;
         }
         if (fallbackSimilar()) return; // 单部作品接不上续作：改推同类作品，别撂挑子
-        if (fallbackGenre()) return; // 系列确实接不上下一季：改刷同类，别撂挑子
+        if (fallbackTaste()) return; // 没有下一季了：按口味问大模型要同类，别撂挑子
+        if (fallbackGenre()) return; // 模型没给/关着：照题材词改刷同类，别撂挑子
         host.onBingeEnd(serialMode);
     }
 
@@ -1135,12 +1497,57 @@ class VodBingePolicy {
     }
 
     /**
+     * 没有下一季时的退路（马先生 2026-11-01）：本地几种季号写法都搜空了、大模型也说这个系列到此为止
+     * —— 那就**再问一句大模型**：参照这部（动漫 / AI 漫剧 / 短剧），优先同类型的，
+     * 或者包含某个主演、他关注过的演员的作品；问的时候把口味一起给它。
+     * 口味是从播放记录、影视收藏、关注的演员里攒的（{@link BingeTaste}）：
+     * 收藏里压根没有爱情剧、情感类、剧情类的，那些类别就别往人家眼前推。
+     * 模型报的是具体剧名，搜到就接上；模型不给力再退回 {@link #fallbackGenre()} 按题材词刷同类。
+     * 只放一次机会。
+     */
+    private boolean fallbackTaste() {
+        if (!serialMarked || tasteFallback) return false;
+        if (!AiSetting.isEnabled()) return false; // 模型关着就没这一问，老实走题材词那条路
+        tasteFallback = true;
+        serialMode = false;
+        searchHome = false;
+        keywordIndex = 0;
+        failures = 0;
+        active = true;
+        keywords = new ArrayList<>(); // 只拿模型给的名字去搜，别再拿主标题瞎撞
+        final int myEpoch = epoch;
+        BingeTaste.Snap taste = BingeTaste.peek();
+        DebugLog.d("Binge", "《" + seriesMain + "》没有下一季了，按口味问大模型要同类（常看" + taste.liked + " 不碰" + taste.avoided + " 演员" + taste.stars + "）");
+        waitingAi = true;
+        App.post(aiTimeoutTask, TASTE_AI_GRACE);
+        AiJudge.recommend(host.getVodName(), typeName, region, BingeTags.kindWord(kind), actor, taste.liked, taste.avoided, taste.stars, got -> {
+            if (myEpoch != epoch) return; // 这一轮已经作废
+            if (waitingAi) {
+                App.removeCallbacks(aiTimeoutTask);
+                waitingAi = false;
+            }
+            if (!isHandling()) return;
+            if (got == null || got.useless()) { // 模型没给能用的：交给题材词那条路
+                DebugLog.d("Binge", "大模型没按口味给出同类，退回题材词刷同类");
+                end();
+                return;
+            }
+            DebugLog.d("Binge", "按口味推荐去找同类：" + got.titles);
+            if (addNext(got, true)) search();
+            else end();
+        });
+        return true;
+    }
+
+    /**
      * 系列剧的退路：这一季看完、又确实没有下一季（本地四种写法都没搜到、大模型也说没有了），
      * 那就跟普通刷剧一样接着刷同题材的其它剧 —— 以前是直接收手，用户看到的就是「第九季看完就没了」。
      * 只放一次机会：同类再刷不动就老实收尾。
      */
     private boolean fallbackGenre() {
-        if (!serialMode || genreFallback) return false;
+        // ⚠️ 认 serialMarked 不认 serialMode：单部的降级那一步会把 serialMode 清成 false，
+        // 照它判断的话这条「改刷同类」的退路就永远走不到了 —— 用户看到的就是播完彻底停住
+        if (!serialMarked || genreFallback) return false;
         genreFallback = true;
         serialMode = false;
         searchHome = false;
@@ -1156,7 +1563,7 @@ class VodBingePolicy {
     }
 
     void reset() {
-        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask, aiTimeoutTask);
+        clearTimers();
         pool.clear();
         tried.clear();
         fromType.clear();
@@ -1168,6 +1575,7 @@ class VodBingePolicy {
         seriesMain = "";
         seriesIndex = -1;
         serialMode = false;
+        serialMarked = false;
         typeName = "";
         actor = "";
         kind = BingeTags.KIND_UNKNOWN;
@@ -1183,13 +1591,20 @@ class VodBingePolicy {
         similarFallback = false;
         seriesHasNext = null;
         genreFallback = false;
+        tasteFallback = false;
+        currentTags = null;
         singlePart = false;
         active = false;
         waitingDetail = false;
         preparing = false;
         pending = null;
-        probing = false;
-        probingItem = null;
+        endProbe();
+        pickedFamilies.clear();
         epoch++; // 上一轮没回来的验货结果一律作废
+    }
+
+    /** 到点的定时任务一并撤掉 */
+    private void clearTimers() {
+        App.removeCallbacks(timeoutTask, pickTask, probeTimeoutTask, probeGraceTask, aiTimeoutTask);
     }
 }

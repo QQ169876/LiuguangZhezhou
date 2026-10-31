@@ -18,6 +18,7 @@ import android.media.MediaFormat;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -73,9 +74,25 @@ public class ScreenCastService extends Service {
     private MediaCodec audio;
     private Thread audioThread;
     private long audioPtsUs;
+    /**
+     * 时间戳锚点（微秒，开机时钟）：**音视频和 PCR 都得挂在这一条时间轴上**。
+     * <p>
+     * 之前三者各走各的 —— 视频用 MediaCodec 给的 `presentationTimeUs`（VirtualDisplay 打的是
+     * 开机至今的时刻，这台手机已开机 17 小时，实测第一帧 PTS = 5,564,112,011 ≈ 17.2h）；
+     * 音频是我们自己从 0 累加的计数器；PCR 又由视频 pts 派生，乘完 300 直接撑爆 33 位回绕。
+     * 接收端拿 PCR 当主时钟一对照：音频「早该播了」，视频「15 小时后才该播」——
+     * 于是它解出第一帧就一直干等，屏幕上就是一张不动的静态图（马先生 2026-11-01 实测）。
+     */
+    private volatile long anchorUs = -1L;
+    private volatile boolean anchored;   // 视频时间轴的原点定下来了没
+    /** 最长多久必须出一个关键帧（毫秒）：中途才接进来的接收端就靠它出画 */
+    private static final long KEY_MS = 1500L;
 
     private volatile boolean casting;
     private volatile byte[] spsPps;
+    private volatile boolean wantKey;   // 有新接收端接入：立刻催一个关键帧
+    private volatile long lastKeyMs;    // 上一个关键帧是什么时候出的
+    private volatile long lastAskMs;    // 上一次催是什么时候（别每帧都催）
     private int shotWidth;
     private int shotHeight;
 
@@ -226,9 +243,18 @@ public class ScreenCastService extends Service {
         // 先把本机 HTTP 拉流地址准备好：屏幕广播首选这一档（接收端主动连，不依赖 AP 组播）
         try {
             com.fongmi.android.tv.server.Server.get().start();
-            String screen = com.fongmi.android.tv.server.Server.get().getAddress("/screen");
-            outlet.setScreenHttp(screen);
-            DebugLog.d(TAG, "屏幕拉流地址 " + screen);
+            // ⚠️ 必须用**局域网 IP**：Server.getAddress("路径") 那个重载是给本机自己用的，
+            // 拼出来是 127.0.0.1 —— 报给接收端就成了「请连你自己」，接收端一秒后 Source error 黑屏。
+            String lan = com.fongmi.android.tv.server.Server.get().getAddress();
+            String screen = lan + "/screen";
+            // 拿不到真实局域网 IP（没连 Wi-Fi / 地址还是回环）就别报这一档，退回 UDP
+            if (lan.isEmpty() || lan.contains("127.") || lan.contains("localhost")) {
+                DebugLog.d(TAG, "本机没有可用的局域网地址（" + lan + "），屏幕广播退回 UDP");
+                outlet.setScreenHttp("");
+            } else {
+                outlet.setScreenHttp(screen);
+                DebugLog.d(TAG, "屏幕拉流地址 " + screen);
+            }
         } catch (Throwable e) {
             DebugLog.d(TAG, "本机 HTTP 服务起不来，退回 UDP：" + e.getClass().getSimpleName());
         }
@@ -248,9 +274,13 @@ public class ScreenCastService extends Service {
             DebugLog.d(TAG, "保活锁没拿到：" + e.getClass().getSimpleName());
         }
         // HTTP 主动拉流分发器：新客户端连上时让编码线程补一份节目表
+        // 有新接收端通过 HTTP 接进来：补节目表之外，**必须再催一个关键帧** ——
+        // SPS/PPS 只贴在关键帧前面，不给关键帧的话对方拿着一堆 P 帧照样解不出画面
         stream = new ScreenStream(() -> {
             CastMux m = mux;
             if (m != null) m.requestHeader();
+            wantKey = true;
+            DebugLog.d(TAG, "新客户端接入，催关键帧 + 补节目表");
         });
         ScreenStream.set(stream);
         // TS 同时走两路口：原来的 UDP（组播/单播）+ HTTP 分发（不依赖 AP 组播）
@@ -264,6 +294,8 @@ public class ScreenCastService extends Service {
     }
 
     private boolean startEncode(int height) {
+        anchorUs = System.nanoTime() / 1000L; // 这一轮广播的时间原点：音频先按它对齐
+        anchored = false;                     // 视频那条轴等第一帧到手再定
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int screenW = Math.max(metrics.widthPixels, metrics.heightPixels);
         int screenH = Math.min(metrics.widthPixels, metrics.heightPixels);
@@ -297,6 +329,8 @@ public class ScreenCastService extends Service {
             int flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR;
             display = projection.createVirtualDisplay("oktv-cast", width, target, metrics.densityDpi, flags, input, null, null);
             startAudio();
+            lastKeyMs = System.currentTimeMillis();
+            wantKey = true;
             drainThread = new Thread(this::drain, "cast-screen");
             drainThread.setDaemon(true);
             drainThread.start();
@@ -328,12 +362,46 @@ public class ScreenCastService extends Service {
         return Math.min(value, shortSide > 0 ? shortSide : value);
     }
 
+    /**
+     * 把编码器的开机时钟换算成「本轮广播的第几微秒」。
+     * 原点取**第一帧视频自己的时刻**，音频那边本来就是从 0 累加的，两边才对得齐；
+     * 万一这台机器的两个时钟不是一个基准（差值几小时），这么取也照样各从 0 开始、互相对齐。
+     */
+    private long stamp(long ptsUs) {
+        if (!anchored) {
+            anchored = true;
+            anchorUs = ptsUs;
+        }
+        long value = ptsUs - anchorUs;
+        return value > 0L ? value : 0L;
+    }
+
+    /**
+     * 催关键帧。KEY_I_FRAME_INTERVAL 在很多机器上（实测这台小米就是）根本不生效，
+     * 编码器只出开头那一个 IDR，之后全是 P 帧 —— 中途接进来的玩家拿到 P 帧没有 SPS/PPS，
+     * 解不出画面（PotPlayer 实测：有声音没图像）。所以这里自己按时间催。
+     */
+    private void askKeyIfNeeded(MediaCodec codec) {
+        long now = System.currentTimeMillis();
+        if (!wantKey && now - lastKeyMs < KEY_MS) return;
+        if (now - lastAskMs < 400) return; // 别一帧一催，催太密反而拖慢编码
+        lastAskMs = now;
+        wantKey = false;
+        try {
+            Bundle params = new Bundle();
+            params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0);
+            codec.setParameters(params);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void drain() {
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
         MediaCodec codec = video;
         if (codec == null) return;
         int frames = 0;
         while (casting && codec != null) {
+            askKeyIfNeeded(codec);
             int index;
             try {
                 index = codec.dequeueOutputBuffer(info, 10_000L);
@@ -357,7 +425,11 @@ public class ScreenCastService extends Service {
                     spsPps = frame;
                 } else {
                     boolean key = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
-                    mux.video(key && spsPps != null ? join(spsPps, frame) : frame, info.presentationTimeUs, key);
+                    if (key) {
+                        lastKeyMs = System.currentTimeMillis();
+                        if (frames > 0 && spsPps == null) DebugLog.d(TAG, "关键帧缺 SPS/PPS（新接入的接收端会出不了画）");
+                    }
+                    mux.video(key && spsPps != null ? join(spsPps, frame) : frame, stamp(info.presentationTimeUs), key);
                     if (frames == 0) DebugLog.d(TAG, "首帧已发出 size=" + info.size + " key=" + key + " spsPps=" + (spsPps != null));
                     frames++;
                     if (frames % 300 == 0) DebugLog.d(TAG, "已发 " + frames + " 帧");
@@ -405,7 +477,9 @@ public class ScreenCastService extends Service {
             audio.configure(mpeg, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             audio.start();
             record.startRecording();
-            audioPtsUs = 0L;
+            // 音频那条计数器是从 0 自己累加的，得先抬到跟视频同一条时间轴上
+            // （录音比开编码晚一点点，补上这点差，音画才对得上）
+            audioPtsUs = anchorUs < 0L ? 0L : Math.max(0L, System.nanoTime() / 1000L - anchorUs);
             audioThread = new Thread(this::drainAudio, "cast-audio");
             audioThread.setDaemon(true);
             audioThread.start();

@@ -9,8 +9,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.os.IBinder;
-import android.view.SurfaceView;
-import android.view.TextureView;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -41,6 +39,7 @@ import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.databinding.ViewPlayerOsdBinding;
 import com.fongmi.android.tv.playback.PlaybackIntent;
 import com.fongmi.android.tv.player.PlayerManager;
+import com.fongmi.android.tv.player.ui.PlayerRotate;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
 import com.fongmi.android.tv.setting.DanmakuSetting;
@@ -547,39 +546,25 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         SubtitleSetting.applyStyle(this, playerView.getSubtitleView());
         // 画面旋转的角度要跟着播放窗口大小重算（进出全屏、分屏都会变），尺寸一变就套一次
         playerView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> applyVideoRotate());
+        // 片源比例出来得晚（尤其是直播、广播那一类），那一刻画面那一层的尺寸才变 ——
+        // 只盯 PlayerView 自己就漏了，见 PlayerRotate.watch
+        PlayerRotate.watch(playerView, PlayerSetting::getVideoRotate);
         applyVideoRotate();
     }
 
     /**
      * 画面旋转期间必须把渲染层换成 TextureView（SurfaceView 只跟缩放、不跟旋转，转了只会看到画面被压扁），
      * 角度回正后换回用户自己选的渲染方式。切换是实时的，不用重开播放。
+     * 跟广播接收页共用 `PlayerRotate` 那一套，省得两边各写一份、各错各的。
      */
     private void applyRender(PlayerView playerView) {
         if (playerView == null) return;
-        int render = PlayerSetting.getEffectiveRender();
+        Player player = null;
         try {
-            playerView.setRender(render);
-            // 播放中热切换出来的新 surface 这一刻还没就绪（TextureView 的 SurfaceTexture 要等一次布局），
-            // 就这样放着会黑屏 —— 马先生 2026-10-14 实测「Surface 模式下按旋转按钮直接黑屏」。
-            // 等这一帧过去再补一次绑定就正常了。
-            if (render == PlayerSetting.RENDER_TEXTURE) rebindSurface(playerView);
-        } catch (Exception e) {
-            DebugLog.d("Rotate", "切换渲染层失败 " + e.getMessage());
+            player = player().getPlayer();
+        } catch (Exception ignored) {
         }
-    }
-
-    /** 下一帧把新 surface 重新绑给播放器（热切换时刚建出来的 surface 还是空的，绑了等于没绑）*/
-    private void rebindSurface(PlayerView playerView) {
-        playerView.post(() -> {
-            try {
-                Player player = player().getPlayer();
-                View surface = playerView.getVideoSurfaceView();
-                if (player == null || surface == null) return;
-                if (surface instanceof TextureView) player.setVideoTextureView((TextureView) surface);
-                else if (surface instanceof SurfaceView) player.setVideoSurfaceView((SurfaceView) surface);
-            } catch (Exception ignored) {
-            }
-        });
+        PlayerRotate.applyRender(playerView, player);
     }
 
     /**
@@ -603,27 +588,11 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         if (degree == 0) {
             if (appliedRotate == 0) return; // 已经正着：缩放归手势管，别抢
             appliedRotate = 0;
-            playerView.setScaleX(1f);
-            playerView.setScaleY(1f);
+            PlayerRotate.scale(playerView, 0);
             return;
         }
-        int width = playerView.getWidth();
-        int height = playerView.getHeight();
-        if (width <= 0 || height <= 0) return;
-        // 画面本身的尺寸（旋转前）。取不到（surface 还没布局）就先按窗口算，下一帧会重算。
-        int vw = width, vh = height;
-        View surface = playerView.getVideoSurfaceView();
-        if (surface != null && surface.getWidth() > 0 && surface.getHeight() > 0) {
-            vw = surface.getWidth();
-            vh = surface.getHeight();
-        }
-        // 只有竖过来的 90°/270° 才要缩；180° 转完跟窗口一样大，缩了反而把画面弄小
-        float scale = degree == 90 || degree == 270 ? Math.min((float) width / vh, (float) height / vw) : 1f;
-        // 旋转必须绕中心：手势缩放把 pivot 挪到手指点了，不掰回来画面会转出去
-        playerView.setPivotX(width / 2f);
-        playerView.setPivotY(height / 2f);
-        playerView.setScaleX(scale);
-        playerView.setScaleY(scale);
+        if (playerView.getWidth() <= 0 || playerView.getHeight() <= 0) return;
+        PlayerRotate.scale(playerView, degree); // 缩放按画面实际尺寸算，逻辑跟接收页共用
         appliedRotate = degree;
     }
 

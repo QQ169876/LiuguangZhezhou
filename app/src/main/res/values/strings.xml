@@ -632,6 +632,7 @@
     <string name="update_reinstall_fail">安装包没取下来，检查网络后再试</string>
     <string name="update_confirm">Update</string>
     <string name="update_latest">Already up to date</string>
+    <string name="update_rescue">Both channels are down — opening the GitHub repo temporarily to fetch the update</string>
     <string name="update_check_fail">Can\'t reach the update server. Check the network and try again.</string>
     <string name="update_checking">Still checking, please wait…</string>
     <string name="update_skip">Skipped this version, you\'ll be told when the next one is out</string>
@@ -643,8 +644,10 @@
     <string name="update_keep">Installer may not show up on this device. A copy is saved to <xliff:g name="path">%s</xliff:g>, install it manually if needed.</string>
     <string name="update_install_manual">Can\'t open the installer. The package is saved to <xliff:g name="path">%s</xliff:g>, please install it manually.</string>
     <string name="setting_route">Update route</string>
-    <string name="route_auto">Auto (direct first)</string>
-    <string name="route_direct">Direct GitHub</string>
+    <string name="route_auto">Auto (Gitee → netdisk → GitHub)</string>
+    <string name="route_gitee">Gitee (direct, default)</string>
+    <string name="route_self">Netdisk (self-hosted, direct)</string>
+    <string name="route_github">GitHub (direct first, proxy fallback)</string>
     <string name="route_custom">Custom SOCKS5…</string>
     <string name="route_hint">Proxy address, e.g. 192.168.1.100:1080</string>
     <string name="route_bad">Wrong host or port</string>
@@ -653,7 +656,7 @@
     <string name="route_delete">Remove this proxy</string>
     <string name="route_removed">Proxy removed</string>
     <string name="route_socks_prefix">SOCKS5 %1$s</string>
-    <string name="route_list_tip">Pick a line for updates; custom ones can be removed with the trash icon</string>
+    <string name="route_list_tip">Pick which channel updates come from. Auto tries Gitee, then the netdisk, then GitHub as a last resort — the pinned one is tried first and the others still back it up.</string>
     <string name="route_lan_tip">Scan the QR code with your phone, fill in the form and submit</string>
     <string name="route_clear">Clear (back to auto)</string>
     <string name="route_scan">Scan to fill</string>

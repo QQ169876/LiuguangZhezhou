@@ -26,6 +26,7 @@ import com.fongmi.android.tv.utils.GhRoute;
 import com.fongmi.android.tv.utils.Github;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
+import com.fongmi.android.tv.utils.UpdateChannel;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Prefers;
@@ -84,6 +85,8 @@ public class Updater implements Download.Callback, UpdateListener {
     private static final long WARM_RETRY_GAP = 30 * 1000;
     /** 弹框后给用户挑线路的最长等待：这段时间里每 1 秒看一眼好没好 */
     private static final int PREPARE_RETRY = 10;
+    /** 自动检查走「临时开放仓库」那条绝路的间隔；手动点「检查更新」随时可以走 */
+    private static final long RESCUE_GAP = 6 * 60 * 60 * 1000;
 
     private static final Object LOCK = new Object();
 
@@ -151,6 +154,8 @@ public class Updater implements Download.Callback, UpdateListener {
         new Thread(() -> {
             try {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); // 别跟首页抢
+                // 上回走绝路把仓库翻成公开、还没来得及翻回去（多半是下完包就装、进程被杀了）：补一次
+                if (Setting.isGithubPublic()) Github.restore();
                 Found found = probeBoth(true, false); // 先问网盘，网盘没搭理才去试 GitHub 那几条
                 List<Probe> probes = found.probes;
                 Probe self = found.self;
@@ -213,15 +218,44 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 定用哪份：Gitee（默认主）→ 自建网盘 → GitHub，比版本号谁新用谁；一样新的优先 Gitee。
-     * 自建源上没有这台机型对应的包（apk 为空）时，仍然往下走。
+     * 定用哪份：默认顺序 码云 → 网盘 → GitHub，比版本号谁新用谁；版本一样新按这个顺序取靠前的。
+     * 用户手动锁定了某条通道时那条排在最前，它取不到（或网盘上没有本机型的包）才往后退 ——
+     * 手动指定是「优先走它」，不是「只许走它」，锁错通道不至于就更新不了。
      */
     private static Probe pick(List<Probe> probes, Probe self) {
-        Probe gitee = giteeOf(probes);
-        Probe best = newest(probes);
-        if (gitee != null && gitee.code > 0 && (best == null || gitee.code >= best.code)) return gitee;
-        if (self == null || self.apk == null || self.apk.isEmpty()) return best;
-        if (best == null || self.code >= best.code) return self;
+        List<Probe> order = new ArrayList<>();
+        String fixed = UpdateChannel.fixed(); // null = 自动
+        if (Gitee.is(fixed)) addUsable(order, giteeOf(probes));
+        else if (SelfHost.is(fixed)) addUsable(order, self);
+        else if (Github.is(fixed)) addUsable(order, githubOf(probes));
+        addUsable(order, giteeOf(probes));
+        addUsable(order, self);
+        addUsable(order, githubOf(probes));
+        Probe best = null;
+        for (Probe item : order) if (best == null || item.code > best.code) best = item;
+        return best;
+    }
+
+    private static void addUsable(List<Probe> order, Probe probe) {
+        if (!usable(probe) || order.contains(probe)) return;
+        order.add(probe);
+    }
+
+    /** 这份真能拿来更新：有版本号，而且网盘那份必须带本机型的包地址 */
+    private static boolean usable(Probe probe) {
+        if (probe == null || probe.code <= 0) return false;
+        if (SelfHost.is(probe.route) && (probe.apk == null || probe.apk.isEmpty())) return false;
+        return true;
+    }
+
+    /** GitHub 那几条线路里版本最新的那份（码云和网盘不算在内） */
+    private static Probe githubOf(List<Probe> probes) {
+        Probe best = null;
+        if (probes == null) return null;
+        for (Probe item : probes) {
+            if (item == null || Gitee.is(item.route) || SelfHost.is(item.route)) continue;
+            if (best == null || item.code > best.code) best = item;
+        }
         return best;
     }
 
@@ -256,6 +290,38 @@ public class Updater implements Download.Callback, UpdateListener {
             DebugLog.d("Update", "Gitee 返回 code=" + code + " 用时 " + (System.currentTimeMillis() - start) + "ms");
             return new Probe(Gitee.ROUTE, System.currentTimeMillis() - start, body, code);
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 最后一招（马先生 2026-11-01 定）：码云和网盘都彻底取不到、GitHub 那几条代理也全撞墙时，
+     * **把仓库临时转成公开**，取完再转回私有。
+     *
+     * 为什么非得这样：仓库是私有的，私有仓库的 raw 和 release 附件匿名取一律 404（有的还先给 403），
+     * 前面那堆加速代理再快也只是把 404 更快地送回来。所以这一步的触发条件就是「前两条都完全没法更新」
+     * —— 码云和网盘一份都拿不到（超时 / 403 / 404 都算），GitHub 那几条也全军覆没。
+     *
+     * 取到版本文件后并不立刻转回私有：包还没下呢。标记留在 {@link Setting#isGithubPublic()}，
+     * 下完包（见 {@link #dismiss()}）或下次启动（见 {@link #prewarm()}）一定转回去。
+     * 另外自动检查最多六小时走一次这条绝路，免得网络一抽就把仓库反复翻成公开；手动点不受此限。
+     */
+    private static Probe rescue(Probe gitee, Probe self, boolean forced) {
+        if (usable(gitee) || usable(self)) return null; // 前两条还有一条能更新，轮不到这一步
+        if (!Github.hasToken()) return null;
+        if (!forced && System.currentTimeMillis() - Setting.getRescueAt() < RESCUE_GAP) return null;
+        if (!Github.open()) return null;
+        try {
+            Probe best = newest(probeAll(getRoutes(true), getJsonUrl(), 0));
+            if (best == null) {
+                Github.restore(); // 白翻一次，赶紧转回私有
+                return null;
+            }
+            DebugLog.d("Update", "最后一招：仓库临时转公开，GitHub 拿到 code=" + best.code);
+            App.post(() -> Notify.show(R.string.update_rescue));
+            return best;
+        } catch (Throwable e) {
+            Github.restore();
             return null;
         }
     }
@@ -468,6 +534,23 @@ public class Updater implements Download.Callback, UpdateListener {
                 if (self == null) self = again.self;
             }
             Probe best = pick(probes, self);
+            // 全都拿不到时，先把 GitHub 那几条（直连 → 代理）按老规矩试一遍，
+            // 真的一条都不通才轮到「临时开放仓库」那条绝路
+            if (best == null) {
+                List<Probe> github = probeAll(getRoutes(forced), getJsonUrl(), 0);
+                if (github != null && !github.isEmpty()) {
+                    probes = merge(probes, github);
+                    best = pick(probes, self);
+                }
+            }
+            if (best == null) {
+                Probe rescue = rescue(giteeOf(probes), self, forced);
+                if (rescue != null) {
+                    if (probes == null) probes = new ArrayList<>();
+                    probes.add(rescue);
+                    best = rescue;
+                }
+            }
             // 手动点：第一轮拿到的可能全是代理的旧缓存，换个时间戳再问一轮，哪条新用哪条
             if (forced && best != null && best.code <= BuildConfig.VERSION_CODE) {
                 List<Probe> again = probeAll(getRoutes(true), getJsonUrl(), 0);
@@ -550,21 +633,16 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 参与探测的线路：手动锁定的那条排在最前，后面是候选。
+     * 参与探测的 GitHub 线路：**默认直连**，直连不通再自动过代理 —— 这个顺序是 GhRoute 里定好的，
+     * 用户不再在设置里挑代理（挑了也没用，代理哪天通哪天不通用户判断不了）。
      * 日常自动检查只带最快的三条（外加直连），手动点「检查更新」才把整张表拿出来。
      */
     private static List<String> getRoutes() {
-        return getRoutes(false);
+        return GhRoute.candidates();
     }
 
     private static List<String> getRoutes(boolean all) {
-        List<String> routes = new ArrayList<>();
-        String fixed = GhRoute.fixed();
-        if (fixed != null) routes.add(fixed);
-        for (String route : all ? GhRoute.candidatesAll() : GhRoute.candidates()) {
-            if (!routes.contains(route)) routes.add(route);
-        }
-        return routes;
+        return all ? GhRoute.candidatesAll() : GhRoute.candidates();
     }
 
     /**
@@ -744,7 +822,11 @@ public class Updater implements Download.Callback, UpdateListener {
                 .cacheControl(CacheControl.FORCE_NETWORK)
                 .get().build();
         try (Response res = GhRoute.probe(route, PROBE_TIMEOUT).newCall(request).execute()) {
-            if (!res.isSuccessful() || res.body() == null) return null;
+            if (!res.isSuccessful() || res.body() == null) {
+                // 留痕：私有仓库匿名取一律 404（有的先给 403），"代理全都通、就是拿不到版本"多半就是这个
+                DebugLog.d("Update", host(route) + " HTTP " + res.code() + " 用时 " + (System.currentTimeMillis() - start) + "ms");
+                return null;
+            }
             String body = res.body().string();
             // 校验拿到的确实是版本文件，避免某些代理返回网页却给了 200
             int code = new JSONObject(body).optInt("code");
@@ -761,14 +843,12 @@ public class Updater implements Download.Callback, UpdateListener {
      * 挑出真正下载用的线路：直连优先，别的线路明显更快才换过去
      */
     private Probe choose(List<Probe> probes, String apk) {
-        String fixed = GhRoute.fixed();
         Probe direct = null;
         List<Probe> others = new ArrayList<>();
         for (Probe item : probes) {
             // 自建源和 Gitee 是另一条路：能走到这说明挑中的不是它们，
             // 别拿它们去测速（量不出速度还白下一截）
             if (item == null || straight(item.route)) continue;
-            if (fixed != null && item.route.equals(fixed)) return keep(probes, item);
             if (GhRoute.isDirect(item.route)) direct = item;
             else others.add(item);
         }
@@ -864,15 +944,29 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 重新安装（设置页那个按钮）：不看版本号，直接把 Gitee 上的安装包拉下来交给系统安装器，
-     * 并顺手在**系统下载目录**留一份，用户想拷到别的机器上装也行。
-     * Gitee 取不到包就退回「检查更新」那条老路，按钮不至于按了没反应。
+     * 重新安装（设置页那个按钮）：不看版本号，强制下载安装。
+     * 先找**当前版本**的包（重装 = 再装一遍这个版本），当前版本在通道里没有就退到最新版。
+     * 下好了在**系统下载目录**留一份，再交给系统安装器。
      */
     public static void reinstall(FragmentActivity activity) {
         Notify.show(R.string.update_reinstall_fetch);
         Task.execute(() -> {
-            String url = Gitee.apk(latestTag());
-            File file = url.isEmpty() ? null : fetchReinstall(url);
+            // 优先装回当前版本：通道里有这个版本的包就下它
+            String currentTag = "v" + BuildConfig.VERSION_NAME;
+            String url = probeApkUrl(Gitee.apk(currentTag));
+            if (url.isEmpty()) {
+                // 当前版本不在通道里（可能是未发布的开发版），退到最新版
+                DebugLog.d("Update", "重装：通道里没有 " + currentTag + "，退到最新版");
+                url = probeApkUrl(Gitee.apk(latestTag()));
+            }
+            if (url.isEmpty()) {
+                App.post(() -> {
+                    Notify.show(R.string.update_reinstall_fail);
+                    if (activity != null) create().force().start(activity);
+                });
+                return;
+            }
+            File file = fetchReinstall(url);
             boolean usable = isInstallable(file);
             if (usable) FileUtil.saveToDownload(file, file.getName());
             App.post(() -> {
@@ -888,6 +982,19 @@ public class Updater implements Download.Callback, UpdateListener {
                 });
             });
         });
+    }
+
+    /** 探一下这个包地址能不能用：发 GET 只看响应头，不读 body，200 就有效 */
+    private static String probeApkUrl(String url) {
+        if (url == null || url.isEmpty()) return "";
+        try {
+            Request request = new Request.Builder().url(url).get().build();
+            try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
+                if (res.isSuccessful()) return url;
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     /** 直接从 Gitee 一次性把包拉下来（它的 CDN 不认 Range，走不了断点续传） */
@@ -993,6 +1100,8 @@ public class Updater implements Download.Callback, UpdateListener {
             if (dialog != null) dialog.dismiss();
         } catch (Exception ignored) {
         }
+        // 走到这一步说明这一轮收摊了：不管下没下完、装没装成，仓库都得先转回私有
+        if (Setting.isGithubPublic()) Task.execute(Github::restore);
     }
 
     @Override

@@ -143,6 +143,38 @@ public class Setting {
         Prefers.put("update_skip", tag == null ? "" : tag);
     }
 
+    /**
+     * 更新通道（2026-11-01 改）：空 = 自动，按「码云 → 网盘 → GitHub」的顺序来；
+     * 否则是手动锁定的那条（gitee:// / self:// / github://），它优先走，不通才退回别的。
+     * 跟下面 route / route_auto 那两个旧键不是一回事：那是给 GitHub 挑加速代理用的，
+     * 现在代理全收进 GhRoute 内部，不再让用户挑。
+     */
+    public static String getUpdateChannel() {
+        return Prefers.getString("update_channel");
+    }
+
+    public static void putUpdateChannel(String channel) {
+        Prefers.put("update_channel", channel == null ? "" : channel);
+    }
+
+    /** 仓库被临时转成公开了：下完包（或下次启动）一定要转回私有，不能把仓库晾在公开状态 */
+    public static boolean isGithubPublic() {
+        return Prefers.getBoolean("github_public");
+    }
+
+    public static void putGithubPublic(boolean on) {
+        Prefers.put("github_public", on);
+    }
+
+    /** 上次走「临时开放仓库」那条绝路的时刻：别让它反复把仓库翻成公开 */
+    public static long getRescueAt() {
+        return Prefers.getLong("rescue_at");
+    }
+
+    public static void putRescueAt(long at) {
+        Prefers.put("rescue_at", at);
+    }
+
     public static boolean isRouteAuto() {
         return Prefers.getBoolean("route_auto", true);
     }

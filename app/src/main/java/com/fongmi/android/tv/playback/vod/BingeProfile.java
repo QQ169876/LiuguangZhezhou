@@ -30,8 +30,19 @@ public class BingeProfile {
     /** 画像里最多记多少个题材词，超了清掉重来（词典一共也就一百多个） */
     private static final int LIMIT = 300;
 
+    /** 站点可靠度：验货验过/验不过各记一次，老验不出能播的站自然排到后面 */
+    private static final Map<String, Entry> SITES = new ConcurrentHashMap<>();
+    /** 推过去却接不上的剧：记次数，攒够 REJECT_HITS 次就不再推它（同一部播不了的别反复切过去） */
+    private static final Map<String, Entry> REJECT = new ConcurrentHashMap<>();
+    /** 记几次算「别再推了」：一次可能是网络抽风，两次还接不上就是它不行 */
+    private static final int REJECT_HITS = 2;
+    /** 「别再推」的保质期，过期忘掉：站源可能后来补全了 */
+    private static final long REJECT_TTL = 30L * 24 * 3600 * 1000;
+
     private static final Map<String, Entry> MAP = new ConcurrentHashMap<>();
     private static volatile boolean loaded;
+    private static volatile boolean sitesLoaded;
+    private static volatile boolean rejectLoaded;
 
     private static class Entry {
         int pos;
@@ -69,6 +80,76 @@ public class BingeProfile {
         Entry entry = MAP.get(tag);
         if (entry == null) return 0;
         return scoreOf(entry.pos, entry.neg, entry.last, System.currentTimeMillis());
+    }
+
+    /** 同上，但保留负号：负反馈压过正反馈时为负，排序时用来扣分（weight 是压到 0 的版本） */
+    public static double raw(String tag) {
+        load();
+        Entry entry = MAP.get(tag);
+        if (entry == null) return 0;
+        double base = entry.pos - NEG_WEIGHT * entry.neg;
+        double periods = Math.max(0, System.currentTimeMillis() - entry.last) / (double) HALF_LIFE_MS;
+        return base * Math.pow(0.5, periods);
+    }
+
+    /** 一次验货的结果：过了记一分，没过记一次 */
+    public static void siteMark(String key, boolean ok) {
+        if (ok) siteOk(key);
+        else siteFail(key);
+    }
+
+    /** 验货过了：这个站能拉出能播的详情，记一分 */
+    public static synchronized void siteOk(String key) {
+        if (key == null || key.isEmpty()) return;
+        loadSites();
+        Entry entry = SITES.computeIfAbsent(key, k -> new Entry());
+        entry.pos++;
+        entry.last = System.currentTimeMillis();
+        write(SITES, sitesFile());
+    }
+
+    /** 验货没过：这个站拉出来的东西播不了，记一次 */
+    public static synchronized void siteFail(String key) {
+        if (key == null || key.isEmpty()) return;
+        loadSites();
+        Entry entry = SITES.computeIfAbsent(key, k -> new Entry());
+        entry.neg++;
+        entry.last = System.currentTimeMillis();
+        write(SITES, sitesFile());
+    }
+
+    /** 站点可靠度 -1（次次验不过）~ +1（次次验得过），没记过是 0 */
+    public static double siteWeight(String key) {
+        if (key == null || key.isEmpty()) return 0;
+        loadSites();
+        Entry entry = SITES.get(key);
+        if (entry == null) return 0;
+        int total = entry.pos + entry.neg;
+        if (total <= 0) return 0;
+        return (entry.pos - entry.neg) / (double) total;
+    }
+
+    /** 切过去却发现接不下去（没集数、产地不对、播不了）：记一次，攒够就不再推它 */
+    public static synchronized void reject(String name) {
+        if (name == null || name.isEmpty()) return;
+        loadReject();
+        String key = BingeTags.clean(name);
+        if (key.length() < 2) return;
+        if (REJECT.size() > 200) REJECT.clear(); // 攒太多了就清掉重来，别让它一直长
+        Entry entry = REJECT.computeIfAbsent(key, k -> new Entry());
+        entry.pos++;
+        entry.last = System.currentTimeMillis();
+        write(REJECT, rejectFile());
+    }
+
+    /** 这部是不是屡推屡接不上：攒够次数、且还在保质期内就别再推了 */
+    public static boolean rejected(String name) {
+        if (name == null || name.isEmpty()) return false;
+        loadReject();
+        String key = BingeTags.clean(name);
+        Entry entry = key.length() < 2 ? null : REJECT.get(key);
+        if (entry == null || entry.pos < REJECT_HITS) return false;
+        return System.currentTimeMillis() - entry.last < REJECT_TTL;
     }
 
     /** 纯函数，方便单测：基数 × 半衰期衰减 */
@@ -173,43 +254,68 @@ public class BingeProfile {
         if (loaded) return;
         synchronized (BingeProfile.class) {
             if (loaded) return;
-            try {
-                File file = file();
-                if (file.exists()) {
-                    byte[] data = new byte[(int) file.length()];
-                    try (FileInputStream in = new FileInputStream(file)) {
-                        int read = in.read(data);
-                        JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
-                        for (Iterator<String> it = json.keys(); it.hasNext(); ) {
-                            String key = it.next();
-                            JSONObject item = json.optJSONObject(key);
-                            if (item == null) continue;
-                            Entry entry = new Entry();
-                            entry.pos = item.optInt("p", 0);
-                            entry.neg = item.optInt("n", 0);
-                            entry.last = item.optLong("t", 0);
-                            MAP.put(key, entry);
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
+            read(MAP, file());
             loaded = true;
         }
     }
 
+    private static void loadSites() {
+        if (sitesLoaded) return;
+        synchronized (BingeProfile.class) {
+            if (sitesLoaded) return;
+            read(SITES, sitesFile());
+            sitesLoaded = true;
+        }
+    }
+
+    private static void loadReject() {
+        if (rejectLoaded) return;
+        synchronized (BingeProfile.class) {
+            if (rejectLoaded) return;
+            read(REJECT, rejectFile());
+            rejectLoaded = true;
+        }
+    }
+
     private static synchronized void save() {
+        write(MAP, file());
+    }
+
+    /** 读一份计数表：文件坏了、丢了，全当没有，绝不让它把刷剧拖死 */
+    private static void read(Map<String, Entry> map, File file) {
         try {
-            if (MAP.size() > LIMIT) MAP.clear(); // 画像膨胀过头就清掉重来，刷几天又攒回来了
+            if (!file.exists()) return;
+            byte[] data = new byte[(int) file.length()];
+            try (FileInputStream in = new FileInputStream(file)) {
+                int read = in.read(data);
+                JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
+                for (Iterator<String> it = json.keys(); it.hasNext(); ) {
+                    String key = it.next();
+                    JSONObject item = json.optJSONObject(key);
+                    if (item == null) continue;
+                    Entry entry = new Entry();
+                    entry.pos = item.optInt("p", 0);
+                    entry.neg = item.optInt("n", 0);
+                    entry.last = item.optLong("t", 0);
+                    map.put(key, entry);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void write(Map<String, Entry> map, File file) {
+        try {
+            if (map == MAP && map.size() > LIMIT) map.clear(); // 画像膨胀过头就清掉重来，刷几天又攒回来了
             JSONObject json = new JSONObject();
-            for (Map.Entry<String, Entry> item : MAP.entrySet()) {
+            for (Map.Entry<String, Entry> item : map.entrySet()) {
                 JSONObject obj = new JSONObject();
                 obj.put("p", item.getValue().pos);
                 obj.put("n", item.getValue().neg);
                 obj.put("t", item.getValue().last);
                 json.put(item.getKey(), obj);
             }
-            try (FileOutputStream out = new FileOutputStream(file())) {
+            try (FileOutputStream out = new FileOutputStream(file)) {
                 out.write(json.toString().getBytes(StandardCharsets.UTF_8));
             }
         } catch (Throwable ignored) {
@@ -218,5 +324,13 @@ public class BingeProfile {
 
     private static File file() {
         return new File(App.get().getFilesDir(), "binge_profile.json");
+    }
+
+    private static File sitesFile() {
+        return new File(App.get().getFilesDir(), "binge_sites.json");
+    }
+
+    private static File rejectFile() {
+        return new File(App.get().getFilesDir(), "binge_reject.json");
     }
 }

@@ -630,6 +630,7 @@
     <string name="update_reinstall_fetch">正在取安裝包…</string>
     <string name="update_reinstall_fail">安裝包沒取下來，檢查網絡後再試</string>
     <string name="update_latest">目前已是最新版</string>
+    <string name="update_rescue">前兩條通道都取不到，正在暫時開放 GitHub 倉庫取最新版</string>
     <string name="update_check_fail">連不上更新伺服器，請檢查網路後再試</string>
     <string name="update_checking">正在檢查中，請稍候…</string>
     <string name="update_skip">已跳過這一版，下次出新版本再提醒你</string>
@@ -641,8 +642,10 @@
     <string name="update_keep">安裝包已另存到 <xliff:g name="path">%s</xliff:g>，安裝介面沒彈出的話去那裡手動裝</string>
     <string name="update_install_manual">這台設備叫不出安裝介面，安裝包已放到 <xliff:g name="path">%s</xliff:g>，請手動安裝</string>
     <string name="setting_route">更新線路</string>
-    <string name="route_auto">自動（直連優先）</string>
-    <string name="route_direct">直連 GitHub</string>
+    <string name="route_auto">自動（碼雲 → 網盤 → GitHub）</string>
+    <string name="route_gitee">碼雲（國內直連，預設主通道）</string>
+    <string name="route_self">網盤（自建，直連）</string>
+    <string name="route_github">GitHub（直連優先，不通自動過代理，兜底）</string>
     <string name="route_custom">自訂 SOCKS5…</string>
     <string name="route_hint">代理地址，如 192.168.1.100:1080</string>
     <string name="route_bad">位址或埠號不對，埠號要填數字</string>
@@ -651,7 +654,7 @@
     <string name="route_delete">刪除這個代理</string>
     <string name="route_removed">代理已刪除</string>
     <string name="route_socks_prefix">SOCKS5 %1$s</string>
-    <string name="route_list_tip">選擇更新走的線路，自己新增的可以用右邊的刪除按鈕移除</string>
+    <string name="route_list_tip">選擇更新走哪條路。自動按「碼雲 → 網盤 → GitHub」的順序來；手動指定後優先走它，它不通會自動退回其它通道。</string>
     <string name="route_lan_tip">手機掃描 QR Code，在網頁填好點確定，設備這邊自動寫入</string>
     <string name="route_clear">清除並恢復自動</string>
     <string name="route_scan">掃碼輸入</string>
