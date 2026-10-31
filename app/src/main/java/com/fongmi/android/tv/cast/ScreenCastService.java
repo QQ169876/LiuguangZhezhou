@@ -1,5 +1,6 @@
 package com.fongmi.android.tv.cast;
 
+import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -98,23 +99,33 @@ public class ScreenCastService extends Service {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        // ⚠️ 前台通知必须在 onCreate 里、趁 service 刚起来就打出去。
+        // 之前放在 onStartCommand 里，而那里开头还有一段「参数不全就 stopSelf」的分支：
+        // 一旦走进那条分支，就是「调了 startForegroundService() 却没调 startForeground()」，
+        // 系统会直接抛 ForegroundServiceDidNotStartInTimeException 把 App 带走。
+        // 先在这把最该做的事做完，后面再怎么出错也不会连坐整个进程。
+        try {
+            Notify.createChannel(); // 通道万一还没建（冷启动、进程被杀过），现场补一个
+            startForeground(NOTIFY_ID, buildNotify());
+        } catch (Throwable ignored) {
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        int code = intent == null ? 0 : intent.getIntExtra("code", 0);
+        // 缺省值给 RESULT_OK：调用方只在拿到授权时才会开这个服务，
+        // 万一 extra 丢了（进程被杀后系统重拉），也不能拿 0 去 MediaProjection 那边碰壁
+        int code = intent == null ? Activity.RESULT_OK : intent.getIntExtra("code", Activity.RESULT_OK);
         Intent data = intent == null ? null : intent.getParcelableExtra("data");
         if (casting) {
             release();
         }
-        if (code <= 0 || data == null) {
+        // ⚠️ 别再用 code 判成败：系统回调给的 resultCode 就是 Activity.RESULT_OK == -1，
+        // 拿它跟 0 比大小会把「授权成功」当成「授权失败」，白白停掉服务（5.6.127 上必崩就是这个）。
+        // 录屏授权成不成功，看的是有没有那张授权 Intent（data），不是那个数字。
+        if (data == null || intent == null || !intent.hasExtra("data")) {
             stopSelf();
             return START_NOT_STICKY;
-        }
-        // 前台服务的类型在 Manifest 里声明过了（安卓 14 起必须），这里不用再单独指定
-        try {
-            startForeground(NOTIFY_ID, buildNotify());
-        } catch (Throwable ignored) {
         }
         if (open(code, data)) return START_STICKY;
         casting = false;
@@ -140,6 +151,12 @@ public class ScreenCastService extends Service {
         super.onDestroy();
         release();
         instance = null;
+        // 收摊时一定要把通知撤掉，不然服务已经没了、那条「屏幕广播进行中」还挂在通知栏，
+        // 用户点进去是个死链接。
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        } catch (Throwable ignored) {
+        }
     }
 
     /* ---------------- 开工 ---------------- */
@@ -448,13 +465,28 @@ public class ScreenCastService extends Service {
         }
     }
 
+    /**
+     * 前台那条常驻通知。
+     *
+     * ⚠️ 这地方抛不得异常：它是 {@code startForeground} 的入参，
+     * 出一点岔子就等于「答应了系统要进前台却没进」，进程会被系统判违规杀掉。
+     * 所以失败就退到一个最朴素的 Notification —— 难看点没关系，先保命。
+     */
     private android.app.Notification buildNotify() {
-        return new NotificationCompat.Builder(this, CHANNEL)
-                .setSmallIcon(R.drawable.ic_lan_tv)
-                .setContentTitle(ResUtil.getString(R.string.app_name))
-                .setContentText(ResUtil.getString(R.string.cast_screen_running))
-                .setOngoing(true)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .build();
+        try {
+            return new NotificationCompat.Builder(this, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_lan_tv)
+                    .setContentTitle(ResUtil.getString(R.string.app_name))
+                    .setContentText(ResUtil.getString(R.string.cast_screen_running))
+                    .setOngoing(true)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                    .build();
+        } catch (Throwable e) {
+            return new NotificationCompat.Builder(this, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_lan_tv)
+                    .setContentTitle("流光褶皱")
+                    .setContentText("屏幕广播进行中")
+                    .build();
+        }
     }
 }

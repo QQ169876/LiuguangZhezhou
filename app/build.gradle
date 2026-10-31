@@ -16,8 +16,8 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 687
-        versionName rootProject.legacy ? "5.6.127-legacy" : "5.6.127"
+        versionCode 688
+        versionName rootProject.legacy ? "5.6.128-legacy" : "5.6.128"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
         // 115 网盘账号（App 更新主通道用）：值放在 local.properties 里，**不进 Git**
         buildConfigField "String", "PAN115_ACCOUNT", "\"" + (localProps['PAN115_ACCOUNT'] ?: "") + "\""
@@ -123,7 +123,7 @@ androidComponents {
         def mode = flavors['mode'] ?: 'mode'
         def abi = flavors['abi'] ?: 'abi'
         variant.outputs.each { output ->
-            def mark = rootProject.legacy ? "5.6.127-legacy" : "5.6.127"
+            def mark = rootProject.legacy ? "5.6.128-legacy" : "5.6.128"
             output.outputFileName.set("${mode}${mark}-${abi}.apk")
         }
     }
