@@ -780,6 +780,7 @@
     <string name="cast_screen_on">Start screen broadcast</string>
     <string name="cast_screen_off">Stop screen broadcast</string>
     <string name="cast_screen_running">Broadcasting this screen to the LAN</string>
+    <string name="cast_screen_fail_launch">Could not start broadcasting. Please try again.</string>
     <string name="cast_hint_screen">No playable source; try screen broadcast in the menu</string>
     <string name="cast_transport">Transport</string>
     <string name="cast_screen_mode">Screen broadcast</string>

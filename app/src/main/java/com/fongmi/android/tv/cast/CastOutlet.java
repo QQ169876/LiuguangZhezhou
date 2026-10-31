@@ -59,6 +59,9 @@ public final class CastOutlet implements CastBus.Listener {
         alive = true;
         // 屏幕那一路没有「源」这个概念，本身就是能直传的；视频则要等解析出地址才知道
         tsSource = CastPacket.KIND_SCREEN.equals(kind) || CastMode.isTs(url);
+        // 屏幕广播没有播放器，状态得人工置成「正在播」：
+        // 默认值是 pause，接收端照着它把播放器按成不播，画面就永远是黑的一块。
+        if (CastPacket.KIND_SCREEN.equals(kind)) bus.tick(0L, CastPacket.STATE_PLAY, 1f);
         pick();
         return true;
     }
@@ -150,6 +153,11 @@ public final class CastOutlet implements CastBus.Listener {
         if (mode == CastMode.MULTICAST && mport <= 0) mport = CastTx.freePort();
         if (mode == CastMode.MULTICAST && mport <= 0) {
             mode = CastMode.UNICAST; // 端口一个都空不出来：别愣着，换单播
+            apply();
+        } else if (mode == CastMode.MULTICAST) {
+            // ⚠️ 端口是刚刚才分下来的，pick() 里那次 apply() 带过去的还是 0 ——
+            // 接收端拿到「组播 + 端口0」算不出收包地址，只能当没有链路退回待机（日志实证）。
+            // 所以端口定下来之后必须再同步一次。
             apply();
         }
         if (CastPacket.KIND_SCREEN.equals(kind)) tx.open(mode, group, mport, "", Collections.emptyMap());

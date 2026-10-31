@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.content.res.Configuration;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -28,6 +29,7 @@ import androidx.core.app.NotificationCompat;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Util;
@@ -50,6 +52,7 @@ import java.nio.ByteBuffer;
  */
 public class ScreenCastService extends Service {
 
+    private static final String TAG = "ScreenCast";
     private static final int NOTIFY_ID = 3152;
     private static final String CHANNEL = Notify.DEFAULT;
 
@@ -78,14 +81,28 @@ public class ScreenCastService extends Service {
         return self != null && self.casting;
     }
 
+    /** 服务在不在（已经取到画面算 {@link #running()}，仅仅活着算这个） */
+    public static boolean started() {
+        return instance != null;
+    }
+
     public static void start(Context context, int resultCode, Intent data) {
         Intent intent = new Intent(context, ScreenCastService.class);
         intent.putExtra("code", resultCode);
         intent.putExtra("data", data);
         try {
             androidx.core.content.ContextCompat.startForegroundService(context, intent);
-        } catch (Throwable ignored) {
-            // 起不来就算了 —— 多半是系统不让后台起前台服务，用户在界面上会有别的入口再试
+            DebugLog.d(TAG, "已请求启动前台服务");
+        } catch (Throwable e) {
+            // 前台这条路被系统拦了（多半是不许从后台起）：先记下来，再用普通方式试一次，
+            // 哪怕只是保住「画面能出去」这件事，也比什么都不做强
+            DebugLog.d(TAG, "前台启动被拒：" + e.getClass().getSimpleName() + " " + e.getMessage());
+            try {
+                context.startService(intent);
+                DebugLog.d(TAG, "退一步用普通 startService 尝试");
+            } catch (Throwable e2) {
+                DebugLog.d(TAG, "普通启动也失败：" + e2.getClass().getSimpleName() + " " + e2.getMessage());
+            }
         }
     }
 
@@ -104,10 +121,25 @@ public class ScreenCastService extends Service {
         // 一旦走进那条分支，就是「调了 startForegroundService() 却没调 startForeground()」，
         // 系统会直接抛 ForegroundServiceDidNotStartInTimeException 把 App 带走。
         // 先在这把最该做的事做完，后面再怎么出错也不会连坐整个进程。
+        //
+        // 而且安卓 10 起要把服务类型一并告诉系统（这里是 mediaProjection）——
+        // 只写在清单里、调用时不传，轻则这条通知不被承认为前台，重则直接判违规。
         try {
             Notify.createChannel(); // 通道万一还没建（冷启动、进程被杀过），现场补一个
-            startForeground(NOTIFY_ID, buildNotify());
         } catch (Throwable ignored) {
+        }
+        try {
+            androidx.core.app.ServiceCompat.startForeground(this, NOTIFY_ID, buildNotify(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            DebugLog.d(TAG, "已进前台（带 mediaProjection 类型）");
+        } catch (Throwable e) {
+            DebugLog.d(TAG, "带类型进前台失败：" + e.getClass().getSimpleName() + " " + e.getMessage());
+            try {
+                startForeground(NOTIFY_ID, buildNotify());
+                DebugLog.d(TAG, "已进前台（老式调用）");
+            } catch (Throwable e2) {
+                DebugLog.d(TAG, "进前台彻底失败：" + e2.getClass().getSimpleName() + " " + e2.getMessage());
+                stopSelf(); // 进不了前台就别赖着，留着只会被系统判违规
+            }
         }
     }
 
@@ -124,11 +156,13 @@ public class ScreenCastService extends Service {
         // 拿它跟 0 比大小会把「授权成功」当成「授权失败」，白白停掉服务（5.6.127 上必崩就是这个）。
         // 录屏授权成不成功，看的是有没有那张授权 Intent（data），不是那个数字。
         if (data == null || intent == null || !intent.hasExtra("data")) {
+            DebugLog.d(TAG, "缺授权 Intent，不干");
             stopSelf();
             return START_NOT_STICKY;
         }
         if (open(code, data)) return START_STICKY;
         casting = false;
+        DebugLog.d(TAG, "链路没搭起来，收工");
         release();
         stopSelf();
         return START_NOT_STICKY;
@@ -162,14 +196,22 @@ public class ScreenCastService extends Service {
     /* ---------------- 开工 ---------------- */
 
     private boolean open(int resultCode, Intent data) {
+        DebugLog.d(TAG, "开始搭链路 resultCode=" + resultCode + " data=" + (data == null ? "空" : "有"));
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (manager == null) return false;
+        if (manager == null) {
+            DebugLog.d(TAG, "拿不到 MediaProjectionManager");
+            return false;
+        }
         try {
             projection = manager.getMediaProjection(resultCode, data);
         } catch (Throwable e) {
+            DebugLog.d(TAG, "取 MediaProjection 失败：" + e.getClass().getSimpleName() + " " + e.getMessage());
             return false;
         }
-        if (projection == null) return false;
+        if (projection == null) {
+            DebugLog.d(TAG, "MediaProjection 是空（多半是授权 Intent 已经用过一次）");
+            return false;
+        }
         casting = true; // 必须在取帧线程起来之前置位，不然线程一进去就退出
         projection.registerCallback(new MediaProjection.Callback() {
             @Override
@@ -178,7 +220,11 @@ public class ScreenCastService extends Service {
             }
         }, new Handler(Looper.getMainLooper()));
         outlet = new CastOutlet(CastPacket.KIND_SCREEN);
-        if (!outlet.open(Util.getDeviceName(), "")) return false;
+        if (!outlet.open(Util.getDeviceName(), "")) {
+            DebugLog.d(TAG, "广播端服务没能开起来（端口被占？）");
+            return false;
+        }
+        DebugLog.d(TAG, "广播服务已就位 设备=" + Util.getDeviceName());
         mux = new CastMux(outlet::write);
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         return startEncode(targetHeight(Math.max(metrics.widthPixels, metrics.heightPixels), Math.min(metrics.widthPixels, metrics.heightPixels)));
@@ -217,8 +263,10 @@ public class ScreenCastService extends Service {
             drainThread = new Thread(this::drain, "cast-screen");
             drainThread.setDaemon(true);
             drainThread.start();
+            DebugLog.d(TAG, "编码开始 " + width + "x" + target + " @" + bitrate(width, target) / 1000 + "kbps");
             return true;
         } catch (Throwable e) {
+            DebugLog.d(TAG, "起编码器失败：" + e.getClass().getSimpleName() + " " + e.getMessage());
             closeEncode();
             return false;
         }
@@ -273,7 +321,10 @@ public class ScreenCastService extends Service {
                 } else {
                     boolean key = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
                     mux.video(key && spsPps != null ? join(spsPps, frame) : frame, info.presentationTimeUs, key);
-                    if (++frames % 6 == 0) mux.flush(); // 攒满就自动发了，这里只是防止最后半包卡在手里
+                    if (frames == 0) DebugLog.d(TAG, "首帧已发出 size=" + info.size + " key=" + key + " spsPps=" + (spsPps != null));
+                    frames++;
+                    if (frames % 300 == 0) DebugLog.d(TAG, "已发 " + frames + " 帧");
+                    if (frames % 6 == 0) mux.flush(); // 攒满就自动发了，这里只是防止最后半包卡在手里
                 }
             }
             try {
@@ -341,7 +392,12 @@ public class ScreenCastService extends Service {
                 return;
             }
             if (read <= 0) continue;
-            int index = codec.dequeueInputBuffer(1000L);
+            int index;
+            try {
+                index = codec.dequeueInputBuffer(1000L);
+            } catch (Throwable e) {
+                return; // 编码器已经被收摊了（转屏、退出广播都会走到这儿）
+            }
             if (index < 0) continue;
             ByteBuffer input;
             try {
@@ -359,7 +415,15 @@ public class ScreenCastService extends Service {
             } catch (Throwable e) {
                 continue;
             }
-            int out = codec.dequeueOutputBuffer(info, 0L);
+            int out;
+            try {
+                out = codec.dequeueOutputBuffer(info, 0L);
+            } catch (Throwable e) {
+                // ⚠️ 这里以前没有兜底：音频编码器被 release 之后这个线程再问一句
+                // 就是 IllegalStateException: codec is released already，
+                // 而它在裸线程里跑，异常直接顶到全局把整个 App 带走（日志里 19:55 那次）。
+                return;
+            }
             while (out >= 0) {
                 ByteBuffer encoded;
                 try {
@@ -377,7 +441,11 @@ public class ScreenCastService extends Service {
                     codec.releaseOutputBuffer(out, false);
                 } catch (Throwable ignored) {
                 }
-                out = codec.dequeueOutputBuffer(info, 0L);
+                try {
+                    out = codec.dequeueOutputBuffer(info, 0L);
+                } catch (Throwable e) {
+                    return;
+                }
             }
         }
     }

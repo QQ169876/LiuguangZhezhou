@@ -295,8 +295,18 @@ public class MoonSync {
         beating.set(true);
         new Thread(() -> {
             try {
+                String last = "";
+                long at = 0L;
                 while (beating.get()) {
-                    DebugLog.d("Sync", "心跳 step=" + step);
+                    // 同一句每 5 秒留一行就够定位了 —— 300ms 一条会把真正要查的东西淹没，
+                    // 日志文件满了之后还会把前面关键的一段挤掉（最多看过 1300 行全是心跳）
+                    String now = "心跳 step=" + step;
+                    long stamp = System.currentTimeMillis();
+                    if (!now.equals(last) || stamp - at > 5000L) {
+                        DebugLog.d("Sync", now);
+                        last = now;
+                        at = stamp;
+                    }
                     Thread.sleep(300);
                 }
             } catch (Throwable ignored) {

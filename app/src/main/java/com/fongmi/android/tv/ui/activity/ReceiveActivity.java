@@ -165,7 +165,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             return;
         }
         App.removeCallbacks(hide);
-        if (!standby) App.post(hide, MENU_MS);
+        App.post(hide, MENU_MS);
     }
 
     private void showMenu() {
@@ -175,15 +175,17 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             binding.topBar.setAlpha(0f);
         }
         binding.topBar.animate().alpha(1f).setDuration(180).start();
-        if (!standby) App.post(hide, MENU_MS);
+        App.post(hide, MENU_MS);
     }
 
     private void fadeOutMenu() {
         App.removeCallbacks(hide);
-        // 焦点还在按钮上就再等等：遥控器派的场合，收掉了用户会按空
+        // 到点就收，不因为「焦点正好停在按钮上」而一直续命 ——
+        // 遥控器一进来焦点默认就落在「旋转画面」上，那样一辈子也收不掉（马先生 2026-10-31 指出）。
+        // 焦点先还给容器，按任意键唤出来时再自动落回按钮。
         if (binding.rotate.hasFocus() || binding.exit.hasFocus()) {
-            App.post(hide, MENU_MS);
-            return;
+            binding.rotate.clearFocus();
+            binding.exit.clearFocus();
         }
         binding.topBar.animate().alpha(0f).setDuration(220).withEndAction(() -> binding.topBar.setVisibility(View.INVISIBLE)).start();
     }
@@ -194,10 +196,12 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
             if (binding.topBar.getVisibility() != View.VISIBLE) {
                 showMenu();
+                // 刚收掉的顶栏，焦点跟着一起交还过：唤出来时得把它放回按钮上，不然方向键按不出动静
+                if (!binding.rotate.hasFocus() && !binding.exit.hasFocus()) binding.rotate.requestFocus();
                 return true;
             }
             App.removeCallbacks(hide);
-            if (!standby) App.post(hide, MENU_MS);
+            App.post(hide, MENU_MS);
         }
         return super.dispatchKeyEvent(event);
     }
@@ -415,9 +419,12 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             retries = 0;
             playTitle = packet.title();
             playEp = packet.ep();
-            // ⚠️ UDP 那两档是「直播管道」：收到什么播什么，不能 seek —— 底下会自己说清楚
-            play(url, CastMode.isUdp(packet.mode()) ? 0 : packet.position(),
-                    CastPacket.STATE_PLAY.equals(packet.state()), packet.speed(), packet.subs());
+            // ⚠️ UDP 那两档是「直播管道」：收到什么播什么，不能 seek —— 底下会自己说清楚。
+            // 而且**必须张嘴就播**：广播端报上来的 state 是它自己那台设备的播放状态，
+            // 屏幕广播根本没有「播放器」，那字段一直是 pause —— 照着它把 playWhenReady 设成 false，
+            // 播放器就连包都不去收，界面上就是一块永远「缓冲中」的黑屏（这次日志里就是这么黑的）。
+            boolean udp = CastMode.isUdp(packet.mode());
+            play(url, udp ? 0 : packet.position(), udp || CastPacket.STATE_PLAY.equals(packet.state()), packet.speed(), packet.subs());
             return;
         }
         follow(packet);
@@ -471,7 +478,10 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
     private void follow(CastPacket packet) {
         if (player == null) return;
         int mode = packet.mode();
-        boolean shouldPlay = CastPacket.STATE_PLAY.equals(packet.state());
+        boolean udp = CastMode.isUdp(mode);
+        // 直播管道同理：state 只管视频播放器那一档，UDP 一律当作「一直在播」，
+        // 否则广播端一句 pause 就能把接收端按死成黑屏
+        boolean shouldPlay = udp || CastPacket.STATE_PLAY.equals(packet.state());
         if (player.getPlayWhenReady() != shouldPlay) player.setPlayWhenReady(shouldPlay);
         // ⚠️ 组播 / 单播收到的就是广播端此刻发出的那一包，**所有接收端天然同步**，
         // 这里再拿心跳里的 position 去对位毫无意义（对的是广播端从头播的位置，
@@ -482,8 +492,7 @@ public class ReceiveActivity extends BaseActivity implements CastBus.Listener {
             syncTitle(packet);
             return;
         }
-        long local = player.getCurrentPosition();
-        CastSync.Result plan = CastSync.plan(System.currentTimeMillis(), packet.time(), packet.position(), local, packet.speed());
+        long local = player.getCurrentPosition();        CastSync.Result plan = CastSync.plan(System.currentTimeMillis(), packet.time(), packet.position(), local, packet.speed());
         switch (plan.action) {
             case SEEK -> seek(plan.target);
             case FASTER, SLOWER -> {

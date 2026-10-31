@@ -770,6 +770,7 @@
     <string name="cast_screen_on">开始屏幕广播</string>
     <string name="cast_screen_off">停止屏幕广播</string>
     <string name="cast_screen_running">正在把本机屏幕广播给局域网</string>
+    <string name="cast_screen_fail_launch">屏幕广播没能起来，麻烦再点一次</string>
     <string name="cast_hint_screen">拿不到播放地址，可在广播菜单里开启屏幕广播</string>
     <string name="cast_transport">广播链路</string>
     <string name="cast_screen_mode">屏幕广播</string>
