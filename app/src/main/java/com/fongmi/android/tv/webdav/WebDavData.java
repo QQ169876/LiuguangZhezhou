@@ -50,9 +50,6 @@ public class WebDavData {
             GsonBuilder builder = new GsonBuilder().setObjectToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER);
             WebDavData item = builder.create().fromJson(json, WebDavData.class);
             if (item == null || item.getData() == null) return null;
-            // 云端那份里也可能带着别的设备以前的源地址（老版本同步上去的），一律不认：
-            // 认了就会被当成「本机没有」而补进来，把本机正在用的源顶掉
-            item.getData().setConfig(Backup.withoutSources(item.getData().getConfig()));
             return item;
         } catch (Exception e) {
             return null;
@@ -109,17 +106,31 @@ public class WebDavData {
      * owner_ 是归属账本，「谁的数据」是本机自己的判断；
      * route 系列（route/route_auto/route_socks/route_customs）是 GitHub 加速/代理，
      * 跟本机网络环境强绑定——别的设备（尤其走不同网络的电视）套用了可能全网请求卡死。
+     * mpv_blocked：哪台设备用 MPV 内核崩过，是这台设备自己的结论（PlayWatchdog 记的），
+     * 不能同步给别人，也不能被别人的「用 MPV」覆盖掉，否则一同步又给它推回崩溃内核。
+     * debug_：调试流水账是本机排查用的（debug_up_len 是这台设备流水账传到哪了的标记），别同步到全家设备
      * config_ 系列是本机正在用的源地址（config_0=点播源 config_1=直播源 config_2=壁纸，
-     * config_cache_url_0/1 是源内容缓存的 URL 标记）——每台设备配自己的源，不能被别台的拉过来覆盖。
+     * config_cache_url_0/1 是源内容缓存的 URL 标记）——这些虽然在同步数据里正常收发
+     * （保持数据完整性），但在 APP 解析应用数据时跳过，每台设备各配各的源。
      */
     public static boolean localOnly(String key) {
         if (key == null) return true;
-        // mpv_blocked：哪台设备用 MPV 内核崩过，是这台设备自己的结论（PlayWatchdog 记的），
-        // 不能同步给别人，也不能被别人的「用 MPV」覆盖掉，否则一同步又给它推回崩溃内核。
-        // debug_：调试流水账是本机排查用的（debug_up_len 是这台设备流水账传到哪了的标记），别同步到全家设备
-        return key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_") || key.startsWith("route") || key.startsWith("mpv_blocked") || key.startsWith("hwdec_") || key.startsWith("debug_") || key.startsWith("config_");
+        return key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_") || key.startsWith("route") || key.startsWith("mpv_blocked") || key.startsWith("hwdec_") || key.startsWith("debug_");
     }
 
+    /**
+     * 源地址相关的 Prefers 键（config_0=点播源 config_1=直播源 config_2=壁纸，
+     * config_cache_url_0/1=源缓存 URL 标记）：同步数据里正常带着，但落库时跳过——
+     * 每台设备配自己的源，不能被别台的拉过来覆盖。
+     */
+    public static boolean isSourcePref(String key) {
+        return key != null && key.startsWith("config_");
+    }
+
+    /**
+     * 上传时 Prefers 正常全量带（包括 config_ 键），保持同步数据完整。
+     * 落库时由 applyPrefers/insertAll 按 localOnly + isSourcePref 跳过。
+     */
     public void setPrefers(Map<String, ?> prefers) {
         Map<String, Object> values = new HashMap<>();
         for (Map.Entry<String, ?> entry : prefers.entrySet()) {

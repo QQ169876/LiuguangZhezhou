@@ -289,9 +289,7 @@ public class SyncManager {
         }
         backup.setHistory(history);
         backup.setKeep(keep);
-        // 源地址（点播源/直播源/壁纸）不跟着同步走：每台设备配自己的源是本分，
-        // 掺进来会因为「类型@地址」的键随地址变而被云端旧值拉回去覆盖
-        backup.setConfig(Backup.withoutSources(backup.getConfig()));
+        // 源地址 Config 正常上传（保持同步数据完整），落库时由 apply/insertAll 跳过 isSource
         return data;
     }
 
@@ -381,7 +379,7 @@ public class SyncManager {
         WebDavData mine = participate(false, bookRecord, bookFavorite);
         // 云端覆盖本机 = 换到那份账号的数据，整体替换本来就该这样，不问（SyncGuard 只管「本机删→云端删」）
         deleteHistoryKeep(mine.getData().getHistory(), mine.getData().getKeep());
-        List<Config> sources = localSources(); // 源地址不参与同步，拉取覆盖前先抄下来，替换完原样放回去
+        List<Config> sources = localSources(); // 源地址不参与覆盖：先抄下来，insertAll 跳过源，完事原样放回去
         replaceLocal();
         List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
         List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
@@ -390,7 +388,7 @@ public class SyncManager {
         Star.merge(remoteData.getData().getStar()); // 关注的演员：按「最后操作为准」合并，多设备共用一份
         if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
         if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
-        ConfigCache.apply(remoteData.getCache());
+        // ConfigCache 不从云端落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
         absorb(remoteData, bookRecord, bookFavorite); // 云端这份就是当前同步标识的
         Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
         Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
@@ -402,7 +400,7 @@ public class SyncManager {
         return getSummary(remoteData);
     }
 
-    /** 本机正在用的源地址（点播源 / 直播源 / 壁纸）：拉云端覆盖本机时要留住它们 */
+    /** 本机正在用的源地址（点播源 / 直播源 / 壁纸）：doPull 覆盖前先抄下来，完事原样放回去 */
     private static List<Config> localSources() {
         List<Config> result = new ArrayList<>();
         for (Config item : AppDatabase.get().getConfigDao().findAll()) if (item.isSource()) result.add(item);
@@ -417,7 +415,8 @@ public class SyncManager {
         AppDatabase.get().getConfigDao().delete();
         AppDatabase.get().getSiteDao().delete();
         AppDatabase.get().getLiveDao().delete();
-        ConfigCache.apply(new HashMap<>());
+        ConfigCache.clear(0);
+        ConfigCache.clear(1);
     }
 
     /** 留下来不删的那些里，云端也有的就算了（主键相同会互盖），只保留云端没有的 */
@@ -854,7 +853,7 @@ public class SyncManager {
         applyPrefers(merged.getPrefers(), backup(local).getPrefers());
         CookieStore.apply(merged.getData().getCookies());
         SpiderVault.apply(merged.getData().getSpider());
-        ConfigCache.apply(merged.getCache());
+        // ConfigCache 不从同步数据落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
         return configChanged;
     }
 
@@ -872,16 +871,18 @@ public class SyncManager {
         Backup backup = data.getData();
         AppDatabase.get().getSiteDao().insertOrUpdate(backup.getSite());
         AppDatabase.get().getLiveDao().insertOrUpdate(backup.getLive());
+        // 源地址 Config 跳过：每台设备配自己的源，不被云端数据覆盖
         AppDatabase.get().getConfigDao().insertOrUpdate(Backup.withoutSources(backup.getConfig()));
         AppDatabase.get().getKeepDao().insertOrUpdate(backup.getKeep());
         AppDatabase.get().getHistoryDao().insertOrUpdate(backup.getHistory());
         for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) {
-            // 跟本机网络环境绑定的设置（route 系列等）不随云端落盘，见 WebDavData.localOnly
             if (WebDavData.localOnly(entry.getKey())) continue;
+            if (WebDavData.isSourcePref(entry.getKey())) continue;
             Prefers.put(entry.getKey(), entry.getValue());
         }
         CookieStore.apply(backup.getCookies());
         SpiderVault.apply(backup.getSpider());
+        // ConfigCache 不从云端落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
     }
 
     private static <T> Set<String> keys(List<T> items, Function<T, String> key) {
@@ -894,6 +895,7 @@ public class SyncManager {
         for (Map.Entry<String, ?> entry : target.entrySet()) {
             String name = entry.getKey();
             if (WebDavData.localOnly(name)) continue;
+            if (WebDavData.isSourcePref(name)) continue;
             if (Objects.equals(current.get(name), entry.getValue())) continue;
             values.put(name, entry.getValue());
         }
