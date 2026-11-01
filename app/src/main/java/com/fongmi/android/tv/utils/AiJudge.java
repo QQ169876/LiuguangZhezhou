@@ -4,7 +4,6 @@ import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.History;
-import com.github.catvod.net.interceptor.FailoverInterceptor;
 import com.fongmi.android.tv.setting.AiSetting;
 
 import org.json.JSONArray;
@@ -19,23 +18,14 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 
 /**
  * 大模型小助手：只干一件事——拿不准的条目问一句「这算不算一部短剧」。
  * 设计上它是可有可无的：关掉、超时、报错、返回乱码，一律当成「没问」，调用方退回本地规则。
  */
 public class AiJudge {
-
-    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     private static final String SYSTEM = "你是影视资源鉴定助手。判断条目是否为「一整部短剧被合成为一个视频」的合集版本，"
             + "例如 70 集每集 1 分钟的短剧被压成一个 70 分钟的单集。只输出 JSON，不要任何解释："
@@ -130,7 +120,6 @@ public class AiJudge {
     private static final int MEMO_LIMIT = 800;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
-    private static volatile OkHttpClient client;
     private static volatile boolean loaded;
     private static volatile boolean suggestLoaded;
     private static volatile boolean actorLoaded;
@@ -180,22 +169,6 @@ public class AiJudge {
         }
     }
 
-    private static OkHttpClient http() {
-        if (client == null) {
-            synchronized (AiJudge.class) {
-                if (client == null) {
-                    client = new OkHttpClient.Builder()
-                            .connectTimeout(5, TimeUnit.SECONDS)
-                            .readTimeout(8, TimeUnit.SECONDS)
-                            .retryOnConnectionFailure(true)
-                            .addInterceptor(new FailoverInterceptor()) // 中继域名连不上时换备用域名（169876.xyz ↔ 12356.cool）
-                            .build();
-                }
-            }
-        }
-        return client;
-    }
-
     /** 已经问过并有结论的，直接给；没问过返回 null */
     public static Boolean peek(String cacheKey) {
         if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，连上次问出来的缓存也不许用
@@ -236,7 +209,7 @@ public class AiJudge {
                 ok = request(safe[0], safe[1], episodes, duration, safe[2]);
             } catch (Throwable e) {
                 ok = null;
-                DebugLog.d("AiJudge", "模型不可用，退回本地规则：" + name);
+                DebugLog.d("AiJudge", "模型不可用，退回本地规则：" + name + "（" + reasonOf(e) + "）");
             }
             ASKING.remove(cacheKey);
             if (ok != null) {
@@ -296,7 +269,7 @@ public class AiJudge {
             try {
                 tags = requestSuggest(safe[0], safe[1], safe[2]);
             } catch (Throwable e) {
-                DebugLog.d("AiJudge", "推荐词模型不可用，退回本地规则：" + name);
+                DebugLog.d("AiJudge", "推荐词模型不可用，退回本地规则：" + name + "（" + reasonOf(e) + "）");
             }
             SUGGESTING.remove(name);
             if (tags != null) {
@@ -594,35 +567,16 @@ public class AiJudge {
             if (stars != null && !stars.isEmpty()) sb.append("\n用户关注过的演员（优先考虑他们的作品）：").append(TextUtils.join("、", stars));
         }
         sb.append(serial
-                ? "\n问：这个系列最新到第几季？第" + seriesIndex + "季之后还有没有下一季（有没有完结）？有就把下一季的名称写法都列出来，已经完结就直说没有。"
+                ? "\n问：这个系列最新到第几季？第" + seriesIndex + "季之后还有没有下一季（有没有完结）？有就把下一季的名称写法都列出来，已经完结就直说没有。站源可能收录了你不知道的版本，没把握的 has_next 给 null 别把话说死，我们本地还会再搜。"
                 : movie
-                ? "\n问：这部作品有没有下一部/续作？有就把续作可能的名称写法都列出来，顺便推荐几部同类型的；确定没有续作就 has_next 给 false。"
+                ? "\n问：这部作品有没有下一部/续作？有就把续作可能的名称写法都列出来，顺便推荐几部同类型的；确定没有续作就 has_next 给 false，没把握给 null。"
                 : taste
                 ? "\n问：它已经没有下一季/下一部了。参照上面的口味，接下来该看哪几部？优先同形态同地区、优先含指定主演或关注演员的作品，避开不碰的题材，给出剧名。"
                 : "\n问：接下来该看哪几部同类的剧？给出剧名。");
 
-        JSONObject user = new JSONObject();
-        user.put("role", "user");
-        user.put("content", sb.toString());
-
-        JSONObject body = new JSONObject();
-        body.put("model", AiSetting.getModel());
-        body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", serial ? SYSTEM_NEXT_SEASON : movie ? SYSTEM_NEXT_MOVIE : taste ? SYSTEM_NEXT_TASTE : SYSTEM_NEXT)).put(user));
-
-        Request request = new Request.Builder()
-                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
-                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
-                .post(RequestBody.create(JSON, body.toString()))
-                .build();
-
-        try (Response response = http().newCall(request).execute()) {
-            if (response.body() == null) return null;
-            String text = response.body().string();
-            JSONObject json = new JSONObject(text);
-            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-            return parseNext(content, name);
-        }
+        // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
+        String content = AiChat.chat(serial ? SYSTEM_NEXT_SEASON : movie ? SYSTEM_NEXT_MOVIE : taste ? SYSTEM_NEXT_TASTE : SYSTEM_NEXT, sb.toString());
+        return parseNext(content, name);
     }
 
     /**
@@ -776,32 +730,14 @@ public class AiJudge {
         // 没演员的剧十有八九给杳出个姜十七（短剧常客，模型最容易往她身上套），token 白烧。
         // 关注标记是本地比对出来的，名单对模型没半点用处，纯粹是污染。
         String y = plainYear(year);
-        JSONObject user = new JSONObject();
-        user.put("role", "user");
-        user.put("content", "剧名：" + name
+        String question = "剧名：" + name
                 + (y.isEmpty() ? "" : "\n年份：" + y + "（同名剧、翻拍版要靠这个年份区分，认准这个年份的版本）")
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
-                + "\n问：这部剧的主演有哪些？没有真人演员的（漫剧/动画）就给出品方（导演、工作室、版权方）。");
+                + "\n问：这部剧的主演有哪些？没有真人演员的（漫剧/动画）就给出品方（导演、工作室、版权方）。";
 
-        JSONObject body = new JSONObject();
-        body.put("model", AiSetting.getModel());
-        body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM_ACTORS)).put(user));
-
-        Request request = new Request.Builder()
-                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
-                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
-                .post(RequestBody.create(JSON, body.toString()))
-                .build();
-
-        try (Response response = http().newCall(request).execute()) {
-            if (response.body() == null) return null;
-            String text = response.body().string();
-            JSONObject json = new JSONObject(text);
-            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-            return parseCast(content);
-        }
+        // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
+        return parseCast(AiChat.chat(SYSTEM_ACTORS, question));
     }
 
     /** 出品方：太长太短都不像「某某工作室」这类名字，脏词直接扔 */
@@ -926,31 +862,13 @@ public class AiJudge {
     }
 
     private static List<String> requestSuggest(String name, String typeName, String region) throws Exception {
-        JSONObject user = new JSONObject();
-        user.put("role", "user");
-        user.put("content", "剧名：" + name
+        String question = "剧名：" + name
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n地区：" + (TextUtils.isEmpty(region) ? "未知" : region)
-                + "\n问：这部剧是什么题材？给出 3 到 5 个能搜到同类短剧的关键词。");
+                + "\n问：这部剧是什么题材？给出 3 到 5 个能搜到同类短剧的关键词。";
 
-        JSONObject body = new JSONObject();
-        body.put("model", AiSetting.getModel());
-        body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM_SUGGEST)).put(user));
-
-        Request request = new Request.Builder()
-                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
-                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
-                .post(RequestBody.create(JSON, body.toString()))
-                .build();
-
-        try (Response response = http().newCall(request).execute()) {
-            if (response.body() == null) return null;
-            String text = response.body().string();
-            JSONObject json = new JSONObject(text);
-            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-            return parseSuggest(content);
-        }
+        // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
+        return parseSuggest(AiChat.chat(SYSTEM_SUGGEST, question));
     }
 
     /** 模型吐的词逐个过闸：太短不像题材、太长怕是瞎编的句子、脏词直接扔；一个能用的都没有就当没问 */
@@ -979,33 +897,15 @@ public class AiJudge {
     }
 
     private static boolean request(String name, String remarks, int episodes, long duration, String site) throws Exception {
-        JSONObject user = new JSONObject();
-        user.put("role", "user");
-        user.put("content", "条目名：" + name
+        String question = "条目名：" + name
                 + "\n备注：" + (TextUtils.isEmpty(remarks) ? "无" : remarks)
                 + "\n集数：" + episodes
                 + "\n单集时长：" + (duration > 0 ? (duration / 60000) + "分钟" : "未知")
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
-                + "\n问：这条是不是一整部短剧被合成一个视频的合集版？");
+                + "\n问：这条是不是一整部短剧被合成一个视频的合集版？";
 
-        JSONObject body = new JSONObject();
-        body.put("model", AiSetting.getModel());
-        body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM)).put(user));
-
-        Request request = new Request.Builder()
-                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
-                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
-                .post(RequestBody.create(JSON, body.toString()))
-                .build();
-
-        try (Response response = http().newCall(request).execute()) {
-            if (response.body() == null) return false;
-            String text = response.body().string();
-            JSONObject json = new JSONObject(text);
-            String content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-            return parse(content);
-        }
+        // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
+        return parse(AiChat.chat(SYSTEM, question));
     }
 
     /** 模型偶尔会裹一层 ```json，剥掉再解析 */

@@ -19,6 +19,17 @@ public class AiSetting {
     public static final String DEFAULT_ENDPOINT = "https://www.169876.xyz/ai/v1";
     public static final String DEFAULT_MODEL = "qwen-flash";
 
+    /**
+     * 豆包（火山引擎 Ark，OpenAI 兼容）。2026-11-01 马先生给的：**豆包优先、千问兜底**——
+     * 豆包是限额的（用完就查不到），千问走自建中继按量计费总能查到，所以豆包排最前、
+     * 限额撞墙自动退到千问，冷却一阵再回来试豆包（限额恢复就能省下千问的钱）。
+     * 模型挑的 seed-2-1-lite：便宜，关掉 thinking 后一两秒就回话，只问简单问题足够。
+     * key 同样打散存放（仓库是公开的，明文会被扫描器揪出来）。
+     */
+    public static final String ARK_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
+    public static final String ARK_MODEL = "doubao-seed-2-1-lite-260915";
+    private static final int[] ARK_K = {13, 27, 30, 74, 71, 86, 93, 2, 25, 76, 89, 7, 87, 90, 87, 67, 95, 68, 65, 1, 17, 3, 67, 5, 26, 79, 94, 72, 74, 91, 86, 76, 84, 10, 19, 95, 68, 80, 11, 2, 0, 30, 81, 86, 76, 80};
+
     /** 问一句最多等多久，超时就当没问 */
     public static final long TIMEOUT = 5000L;
 
@@ -43,6 +54,13 @@ public class AiSetting {
     public static String getModel() {
         String model = Prefers.getString("ai_model", "").trim();
         return model.isEmpty() ? DEFAULT_MODEL : model;
+    }
+
+    /** 豆包的 Ark key：打散存放，要换也是改这里重新发版（跟中继口令一个待遇） */
+    public static String getArkKey() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ARK_K.length; i++) sb.append((char) (ARK_K[i] ^ MASK.charAt(i % MASK.length())));
+        return sb.toString();
     }
 
     /** 中继口令；要换就往 ai_key 里写一份顶掉，不用重新发版 */

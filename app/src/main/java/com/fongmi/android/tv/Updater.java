@@ -947,6 +947,8 @@ public class Updater implements Download.Callback, UpdateListener {
      * 重新安装（设置页那个按钮）：不看版本号，强制下载安装。
      * 先找**当前版本**的包（重装 = 再装一遍这个版本），当前版本在通道里没有就退到最新版。
      * 下好了在**系统下载目录**留一份，再交给系统安装器。
+     * 2026-11-01 马先生：点重装时没有下载进度，心里没底 —— 复用更新那个进度框
+     * （按钮上显示百分比，取消按钮掐下载），不再黑箱干等。更新流程本身一个字没动。
      */
     public static void reinstall(FragmentActivity activity) {
         Notify.show(R.string.update_reinstall_fetch);
@@ -959,6 +961,7 @@ public class Updater implements Download.Callback, UpdateListener {
                 DebugLog.d("Update", "重装：通道里没有 " + currentTag + "，退到最新版");
                 url = probeApkUrl(Gitee.apk(latestTag()));
             }
+            final String target = url;
             if (url.isEmpty()) {
                 App.post(() -> {
                     Notify.show(R.string.update_reinstall_fail);
@@ -966,20 +969,79 @@ public class Updater implements Download.Callback, UpdateListener {
                 });
                 return;
             }
-            File file = fetchReinstall(url);
-            boolean usable = isInstallable(file);
-            if (usable) FileUtil.saveToDownload(file, file.getName());
-            App.post(() -> {
-                if (!usable) {
-                    Notify.show(R.string.update_reinstall_fail);
-                    if (activity != null) create().force().start(activity);
-                    return;
-                }
-                FileUtil.installApkAsync(file, file.getName(), result -> {
-                    if (result == null) return; // 系统弹了安装界面，没我们的事了
-                    if (FileUtil.installNotify(file, file.getName())) return;
-                    DebugLog.d("Install", "重装包没能交给系统安装器：" + file.getName());
-                });
+            App.post(() -> reinstallWithProgress(activity, target));
+        });
+    }
+
+    /** 重装专用句柄：静态方法要用，拿住才能在进度回调里刷 UI、在取消时掐下载 */
+    private static UpdateDialog reinstallDialog;
+    private static Download reinstallDownload;
+
+    /** 带进度地重下：跟更新共用一个 UpdateDialog（取消按钮掐下载），下完照旧存下载目录 + 调系统安装器 */
+    private static void reinstallWithProgress(FragmentActivity activity, String url) {
+        if (activity == null) { // 拿不到页面（极端情况）：退回老路，无进度地静静下
+            Task.execute(() -> finishReinstall(fetchReinstall(url), activity));
+            return;
+        }
+        reinstallDialog = UpdateDialog.create()
+                .title(ResUtil.getString(R.string.update_reinstall))
+                .desc(ResUtil.getString(R.string.update_reinstall_desc))
+                .listener(new UpdateListener() {
+                    @Override
+                    public void onCancel(View view) {
+                        if (reinstallDownload != null) reinstallDownload.cancel();
+                        dismissReinstall();
+                    }
+
+                    @Override
+                    public void onConfirm(View view) { // 下载中按钮就是进度条，点了没动作
+                    }
+                })
+                .show(activity);
+        reinstallDownload = Download.create(url, Path.cache("update.apk")).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60)));
+        reinstallDownload.start(new Download.Callback() {
+            @Override
+            public void progress(int progress) {
+                if (reinstallDialog != null) reinstallDialog.setProgress(progress);
+            }
+
+            @Override
+            public void error(String msg) {
+                dismissReinstall();
+                Notify.show(R.string.update_reinstall_fail);
+            }
+
+            @Override
+            public void success(File file) {
+                dismissReinstall();
+                finishReinstall(file, activity);
+            }
+        });
+    }
+
+    private static void dismissReinstall() {
+        try {
+            if (reinstallDialog != null) reinstallDialog.dismiss();
+        } catch (Exception ignored) {
+        }
+        reinstallDialog = null;
+        reinstallDownload = null;
+    }
+
+    /** 重装包落地：能用就在系统下载目录留一份，交给系统安装器；不能用退回「检查更新」那条老路 */
+    private static void finishReinstall(File file, FragmentActivity activity) {
+        boolean usable = isInstallable(file);
+        if (usable) FileUtil.saveToDownload(file, file.getName());
+        App.post(() -> {
+            if (!usable) {
+                Notify.show(R.string.update_reinstall_fail);
+                if (activity != null) create().force().start(activity);
+                return;
+            }
+            FileUtil.installApkAsync(file, file.getName(), result -> {
+                if (result == null) return; // 系统弹了安装界面，没我们的事了
+                if (FileUtil.installNotify(file, file.getName())) return;
+                DebugLog.d("Install", "重装包没能交给系统安装器：" + file.getName());
             });
         });
     }

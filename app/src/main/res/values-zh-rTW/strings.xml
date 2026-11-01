@@ -628,6 +628,7 @@
     <string name="update_reinstall">重新安裝</string>
     <string name="setting_reinstall_hint">重裝當前版本</string>
     <string name="update_reinstall_fetch">正在取安裝包…</string>
+    <string name="update_reinstall_desc">正在下載安裝包，進度顯示在按鈕上，下載完成後自動彈出安裝介面</string>
     <string name="update_reinstall_fail">安裝包沒取下來，檢查網絡後再試</string>
     <string name="update_latest">目前已是最新版</string>
     <string name="update_rescue">前兩條通道都取不到，正在暫時開放 GitHub 倉庫取最新版</string>

@@ -4,7 +4,6 @@ import android.text.TextUtils;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.setting.AiSetting;
-import com.github.catvod.net.interceptor.FailoverInterceptor;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,13 +20,6 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 
 /**
  * 智能搜索：把用户的大白话翻译成「找片指令」（马先生 2026-10-17 定的需求）。
@@ -49,8 +41,6 @@ import okhttp3.Response;
  * 绝不影响正常的关键词搜索。同一句话 24 小时内走本地缓存，不重复烧 token。
  */
 public class AiSearch {
-
-    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     private static final String SYSTEM = "你是影视搜索意图识别助手，任务是把用户的话翻译成找片指令。"
             + "只允许处理与电影、电视剧、短剧、漫剧、动画、综艺等影视作品相关的找片或推荐请求；"
@@ -88,7 +78,6 @@ public class AiSearch {
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
-    private static volatile OkHttpClient client;
     private static volatile boolean loaded;
 
     public interface Callback {
@@ -129,22 +118,6 @@ public class AiSearch {
             plan.type = REFUSED;
             return plan;
         }
-    }
-
-    private static OkHttpClient http() {
-        if (client == null) {
-            synchronized (AiSearch.class) {
-                if (client == null) {
-                    client = new OkHttpClient.Builder()
-                            .connectTimeout(5, TimeUnit.SECONDS)
-                            .readTimeout(10, TimeUnit.SECONDS)
-                            .retryOnConnectionFailure(true)
-                            .addInterceptor(new FailoverInterceptor()) // 中继域名连不上时换备用域名（169876.xyz ↔ 12356.cool）
-                            .build();
-                }
-            }
-        }
-        return client;
     }
 
     /** 已经问过并有结论的，直接给；没问过返回 null */
@@ -235,28 +208,11 @@ public class AiSearch {
 
     private static Plan request(String question) throws Exception {
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-        JSONObject user = new JSONObject();
-        user.put("role", "user");
-        user.put("content", "今天日期：" + today + "\n用户说：" + question);
 
-        JSONObject body = new JSONObject();
-        body.put("model", AiSetting.getModel());
-        body.put("temperature", 0);
-        body.put("messages", new JSONArray().put(new JSONObject().put("role", "system").put("content", SYSTEM)).put(user));
-
-        Request request = new Request.Builder()
-                .url(AiSetting.getEndpoint().replaceAll("/+$", "") + "/chat/completions")
-                .addHeader("Authorization", "Bearer " + AiSetting.getKey())
-                .post(RequestBody.create(JSON, body.toString()))
-                .build();
-
-        try (Response response = http().newCall(request).execute()) {
-            if (response.body() == null) return null;
-            String text = response.body().string();
-            String content = new JSONObject(text).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
-            DebugLog.d("AiSearch", "「" + question + "」→ " + content);
-            return parse(content);
-        }
+        // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
+        String content = AiChat.chat(SYSTEM, "今天日期：" + today + "\n用户说：" + question);
+        DebugLog.d("AiSearch", "「" + question + "」→ " + content);
+        return parse(content);
     }
 
     /**
