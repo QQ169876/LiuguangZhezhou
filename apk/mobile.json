@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱 v5.6.142",
-  "desc": "源地址同步重构：同步层正常收发所有数据（含源 Config、config_ Prefers、ConfigCache），在 APP 解析应用数据时跳过这 3 项——apply/insertAll/applyPush 写 Config 时跳过 isSource()，applyPrefers/insertAll 写 Prefers 时跳过 isSourcePref(config_ 前缀)，ConfigCache.apply 不从同步数据落盘。reload 用当前内存 Config 不重新从数据库取。replaceLocal 清缓存改用 ConfigCache.clear 而非 apply(空Map)。",
-  "code": 702,
-  "tag": "v5.6.142-mobile"
+  "name": "流光褶皱 v5.6.143",
+  "desc": "同步诊断日志：在 doSync/apply/applyPrefers 加详细日志跟踪源 Config 和 config_ Prefers 的处理，看看到底哪条路径在覆盖源地址。日志里会打印跳过删/写源Config、跳过源Pref、云端源Config列表、configChanged 结果。",
+  "code": 703,
+  "tag": "v5.6.143-mobile"
 }
