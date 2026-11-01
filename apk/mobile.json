@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱 v5.6.143",
-  "desc": "同步诊断日志：在 doSync/apply/applyPrefers 加详细日志跟踪源 Config 和 config_ Prefers 的处理，看看到底哪条路径在覆盖源地址。日志里会打印跳过删/写源Config、跳过源Pref、云端源Config列表、configChanged 结果。",
-  "code": 703,
-  "tag": "v5.6.143-mobile"
+  "name": "流光褶皱 v5.6.145",
+  "desc": "源地址诊断加强：Config.update/save 加调用堆栈日志，定位到底是谁在改源地址。",
+  "code": 705,
+  "tag": "v5.6.145-mobile"
 }
