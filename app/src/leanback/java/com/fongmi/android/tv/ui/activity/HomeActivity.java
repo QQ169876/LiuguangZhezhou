@@ -290,8 +290,9 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         items.add(Func.create(R.string.home_keep));
         items.add(Func.create(R.string.home_push));
         if (MusicActivity.enabled()) items.add(Func.create(R.string.home_music));
-        items.add(Func.create(R.string.home_receive));
-        items.add(Func.create(R.string.home_cast));
+        // 广播 / 多机同步两个入口已撤（2026-11-01 马先生：不想整了）
+        // items.add(Func.create(R.string.home_receive));
+        // items.add(Func.create(R.string.home_cast));
         items.add(Func.create(R.string.home_setting));
         mFuncAdapter.setItems(items, new BaseDiffCallback<Func>());
     }
@@ -414,8 +415,9 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         else if (item.getResId() == R.string.home_push) PushActivity.start(this);
         else if (item.getResId() == R.string.home_search) SearchActivity.start(this);
         else if (item.getResId() == R.string.home_music) MusicActivity.start(this);
-        else if (item.getResId() == R.string.home_receive) ReceiveActivity.start(this);
-        else if (item.getResId() == R.string.home_cast) CastMenu.show(this);
+        // （home_receive / home_cast 两个菜单项已不进列表，这两个分支自然到不了）
+        // else if (item.getResId() == R.string.home_receive) ReceiveActivity.start(this);
+        // else if (item.getResId() == R.string.home_cast) CastMenu.show(this);
         else if (item.getResId() == R.string.home_setting) SettingActivity.start(this);
     }
 

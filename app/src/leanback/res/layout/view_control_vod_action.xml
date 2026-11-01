@@ -58,6 +58,7 @@
 
     <com.google.android.material.textview.MaterialTextView
         android:id="@+id/cast"
+        android:visibility="gone"
         style="@style/Control"
         android:text="@string/cast_pick" />
 

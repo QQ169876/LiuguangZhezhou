@@ -347,7 +347,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.actor.setOnLongClickListener(view -> onActorFollow());
         mBinding.control.back.setOnClickListener(view -> onBack());
         mBinding.control.cast.setOnClickListener(view -> onPush());
-        mBinding.control.cast.setOnLongClickListener(view -> onCast());
         mBinding.control.info.setOnClickListener(view -> onInfo());
         mBinding.control.keep.setOnClickListener(view -> onKeep());
         mBinding.control.play.setOnClickListener(view -> checkPlay());

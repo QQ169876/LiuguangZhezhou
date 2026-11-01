@@ -172,7 +172,7 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         mBinding.navigation.getMenu().findItem(R.id.setting).setVisible(true);
         mBinding.navigation.getMenu().findItem(R.id.music).setVisible(MusicActivity.enabled());
         mBinding.navigation.getMenu().findItem(R.id.live).setVisible(LiveConfig.hasUrl());
-        mBinding.navigation.getMenu().findItem(R.id.receive).setVisible(true);
+        mBinding.navigation.getMenu().findItem(R.id.receive).setVisible(false);
         castLongPress();
     }
 
