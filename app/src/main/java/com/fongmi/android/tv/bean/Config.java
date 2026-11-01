@@ -259,6 +259,18 @@ public class Config {
         return "";
     }
 
+    /**
+     * 是不是「源地址」那类配置：点播源(0) / 直播源(1) / 壁纸(2)。
+     *
+     * 这类跟观看记录、收藏不是一回事 —— 它们是这台设备自己的「入口/订阅」配置，
+     * 每台设备配不同的源是正常的，不该跨设备拉齐。而且 Config 在多机同步里的键是「类型@地址」，
+     * 地址一改就是另一个键：本机改过的地址会被当成「云端没有」删掉，云端的旧地址又被拉回来覆盖，
+     * 结果就是一同步就被还原、等于这两项压根改不了。
+     */
+    public boolean isSource() {
+        return type == 0 || type == 1 || type == 2;
+    }
+
     public Config insert() {
         if (isEmpty()) return this;
         setId(Math.toIntExact(AppDatabase.get().getConfigDao().insert(this)));

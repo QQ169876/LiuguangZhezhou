@@ -50,6 +50,9 @@ public class WebDavData {
             GsonBuilder builder = new GsonBuilder().setObjectToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER);
             WebDavData item = builder.create().fromJson(json, WebDavData.class);
             if (item == null || item.getData() == null) return null;
+            // 云端那份里也可能带着别的设备以前的源地址（老版本同步上去的），一律不认：
+            // 认了就会被当成「本机没有」而补进来，把本机正在用的源顶掉
+            item.getData().setConfig(Backup.withoutSources(item.getData().getConfig()));
             return item;
         } catch (Exception e) {
             return null;

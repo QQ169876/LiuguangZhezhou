@@ -413,7 +413,7 @@ public class AiJudge {
                 cast = requestActors(key, cleanTitle(safe[0]), safe[1], safe[2], year);
             } catch (Throwable e) {
                 cast = null;
-                DebugLog.d("AiJudge", "补演员模型不可用：" + key);
+                DebugLog.d("AiJudge", "补演员模型不可用：" + key + "（" + reasonOf(e) + "）");
             }
             ACTOR_ASKING.remove(key);
             if (cast != null) {
@@ -540,8 +540,9 @@ public class AiJudge {
             try {
                 next = requestNext(safe[0], safe[1], region, kindWord, safe[2], seriesMain, seriesIndex, mode, liked, avoided, stars);
             } catch (Throwable e) {
+                // 为什么不可用要留痕：以前只记一句「不可用」，模型换了地址、令牌过期、设备断网看起来一模一样，事后无从分辨
                 next = null;
-                DebugLog.d("AiJudge", "下一部推荐模型不可用，退回本地词表：" + name);
+                DebugLog.d("AiJudge", "下一部推荐模型不可用，退回本地词表：" + name + "（" + reasonOf(e) + "）");
             }
             NEXT_ASKING.remove(key);
             if (next != null) { // 空的也记：这部剧模型不认识/没有下一季，下次别再问
@@ -552,6 +553,17 @@ public class AiJudge {
             Next result = next == null || next.useless() ? null : next;
             App.post(() -> replyNext(callback, result));
         });
+    }
+
+    /** 一句能认出病因的话：类名 + 消息，都取不到就退类名，绝不返回空（日志里要能一眼看出是超时还是令牌过期） */
+    private static String reasonOf(Throwable e) {
+        if (e == null) return "未知";
+        String name = e.getClass().getSimpleName();
+        String msg = e.getMessage();
+        if (msg == null || msg.isEmpty()) return name;
+        // 有些异常把整段响应塞进 message（超长、还带换行），日志里留个头就够了
+        if (msg.length() > 120) msg = msg.substring(0, 120) + "…";
+        return name + ": " + msg.replaceAll("\\s+", " ");
     }
 
     private static void replyNext(NextCallback callback, Next next) {

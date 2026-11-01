@@ -289,6 +289,9 @@ public class SyncManager {
         }
         backup.setHistory(history);
         backup.setKeep(keep);
+        // 源地址（点播源/直播源/壁纸）不跟着同步走：每台设备配自己的源是本分，
+        // 掺进来会因为「类型@地址」的键随地址变而被云端旧值拉回去覆盖
+        backup.setConfig(Backup.withoutSources(backup.getConfig()));
         return data;
     }
 
@@ -378,10 +381,12 @@ public class SyncManager {
         WebDavData mine = participate(false, bookRecord, bookFavorite);
         // 云端覆盖本机 = 换到那份账号的数据，整体替换本来就该这样，不问（SyncGuard 只管「本机删→云端删」）
         deleteHistoryKeep(mine.getData().getHistory(), mine.getData().getKeep());
+        List<Config> sources = localSources(); // 源地址不参与同步，拉取覆盖前先抄下来，替换完原样放回去
         replaceLocal();
         List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
         List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
         insertAll(remoteData);
+        AppDatabase.get().getConfigDao().insertOrUpdate(sources);
         Star.merge(remoteData.getData().getStar()); // 关注的演员：按「最后操作为准」合并，多设备共用一份
         if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
         if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
@@ -395,6 +400,13 @@ public class SyncManager {
         notifyDataChanged();
         reload();
         return getSummary(remoteData);
+    }
+
+    /** 本机正在用的源地址（点播源 / 直播源 / 壁纸）：拉云端覆盖本机时要留住它们 */
+    private static List<Config> localSources() {
+        List<Config> result = new ArrayList<>();
+        for (Config item : AppDatabase.get().getConfigDao().findAll()) if (item.isSource()) result.add(item);
+        return result;
     }
 
     /**
@@ -487,7 +499,7 @@ public class SyncManager {
             }
         }
         if (!data.getConfig().isEmpty()) {
-            for (Config item : data.getConfig()) {
+            for (Config item : Backup.withoutSources(data.getConfig())) {
                 Config old = localConfig.get(key(item));
                 if (old != null && same(old, item)) continue;
                 if (old != null && item.getId() == 0) item.setId(old.getId());
@@ -796,6 +808,7 @@ public class SyncManager {
         deleteHistoryKeep(delHistory, delKeep);
         for (Config item : o.getConfig()) {
             if (configKeys.contains(key(item))) continue;
+            if (item.isSource()) continue; // 源地址不参与同步：本机正在用的源不能被「云端没有」给删了
             AppDatabase.get().getConfigDao().delete(item.getUrl(), item.getType());
             configChanged = true;
         }
@@ -821,6 +834,7 @@ public class SyncManager {
             AppDatabase.get().getKeepDao().insertOrUpdate(item);
         }
         for (Config item : m.getConfig()) {
+            if (item.isSource()) continue; // 源地址不参与同步：不让云端的源地址覆盖本机正在用的那个
             Config old = localConfig.get(key(item));
             if (old != null && same(old, item)) continue;
             if (old != null && item.getId() == 0) item.setId(old.getId());
@@ -858,7 +872,7 @@ public class SyncManager {
         Backup backup = data.getData();
         AppDatabase.get().getSiteDao().insertOrUpdate(backup.getSite());
         AppDatabase.get().getLiveDao().insertOrUpdate(backup.getLive());
-        AppDatabase.get().getConfigDao().insertOrUpdate(backup.getConfig());
+        AppDatabase.get().getConfigDao().insertOrUpdate(Backup.withoutSources(backup.getConfig()));
         AppDatabase.get().getKeepDao().insertOrUpdate(backup.getKeep());
         AppDatabase.get().getHistoryDao().insertOrUpdate(backup.getHistory());
         for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) {

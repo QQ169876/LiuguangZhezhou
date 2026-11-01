@@ -12,6 +12,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
 import com.google.gson.annotations.SerializedName;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -110,6 +111,17 @@ public class Backup {
 
     public List<Config> getConfig() {
         return config == null ? Collections.emptyList() : config;
+    }
+
+    /**
+     * 滤掉源地址类配置（点播源 / 直播源 / 壁纸）：这类不参与多机同步，见 {@link Config#isSource()}。
+     * 既不往上推，也不从云端拉回来覆盖本机 —— 每台设备配自己的源是本分。
+     */
+    public static List<Config> withoutSources(List<Config> items) {
+        List<Config> result = new ArrayList<>();
+        if (items == null) return result;
+        for (Config item : items) if (item != null && !item.isSource()) result.add(item);
+        return result;
     }
 
     public void setConfig(List<Config> config) {
