@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.140",
-  "desc": "WebDAV 同步修复：点播源和直播源地址之前仍然会被同步覆盖——Config 列表层面已过滤但 Prefers 里的 config_0(点播源)、config_1(直播源)、config_2(壁纸)、config_cache_url_0/1 五个键漏了，跟着 Prefers 同步到云端再拉回来覆盖本机。localOnly() 增 config_ 前缀全量排除，源地址各设备各配各的，不再被同步还原。",
-  "code": 700,
-  "tag": "v5.6.140-liuguang"
+  "name": "流光褶皱TV v5.6.141",
+  "desc": "WebDAV 同步后重载源配置修复：同步改了非源配置（解析接口、规则等）后 reload() 会调 init() 从数据库按 time DESC 重新取源，如果用户刚改了源但新源还在加载中（config.update() 还没跑到、time 还是 0），findOne 就返回旧源把用户刚选的冲掉了。改为用当前内存里已在用的 Config 重新加载，不从数据库重新取——源地址已排除出同步，同步后没理由换源。",
+  "code": 701,
+  "tag": "v5.6.141-liuguang"
 }

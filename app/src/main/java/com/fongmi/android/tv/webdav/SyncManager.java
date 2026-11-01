@@ -913,17 +913,33 @@ public class SyncManager {
         });
     }
 
+    /**
+     * 同步改了非源配置（解析接口、规则等）后重新加载让变化生效。
+     *
+     * 关键：用当前内存里已经在用的 Config 重新加载，不调 init() 从数据库重新取——
+     * init() 会 findOne(type) 按 time DESC 取一条，如果用户刚改了源但新源还在加载中
+     * （config.update() 还没跑到、time 还是 0），findOne 就会返回旧源，
+     * 把用户刚选的源给冲掉。源地址已经排除出同步，同步后没理由换源。
+     */
     private static void reload() {
-        DebugLog.d("Sync", "同步改了配置，开始重载点播/直播/壁纸");
+        DebugLog.d("Sync", "同步改了配置，用当前源重新加载");
         App.post(() -> {
             DebugLog.d("Sync", "重载执行中");
-            VodConfig.get().init().load(new Callback() {
+            VodConfig.get().load(VodConfig.get().getConfig(), new Callback() {
                 @Override
                 public void error(String msg) {
                 }
             });
-            LiveConfig.get().init().load();
-            WallConfig.get().init().load();
+            LiveConfig.get().load(LiveConfig.get().getConfig(), new Callback() {
+                @Override
+                public void error(String msg) {
+                }
+            });
+            WallConfig.get().load(WallConfig.get().getConfig(), new Callback() {
+                @Override
+                public void error(String msg) {
+                }
+            });
         });
     }
 }
