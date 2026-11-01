@@ -16,8 +16,8 @@ android {
         applicationId "com.liuguang.zhezhou"
         minSdk rootProject.minSdkLevel
         targetSdk libs.versions.targetSdk.get().toInteger()
-        versionCode 709
-        versionName rootProject.legacy ? "5.6.149-legacy" : "5.6.149"
+        versionCode 710
+        versionName rootProject.legacy ? "5.6.150-legacy" : "5.6.150"
         buildConfigField "boolean", "LEGACY", String.valueOf(rootProject.legacy)
         // GitHub 令牌只从本机的 local.properties 注入（该文件不入库）：
         // 写死在源码里会被 GitHub 的 secret scanning 拒收，令牌还会随公开仓库泄露
@@ -122,7 +122,7 @@ androidComponents {
         def mode = flavors['mode'] ?: 'mode'
         def abi = flavors['abi'] ?: 'abi'
         variant.outputs.each { output ->
-            def mark = rootProject.legacy ? "5.6.149-legacy" : "5.6.149"
+            def mark = rootProject.legacy ? "5.6.150-legacy" : "5.6.150"
             output.outputFileName.set("${mode}${mark}-${abi}.apk")
         }
     }

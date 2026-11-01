@@ -954,11 +954,10 @@ public class Updater implements Download.Callback, UpdateListener {
         Notify.show(R.string.update_reinstall_fetch);
         Task.execute(() -> {
             // 优先装回当前版本：通道里有这个版本的包就下它
-            String currentTag = "v" + BuildConfig.VERSION_NAME;
-            String url = probeApkUrl(Gitee.apk(currentTag));
+            String url = probeApkUrl(Gitee.apk(currentTag()));
             if (url.isEmpty()) {
                 // 当前版本不在通道里（可能是未发布的开发版），退到最新版
-                DebugLog.d("Update", "重装：通道里没有 " + currentTag + "，退到最新版");
+                DebugLog.d("Update", "重装：通道里没有 " + currentTag() + "，退到最新版");
                 url = probeApkUrl(Gitee.apk(latestTag()));
             }
             final String target = url;
@@ -1046,11 +1045,14 @@ public class Updater implements Download.Callback, UpdateListener {
         });
     }
 
-    /** 探一下这个包地址能不能用：发 GET 只看响应头，不读 body，200 就有效 */
+    /**
+     * 探一下这个包地址能不能用：发 HEAD 只看响应头，不拖 body。
+     * 之前用 GET，虽然不读 body 但服务端照样开始吐整包，白费几十 MB 流量和一轮往返。
+     */
     private static String probeApkUrl(String url) {
         if (url == null || url.isEmpty()) return "";
         try {
-            Request request = new Request.Builder().url(url).get().build();
+            Request request = new Request.Builder().url(url).head().build();
             try (Response res = OkHttp.client(PROBE_TIMEOUT).newCall(request).execute()) {
                 if (res.isSuccessful()) return url;
             }
@@ -1066,6 +1068,18 @@ public class Updater implements Download.Callback, UpdateListener {
         } catch (Throwable e) {
             return null;
         }
+    }
+
+    /**
+     * 当前正在跑的这个版本在通道里的 tag，跟发版脚本打出去的 tag 必须一致：
+     *   mobile → v{版本}-mobile    tv 主线 → v{版本}-liuguang    兼容版 → v{版本}-legacy
+     * 兼容版的 VERSION_NAME 本身就带 -legacy，所以不用再补后缀。
+     */
+    private static String currentTag() {
+        String name = BuildConfig.VERSION_NAME;
+        if (BuildConfig.LEGACY) return "v" + name;
+        if ("mobile".equals(BuildConfig.FLAVOR_mode)) return "v" + name + "-mobile";
+        return "v" + name + "-liuguang";
     }
 
     /** 问 Gitee 要最新版本文件的 tag，用来拼安装包地址 */
