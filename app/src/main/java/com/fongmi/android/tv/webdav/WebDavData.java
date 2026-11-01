@@ -109,13 +109,15 @@ public class WebDavData {
      * owner_ 是归属账本，「谁的数据」是本机自己的判断；
      * route 系列（route/route_auto/route_socks/route_customs）是 GitHub 加速/代理，
      * 跟本机网络环境强绑定——别的设备（尤其走不同网络的电视）套用了可能全网请求卡死。
+     * config_ 系列是本机正在用的源地址（config_0=点播源 config_1=直播源 config_2=壁纸，
+     * config_cache_url_0/1 是源内容缓存的 URL 标记）——每台设备配自己的源，不能被别台的拉过来覆盖。
      */
     public static boolean localOnly(String key) {
         if (key == null) return true;
         // mpv_blocked：哪台设备用 MPV 内核崩过，是这台设备自己的结论（PlayWatchdog 记的），
         // 不能同步给别人，也不能被别人的「用 MPV」覆盖掉，否则一同步又给它推回崩溃内核。
         // debug_：调试流水账是本机排查用的（debug_up_len 是这台设备流水账传到哪了的标记），别同步到全家设备
-        return key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_") || key.startsWith("route") || key.startsWith("mpv_blocked") || key.startsWith("hwdec_") || key.startsWith("debug_");
+        return key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("owner_") || key.startsWith("route") || key.startsWith("mpv_blocked") || key.startsWith("hwdec_") || key.startsWith("debug_") || key.startsWith("config_");
     }
 
     public void setPrefers(Map<String, ?> prefers) {
