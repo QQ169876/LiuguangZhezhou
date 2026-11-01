@@ -15,14 +15,11 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.Product;
 import com.fongmi.android.tv.R;
-import com.fongmi.android.tv.api.config.VodConfig;
-import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Keep;
 import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.bean.TmdbWork;
 import com.fongmi.android.tv.databinding.ActivityKeepBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
-import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.ui.adapter.KeepAdapter;
 import com.fongmi.android.tv.ui.adapter.StarAdapter;
 import com.fongmi.android.tv.ui.base.BaseActivity;
@@ -132,20 +129,6 @@ public class KeepActivity extends BaseActivity implements KeepAdapter.OnClickLis
         }).show();
     }
 
-    private void loadConfig(Config config, Keep item) {
-        VodConfig.load(config, new Callback() {
-            @Override
-            public void success() {
-                VideoActivity.start(getActivity(), item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic());
-            }
-
-            @Override
-            public void error(String msg) {
-                Notify.show(msg);
-            }
-        });
-    }
-
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onRefreshEvent(RefreshEvent event) {
         if (event.getType().equals(RefreshEvent.Type.KEEP)) load();
@@ -154,10 +137,7 @@ public class KeepActivity extends BaseActivity implements KeepAdapter.OnClickLis
 
     @Override
     public void onItemClick(Keep item) {
-        Config config = Config.find(item.getCid());
-        if (config == null) SearchActivity.start(this, item.getVodName());
-        else if (item.getCid() != VodConfig.getCid()) loadConfig(config, item);
-        else VideoActivity.start(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic());
+        VideoActivity.start(this, item.getSiteKey(), item.getVodId(), item.getVodName(), item.getVodPic());
     }
 
     @Override

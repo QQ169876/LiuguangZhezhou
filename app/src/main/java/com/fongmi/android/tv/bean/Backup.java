@@ -48,7 +48,7 @@ public class Backup {
         backup.setSite(AppDatabase.get().getSiteDao().findAll());
         backup.setLive(AppDatabase.get().getLiveDao().findAll());
         backup.setKeep(AppDatabase.get().getKeepDao().findAll());
-        backup.setConfig(AppDatabase.get().getConfigDao().findAll());
+        backup.setConfig(Backup.withoutSources(AppDatabase.get().getConfigDao().findAll()));
         backup.setHistory(AppDatabase.get().getHistoryDao().findAll());
         backup.setStar(Star.getAllRaw());
         return backup;
@@ -69,10 +69,16 @@ public class Backup {
         AppDatabase.get().getSiteDao().insertOrUpdate(getSite());
         AppDatabase.get().getLiveDao().insertOrUpdate(getLive());
         AppDatabase.get().getKeepDao().insertOrUpdate(getKeep());
-        AppDatabase.get().getConfigDao().insertOrUpdate(getConfig());
+        AppDatabase.get().getConfigDao().insertOrUpdate(Backup.withoutSources(getConfig()));
         AppDatabase.get().getHistoryDao().insertOrUpdate(getHistory());
         Star.merge(getStar());
-        for (Map.Entry<String, ?> entry : getPrefers().entrySet()) Prefers.put(entry.getKey(), entry.getValue());
+        for (Map.Entry<String, ?> entry : getPrefers().entrySet()) {
+            String k = entry.getKey();
+            if (k == null) continue;
+            if (k.startsWith("webdav_") || k.startsWith("moontv_") || k.startsWith("owner_") || k.startsWith("route") || k.startsWith("mpv_blocked") || k.startsWith("hwdec_") || k.startsWith("debug_")) continue;
+            if (k.startsWith("config_")) continue;
+            Prefers.put(k, entry.getValue());
+        }
         CookieStore.apply(getCookies());
         SpiderVault.apply(getSpider());
     }

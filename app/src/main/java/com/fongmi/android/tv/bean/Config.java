@@ -279,7 +279,6 @@ public class Config {
 
     public Config save() {
         if (isEmpty()) return this;
-        if (isSource()) com.fongmi.android.tv.utils.DebugLog.d("Config", "save(源) type=" + getType() + " url=" + (getUrl() != null && getUrl().length() > 60 ? getUrl().substring(0, 60) + "..." : getUrl()));
         AppDatabase.get().getConfigDao().insertOrUpdate(this);
         return this;
     }
@@ -288,8 +287,6 @@ public class Config {
         if (isEmpty()) return this;
         setTime(System.currentTimeMillis());
         Prefers.put("config_" + getType(), getUrl());
-        // 诊断：谁在改源地址
-        com.fongmi.android.tv.utils.DebugLog.d("Config", "update type=" + getType() + " url=" + (getUrl() != null && getUrl().length() > 60 ? getUrl().substring(0, 60) + "..." : getUrl()) + " from=" + android.util.Log.getStackTraceString(new Throwable()));
         return save();
     }
 

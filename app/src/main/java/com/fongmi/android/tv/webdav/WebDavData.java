@@ -30,7 +30,7 @@ public class WebDavData {
         item.time = System.currentTimeMillis();
         item.device = WebDavSetting.getDevice();
         item.data = Backup.create();
-        item.cache = ConfigCache.export();
+        // ConfigCache 不上传：源缓存跟本机当前源绑定，别台的缓存对本机无用
         item.setPrefers(Prefers.getPrefers().getAll());
         return item;
     }
@@ -110,8 +110,7 @@ public class WebDavData {
      * 不能同步给别人，也不能被别人的「用 MPV」覆盖掉，否则一同步又给它推回崩溃内核。
      * debug_：调试流水账是本机排查用的（debug_up_len 是这台设备流水账传到哪了的标记），别同步到全家设备
      * config_ 系列是本机正在用的源地址（config_0=点播源 config_1=直播源 config_2=壁纸，
-     * config_cache_url_0/1 是源内容缓存的 URL 标记）——这些虽然在同步数据里正常收发
-     * （保持数据完整性），但在 APP 解析应用数据时跳过，每台设备各配各的源。
+     * config_cache_url_0/1 是源内容缓存的 URL 标记）——不传不收不合不落库，每台设备各配各的源。
      */
     public static boolean localOnly(String key) {
         if (key == null) return true;
@@ -120,7 +119,7 @@ public class WebDavData {
 
     /**
      * 源地址相关的 Prefers 键（config_0=点播源 config_1=直播源 config_2=壁纸，
-     * config_cache_url_0/1=源缓存 URL 标记）：同步数据里正常带着，但落库时跳过——
+     * config_cache_url_0/1=源缓存 URL 标记）：上传、合并、落库全部跳过——
      * 每台设备配自己的源，不能被别台的拉过来覆盖。
      */
     public static boolean isSourcePref(String key) {
@@ -128,14 +127,16 @@ public class WebDavData {
     }
 
     /**
-     * 上传时 Prefers 正常全量带（包括 config_ 键），保持同步数据完整。
-     * 落库时由 applyPrefers/insertAll 按 localOnly + isSourcePref 跳过。
+     * 上传时 Prefers 排除掉本机独有和源地址相关的键：
+     * config_ 系列是本机正在用的源地址（config_0=点播源 config_1=直播源 config_2=壁纸，
+     * config_cache_url_0/1 是源内容缓存 URL 标记）——不传不收不合，每台设备各配各的。
      */
     public void setPrefers(Map<String, ?> prefers) {
         Map<String, Object> values = new HashMap<>();
         for (Map.Entry<String, ?> entry : prefers.entrySet()) {
             String key = entry.getKey();
             if (localOnly(key)) continue;
+            if (isSourcePref(key)) continue;
             values.put(key, entry.getValue());
         }
         getData().setPrefers(values);

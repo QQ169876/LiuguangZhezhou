@@ -20,7 +20,7 @@ import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
 import com.fongmi.android.tv.sync.Owner;
 import com.fongmi.android.tv.sync.SyncGuard;
-import com.fongmi.android.tv.utils.DebugLog;
+
 import com.fongmi.android.tv.utils.ConfigCache;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.Notify;
@@ -152,16 +152,13 @@ public class SyncManager {
     private static void silent() {
         if (!busy.compareAndSet(false, true)) return;
         SyncStatus.begin(R.string.sync_status_webdav); // 让用户在右下角看见这一趟在跑
-        DebugLog.d("Sync", "WebDAV 同步开始");
         try {
             doSync();
             failures.set(0);
             dirty.set(false);
-            DebugLog.d("Sync", "WebDAV 同步完成");
             SyncStatus.finish(R.string.sync_status_webdav, true);
         } catch (Throwable e) {
             Log.w(TAG, "Auto sync failed", e);
-            DebugLog.d("Sync", "WebDAV 同步失败 " + e);
             onFail();
             SyncStatus.finish(R.string.sync_status_webdav, false);
         } finally {
@@ -289,9 +286,11 @@ public class SyncManager {
         }
         backup.setHistory(history);
         backup.setKeep(keep);
-        // 源地址 Config 正常上传（保持同步数据完整），落库时由 apply/insertAll 跳过 isSource
+        // 源地址 Config 不上传：点播源/直播源/壁纸不参与同步，每台设备各配各的
+        backup.setConfig(Backup.withoutSources(backup.getConfig()));
         return data;
     }
+
 
     /** 同步完这批数据都算进了当前同步标识的名下，记一笔 */
     private static void absorb(WebDavData data, JSONObject bookRecord, JSONObject bookFavorite) {
@@ -334,21 +333,10 @@ public class SyncManager {
         WebDavData baseData = readBaseline();
         WebDavData localData = participate(false, bookRecord, bookFavorite);
         if (remoteData == null) remoteData = baseData == null ? WebDavData.empty() : WebDavData.from(baseData.toJson());
-        // 诊断日志：看同步前本机和云端各有什么源
-        DebugLog.d("Sync", "doSync 本机源Config: " + Backup.withoutSources(localData.getData().getConfig()).size() + " 非源 / " + localData.getData().getConfig().size() + " 总");
-        if (remoteData != null) DebugLog.d("Sync", "doSync 云端源Config: " + remoteData.getData().getConfig().size() + " 条 (含源)");
-        if (remoteData != null) {
-            for (Config c : remoteData.getData().getConfig()) {
-                if (c.isSource()) DebugLog.d("Sync", "  云端源Config type=" + c.getType() + " url=" + (c.getUrl() != null && c.getUrl().length() > 60 ? c.getUrl().substring(0, 60) + "..." : c.getUrl()));
-            }
-            DebugLog.d("Sync", "doSync 云端Prefers含config_: " + remoteData.getPrefers().keySet().stream().anyMatch(k -> k.startsWith("config_")));
-            DebugLog.d("Sync", "doSync 云端cache: " + (remoteData.getCache() != null ? remoteData.getCache().size() + " 条" : "null"));
-        }
         WebDavData merged = merge(baseData, localData, remoteData);
         guardLocalLoss(merged, localData, baseData, bookRecord, bookFavorite, () -> sync(null));
         absorb(merged, bookRecord, bookFavorite); // 拉下来/推上去的都归当前同步标识
         boolean changed = apply(merged, localData);
-        DebugLog.d("Sync", "doSync apply完 configChanged=" + changed);
         merged.setTime(System.currentTimeMillis());
         save(url, merged);
         Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
@@ -396,6 +384,9 @@ public class SyncManager {
         List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
         insertAll(remoteData);
         AppDatabase.get().getConfigDao().insertOrUpdate(sources);
+        // 云端这份里可能还留着旧版本上传的源数据，写回去时顺手清掉，别让它在云端反复来回传
+        remoteData.getData().setConfig(Backup.withoutSources(remoteData.getData().getConfig()));
+        remoteData.setPrefers(remoteData.getPrefers());
         Star.merge(remoteData.getData().getStar()); // 关注的演员：按「最后操作为准」合并，多设备共用一份
         if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
         if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
@@ -557,7 +548,8 @@ public class SyncManager {
         merged.setData(new Backup());
         merged.getData().setHistory(mergeList(backup(base).getHistory(), backup(local).getHistory(), backup(remote).getHistory(), SyncManager::key, SyncManager::newerHistory));
         merged.getData().setKeep(mergeList(backup(base).getKeep(), backup(local).getKeep(), backup(remote).getKeep(), SyncManager::key, SyncManager::newerKeep));
-        merged.getData().setConfig(mergeList(backup(base).getConfig(), backup(local).getConfig(), backup(remote).getConfig(), SyncManager::key, SyncManager::newerConfig));
+        // 源地址 Config 不参与同步：base/local/remote 都滤掉源，只合并非源 Config
+        merged.getData().setConfig(mergeList(Backup.withoutSources(backup(base).getConfig()), Backup.withoutSources(backup(local).getConfig()), Backup.withoutSources(backup(remote).getConfig()), SyncManager::key, SyncManager::newerConfig));
         merged.getData().setSite(mergeList(backup(base).getSite(), backup(local).getSite(), backup(remote).getSite(), SyncManager::key, (a, b) -> a));
         merged.getData().setLive(mergeList(backup(base).getLive(), backup(local).getLive(), backup(remote).getLive(), SyncManager::key, (a, b) -> a));
         merged.setPrefers(mergeMap(backup(base).getPrefers(), backup(local).getPrefers(), backup(remote).getPrefers()));
@@ -608,6 +600,7 @@ public class SyncManager {
         Map<String, Object> result = new LinkedHashMap<>();
         for (String name : keys) {
             if (WebDavData.localOnly(name)) continue;
+            if (WebDavData.isSourcePref(name)) continue; // config_ 键不参与同步
             Object b = base.get(name);
             Object l = local.get(name);
             Object r = remote.get(name);
@@ -753,7 +746,6 @@ public class SyncManager {
         if (lost == 0) return;
         int total = local.getData().getHistory().size() + local.getData().getKeep().size() + lost;
         if (SyncGuard.allow(lost, total)) return;
-        DebugLog.d("Sync", "本机批量删除待确认：观看记录 " + lostHistory.size() + " 条、收藏 " + lostKeep.size() + " 条");
         SyncGuard.ask(lostHistory.size(), lostKeep.size(), again); // 真要删就再跑一趟（已批准，这回不再问）
         restore(merged, lostHistory, lostKeep);
     }
@@ -818,8 +810,7 @@ public class SyncManager {
         deleteHistoryKeep(delHistory, delKeep);
         for (Config item : o.getConfig()) {
             if (configKeys.contains(key(item))) continue;
-            if (item.isSource()) { DebugLog.d("Sync", "apply 跳过删源Config type=" + item.getType() + " url=" + (item.getUrl() != null && item.getUrl().length() > 60 ? item.getUrl().substring(0, 60) + "..." : item.getUrl())); continue; }
-            DebugLog.d("Sync", "apply 删非源Config type=" + item.getType() + " url=" + item.getUrl());
+            if (item.isSource()) continue;
             AppDatabase.get().getConfigDao().delete(item.getUrl(), item.getType());
             configChanged = true;
         }
@@ -845,11 +836,10 @@ public class SyncManager {
             AppDatabase.get().getKeepDao().insertOrUpdate(item);
         }
         for (Config item : m.getConfig()) {
-            if (item.isSource()) { DebugLog.d("Sync", "apply 跳过写源Config type=" + item.getType() + " url=" + (item.getUrl() != null && item.getUrl().length() > 60 ? item.getUrl().substring(0, 60) + "..." : item.getUrl())); continue; }
+            if (item.isSource()) continue;
             Config old = localConfig.get(key(item));
             if (old != null && same(old, item)) continue;
             if (old != null && item.getId() == 0) item.setId(old.getId());
-            DebugLog.d("Sync", "apply 写非源Config type=" + item.getType() + " url=" + item.getUrl());
             AppDatabase.get().getConfigDao().insertOrUpdate(item);
             configChanged = true;
         }
@@ -908,9 +898,8 @@ public class SyncManager {
         for (Map.Entry<String, ?> entry : target.entrySet()) {
             String name = entry.getKey();
             if (WebDavData.localOnly(name)) continue;
-            if (WebDavData.isSourcePref(name)) { DebugLog.d("Sync", "applyPrefers 跳过源Pref: " + name + "=" + entry.getValue()); continue; }
+            if (WebDavData.isSourcePref(name)) continue;
             if (Objects.equals(current.get(name), entry.getValue())) continue;
-            DebugLog.d("Sync", "applyPrefers 写: " + name + "=" + entry.getValue());
             values.put(name, entry.getValue());
         }
         if (values.isEmpty()) return;
@@ -938,9 +927,7 @@ public class SyncManager {
      * 把用户刚选的源给冲掉。源地址已经排除出同步，同步后没理由换源。
      */
     private static void reload() {
-        DebugLog.d("Sync", "同步改了配置，用当前源重新加载");
         App.post(() -> {
-            DebugLog.d("Sync", "重载执行中");
             VodConfig.get().load(VodConfig.get().getConfig(), new Callback() {
                 @Override
                 public void error(String msg) {
