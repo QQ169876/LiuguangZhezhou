@@ -15,6 +15,7 @@ import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.moontv.MoonSync;
@@ -284,11 +285,58 @@ public class SyncManager {
                 keep.add(item);
             }
         }
-        backup.setHistory(history);
-        backup.setKeep(keep);
+        List<History> mergedHistory = accountHistory(history);
+        List<Keep> mergedKeep = accountKeep(keep);
+        backup.setHistory(mergedHistory);
+        backup.setKeep(mergedKeep);
+        DebugLog.d("Sync", "本机参与：记录 " + history.size() + " 条收成 " + mergedHistory.size() + " 条，收藏 " + keep.size() + " 条收成 " + mergedKeep.size() + " 条（当前源 cid=" + currentCid() + "）");
         // 源地址 Config 不上传：点播源/直播源/壁纸不参与同步，每台设备各配各的
         backup.setConfig(Backup.withoutSources(backup.getConfig()));
         return data;
+    }
+
+    /**
+     * 观看记录跟着账号走，不跟点播源走（马先生 2026-11-02 的口径）：
+     * 本机同一部片可能在几个点播源（cid）底下各留了一条（换源之前留下来的），
+     * 这里按「站点 key + 视频 id」收成一条（留最新的那条），并挂到当前源名下——
+     * 换源之后记录还是这一条，跟着账号走，不会变成另一条、也不会看不见。
+     */
+    private static List<History> accountHistory(List<History> items) {
+        if (items == null) return new ArrayList<>();
+        int cid = currentCid();
+        Map<String, History> map = new LinkedHashMap<>();
+        for (History item : items) {
+            if (item == null) continue;
+            if (cid > 0) item.cid(cid);
+            String name = key(item);
+            History old = map.get(name);
+            map.put(name, old == null ? item : newerHistory(old, item));
+        }
+        return new ArrayList<>(map.values());
+    }
+
+    /** 收藏同理：跟着账号走，同一部片只留一条，挂在当前源名下 */
+    private static List<Keep> accountKeep(List<Keep> items) {
+        if (items == null) return new ArrayList<>();
+        int cid = currentCid();
+        Map<String, Keep> map = new LinkedHashMap<>();
+        for (Keep item : items) {
+            if (item == null) continue;
+            if (cid > 0 && item.getType() == 0) item.cid(cid); // 直播收藏(type=1)的键不是「站点@@@视频」三段，别动
+            String name = key(item);
+            Keep old = map.get(name);
+            map.put(name, old == null ? item : newerKeep(old, item));
+        }
+        return new ArrayList<>(map.values());
+    }
+
+    /** 当前点播源；配置还没加载出来时是 0，那一刻不动 cid，免得把记录全挂到空源上 */
+    private static int currentCid() {
+        try {
+            return VodConfig.getCid();
+        } catch (Throwable e) {
+            return 0;
+        }
     }
 
 
@@ -373,6 +421,9 @@ public class SyncManager {
         String url = WebDavSetting.getFileUrl();
         WebDavData remoteData = WebDavData.from(WebDav.get(url));
         if (remoteData == null) throw new Exception("Remote file not found");
+        // 记录/收藏跟着账号走：云端那份先按「站点key+视频id」收成一条，挂到当前源名下
+        remoteData.getData().setHistory(accountHistory(remoteData.getData().getHistory()));
+        remoteData.getData().setKeep(accountKeep(remoteData.getData().getKeep()));
         JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
         WebDavData mine = participate(false, bookRecord, bookFavorite);
@@ -425,7 +476,7 @@ public class SyncManager {
     private static <T> List<T> keepKeys(List<T> left, List<?> remote) {
         Set<String> remoteKeys = new HashSet<>();
         for (Object item : remote) {
-            if (item instanceof History) remoteKeys.add(((History) item).getKey());
+            if (item instanceof History) remoteKeys.add(baseKey(((History) item).getKey()));
             else if (item instanceof Keep) remoteKeys.add(baseKey(((Keep) item).getKey()));
         }
         List<T> result = new ArrayList<>();
@@ -475,8 +526,13 @@ public class SyncManager {
         Map<String, Keep> localKeep = map(local.getKeep(), SyncManager::key);
         Map<String, Config> localConfig = map(local.getConfig(), SyncManager::key);
         Star.merge(data.getStar());
-        if (!data.getHistory().isEmpty()) {
-            for (History item : data.getHistory()) {
+        // 记录/收藏跟着账号走：对方推过来的先按「站点key+视频id」收成一条，挂到当前源名下
+        List<History> history = accountHistory(data.getHistory());
+        List<Keep> keep = accountKeep(data.getKeep());
+        dropOtherCidHistory(history);
+        dropOtherCidKeep(keep);
+        if (!history.isEmpty()) {
+            for (History item : history) {
                 History old = localHistory.get(key(item));
                 if (old != null && same(old, item)) continue;
                 if (old != null) {
@@ -486,8 +542,8 @@ public class SyncManager {
                 AppDatabase.get().getHistoryDao().insertOrUpdate(item);
             }
         }
-        if (!data.getKeep().isEmpty()) {
-            for (Keep item : data.getKeep()) {
+        if (!keep.isEmpty()) {
+            for (Keep item : keep) {
                 Keep old = localKeep.get(key(item));
                 if (old != null && same(old, item)) continue;
                 if (old != null) {
@@ -546,8 +602,11 @@ public class SyncManager {
     private static WebDavData merge(WebDavData base, WebDavData local, WebDavData remote) {
         WebDavData merged = WebDavData.empty();
         merged.setData(new Backup());
-        merged.getData().setHistory(mergeList(backup(base).getHistory(), backup(local).getHistory(), backup(remote).getHistory(), SyncManager::key, SyncManager::newerHistory));
-        merged.getData().setKeep(mergeList(backup(base).getKeep(), backup(local).getKeep(), backup(remote).getKeep(), SyncManager::key, SyncManager::newerKeep));
+        // 记录/收藏跟着账号走：三端各自先按「站点key+视频id」收成一条，再合并
+        merged.getData().setHistory(mergeList(accountHistory(backup(base).getHistory()), accountHistory(backup(local).getHistory()), accountHistory(backup(remote).getHistory()), SyncManager::key, SyncManager::newerHistory));
+        merged.getData().setKeep(mergeList(accountKeep(backup(base).getKeep()), accountKeep(backup(local).getKeep()), accountKeep(backup(remote).getKeep()), SyncManager::key, SyncManager::newerKeep));
+        // 关注的演员：三端合并，同一个演员取最后操作的那条（关注/取消关注都以最后一下为准）
+        merged.getData().setStar(mergeList(backup(base).getStar(), backup(local).getStar(), backup(remote).getStar(), SyncManager::starKey, SyncManager::newerStar));
         // 源地址 Config 不参与同步：base/local/remote 都滤掉源，只合并非源 Config
         merged.getData().setConfig(mergeList(Backup.withoutSources(backup(base).getConfig()), Backup.withoutSources(backup(local).getConfig()), Backup.withoutSources(backup(remote).getConfig()), SyncManager::key, SyncManager::newerConfig));
         merged.getData().setSite(mergeList(backup(base).getSite(), backup(local).getSite(), backup(remote).getSite(), SyncManager::key, (a, b) -> a));
@@ -655,8 +714,12 @@ public class SyncManager {
         return result;
     }
 
+    /**
+     * 观看记录的合并键 = 站点 key + 视频 id（跟收藏一个口径）：
+     * 记录跟着账号走，不看点播源，主键末段那个 cid 不参与比较。
+     */
     private static String key(History item) {
-        return item.getKey();
+        return baseKey(item.getKey());
     }
 
     private static String key(Keep item) {
@@ -691,6 +754,16 @@ public class SyncManager {
 
     private static Keep newerKeep(Keep a, Keep b) {
         return b.getCreateTime() > a.getCreateTime() ? b : a;
+    }
+
+    /** 关注的演员按名字归一（「张三」和「 张三 」算一个） */
+    private static String starKey(Star item) {
+        return Star.fix(item.getName());
+    }
+
+    /** 同一个演员在几台设备上各操作过：取最后操作的那条（关注、取消关注都算操作） */
+    private static Star newerStar(Star a, Star b) {
+        return b.getUpdateTime() > a.getUpdateTime() ? b : a;
     }
 
     private static Config newerConfig(Config a, Config b) {
@@ -808,6 +881,7 @@ public class SyncManager {
         for (Keep item : o.getKeep()) if (!keepKeys.contains(key(item))) delKeep.add(item);
         // 云端那份没了 → 本机跟着删，这是同步的正常结果，不问（SyncGuard 只管「本机删→云端删」）
         deleteHistoryKeep(delHistory, delKeep);
+        DebugLog.d("Sync", "doSync 落库：记录 " + m.getHistory().size() + " 条、收藏 " + m.getKeep().size() + " 条；云端没了跟着删掉 " + delHistory.size() + " 条记录、" + delKeep.size() + " 条收藏");
         for (Config item : o.getConfig()) {
             if (configKeys.contains(key(item))) continue;
             if (item.isSource()) continue;
@@ -815,6 +889,13 @@ public class SyncManager {
             configChanged = true;
         }
 
+        dropOtherCidHistory(m.getHistory());
+        dropOtherCidKeep(m.getKeep());
+        // 关注的演员落库：「最后操作为准」，谁后动听谁的（取消关注那条也要落到本机）
+        if (!m.getStar().isEmpty()) {
+            Star.merge(m.getStar());
+            DebugLog.d("Sync", "doSync 落库：关注演员 " + m.getStar().size() + " 条");
+        }
         for (History item : m.getHistory()) {
             History old = localHistory.get(key(item));
             if (old != null && same(old, item)) continue;
@@ -860,6 +941,51 @@ public class SyncManager {
         return configChanged;
     }
 
+    /**
+     * 落库前把本机同一部片在别的点播源（cid）底下留的那一份清掉：
+     * 记录／收藏跟着账号走，一部片就一条；换源之后旧的那条要是留着，
+     * 在当前源里既看不见（列表按当前源取）又占着位子，等于记录丢了。
+     */
+    private static void dropOtherCidHistory(List<History> items) {
+        if (items == null || items.isEmpty()) return;
+        // 点播源还没加载出来（cid=0）时这份没归到当前源名下，拿它当尺子会把当前源那份当成「别的源」删掉
+        if (currentCid() <= 0) return;
+        Set<String> base = new HashSet<>();
+        Set<String> hold = new HashSet<>();
+        for (History item : items) {
+            base.add(key(item));
+            hold.add(item.getKey());
+        }
+        int removed = 0;
+        for (History old : AppDatabase.get().getHistoryDao().findAll()) {
+            if (!base.contains(key(old)) || hold.contains(old.getKey())) continue;
+            AppDatabase.get().getHistoryDao().delete(old.getCid(), old.getKey());
+            AppDatabase.get().getTrackDao().delete(old.getKey());
+            ++removed;
+        }
+        if (removed > 0) DebugLog.d("Sync", "跨源归并：清掉别的源底下留的 " + removed + " 条重复记录");
+    }
+
+    /** 同上，收藏那份（直播收藏 type=1 的键不是「站点@@@视频」三段，不碰） */
+    private static void dropOtherCidKeep(List<Keep> items) {
+        if (items == null || items.isEmpty()) return;
+        if (currentCid() <= 0) return; // 同上
+        Set<String> base = new HashSet<>();
+        Set<String> hold = new HashSet<>();
+        for (Keep item : items) {
+            base.add(key(item));
+            hold.add(item.getKey());
+        }
+        int removed = 0;
+        for (Keep old : AppDatabase.get().getKeepDao().findAll()) {
+            if (old.getType() != 0) continue;
+            if (!base.contains(key(old)) || hold.contains(old.getKey())) continue;
+            AppDatabase.get().getKeepDao().delete(old.getCid(), old.getKey());
+            ++removed;
+        }
+        if (removed > 0) DebugLog.d("Sync", "跨源归并：清掉别的源底下留的 " + removed + " 条重复收藏");
+    }
+
     private static void deleteHistoryKeep(List<History> history, List<Keep> keep) {
         if (history.isEmpty() && keep.isEmpty()) return;
         for (History item : history) {
@@ -876,6 +1002,8 @@ public class SyncManager {
         AppDatabase.get().getLiveDao().insertOrUpdate(backup.getLive());
         // 源地址 Config 跳过：每台设备配自己的源，不被云端数据覆盖
         AppDatabase.get().getConfigDao().insertOrUpdate(Backup.withoutSources(backup.getConfig()));
+        dropOtherCidKeep(backup.getKeep());
+        dropOtherCidHistory(backup.getHistory());
         AppDatabase.get().getKeepDao().insertOrUpdate(backup.getKeep());
         AppDatabase.get().getHistoryDao().insertOrUpdate(backup.getHistory());
         for (Map.Entry<String, ?> entry : backup.getPrefers().entrySet()) {

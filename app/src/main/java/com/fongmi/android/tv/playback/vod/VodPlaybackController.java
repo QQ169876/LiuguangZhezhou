@@ -5,6 +5,7 @@ import android.text.TextUtils;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaMetadata;
 
+import com.fongmi.android.tv.api.SiteApi;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Episode;
 import com.fongmi.android.tv.bean.Flag;
@@ -60,9 +61,23 @@ public class VodPlaybackController {
         return host.getVodId();
     }
 
+    /** 不走站点详情的那几种 key：推送直链、搜索壳 */
+    private boolean isDirectKey(String key) {
+        if (key == null) return true;
+        return SiteApi.PUSH.equals(key) || key.startsWith(PUSH_PREFIX) || key.startsWith(SEARCH_PREFIX);
+    }
+
     public void requestDetail() {
         String key = host.getVodKey();
         String id = host.getVodId();
+        // 这个站点不在当前点播源里（比如记录是另一台设备在别的源下看出来的）：
+        // 别去碰那个注定取不到的详情，直接按片名在当前的源里搜一部接着播。
+        // 推送直链 / 搜索壳不是站点，源还没加载完（站点列表空）时也不下这个判断，免得误搜。
+        if (!isDirectKey(key) && !VodConfig.get().getSites().isEmpty() && !VodConfig.hasSite(key)) {
+            DebugLog.d("Vod", "站点不在当前点播源里，直接换源搜：" + host.getVodName());
+            showDetailFallback();
+            return;
+        }
         state.setDetailRequest(key, id);
         host.requestDetail(key, id);
     }
@@ -455,8 +470,16 @@ public class VodPlaybackController {
         if (state.getHistory() != null) state.getHistory().setRevPlay(revPlay);
     }
 
+    /**
+     * 详情取空了（站点不在当前点播源里、源挂了、这条 id 失效…都走这儿）。
+     * 马先生 2026-11-03：从别台设备同步过来的历史记录，站点 key 属于另一个点播源，
+     * 当前源里压根没这个站点 —— 以前一取空就退出（提示「什么也找不到」），
+     * 现在是**按片名在当前源里搜一遍，搜到就接着播**（换站源自动续上），
+     * 只有推送直链（没法按名字搜）和连片名都没有的才退出。
+     */
     private void detailEmpty(boolean shouldFinish) {
-        if (host.isFromCollect() || shouldFinish) host.finishVod();
+        // 推送直链没有片名可搜，换不了源，只能退
+        if (SiteApi.PUSH.equals(host.getVodKey())) host.finishVod();
         else showDetailFallback();
     }
 

@@ -944,31 +944,33 @@ public class Updater implements Download.Callback, UpdateListener {
     }
 
     /**
-     * 重新安装（设置页那个按钮）：不看版本号，强制下载安装。
-     * 先找**当前版本**的包（重装 = 再装一遍这个版本），当前版本在通道里没有就退到最新版。
+     * 重新安装（设置页那个按钮）：不管外面有没有新版本，都把**当前这个版本**重新下一次再装一遍。
+     * 就这一件事 —— 不检测更新、不比较版本号、不弹更新框。
      * 下好了在**系统下载目录**留一份，再交给系统安装器。
-     * 2026-11-01 马先生：点重装时没有下载进度，心里没底 —— 复用更新那个进度框
-     * （按钮上显示百分比，取消按钮掐下载），不再黑箱干等。更新流程本身一个字没动。
+     * 进度沿用更新那个框（按钮上显示百分比，取消按钮掐下载），不再让人黑箱干等。
      */
     public static void reinstall(FragmentActivity activity) {
         Notify.show(R.string.update_reinstall_fetch);
         Task.execute(() -> {
-            // 优先装回当前版本：通道里有这个版本的包就下它
-            String url = probeApkUrl(Gitee.apk(currentTag()));
-            if (url.isEmpty()) {
-                // 当前版本不在通道里（可能是未发布的开发版），退到最新版
-                DebugLog.d("Update", "重装：通道里没有 " + currentTag() + "，退到最新版");
-                url = probeApkUrl(Gitee.apk(latestTag()));
+            String tag = currentTag();
+            String url = probeApkUrl(Gitee.apk(tag));
+            if (url.isEmpty()) { // 当前版本压根没发过（开发版之类），退到通道里最新版
+                String latest = latestTag();
+                if (!latest.isEmpty()) {
+                    String alt = probeApkUrl(Gitee.apk(latest));
+                    if (!alt.isEmpty()) {
+                        url = alt;
+                        tag = latest;
+                    }
+                }
             }
             final String target = url;
-            if (url.isEmpty()) {
-                App.post(() -> {
-                    Notify.show(R.string.update_reinstall_fail);
-                    if (activity != null) create().force().start(activity);
-                });
+            final String name = "流光褶皱-" + tag + ".apk";
+            if (target.isEmpty()) {
+                App.post(() -> Notify.show(R.string.update_reinstall_fail));
                 return;
             }
-            App.post(() -> reinstallWithProgress(activity, target));
+            App.post(() -> reinstallWithProgress(activity, target, name));
         });
     }
 
@@ -976,10 +978,18 @@ public class Updater implements Download.Callback, UpdateListener {
     private static UpdateDialog reinstallDialog;
     private static Download reinstallDownload;
 
-    /** 带进度地重下：跟更新共用一个 UpdateDialog（取消按钮掐下载），下完照旧存下载目录 + 调系统安装器 */
-    private static void reinstallWithProgress(FragmentActivity activity, String url) {
+    /**
+     * 重装包单独放一个文件，不跟更新的那份共用：
+     * 共用的话，一次重装就会把更新下好的半成品/整包冲掉，之后点更新还得从头再来。
+     */
+    private static File reinstallFile() {
+        return Path.cache("reinstall.apk");
+    }
+
+    /** 带进度地重下：复用 UpdateDialog（取消按钮掐下载），下完照旧存下载目录 + 调系统安装器 */
+    private static void reinstallWithProgress(FragmentActivity activity, String url, String name) {
         if (activity == null) { // 拿不到页面（极端情况）：退回老路，无进度地静静下
-            Task.execute(() -> finishReinstall(fetchReinstall(url), activity));
+            Task.execute(() -> finishReinstall(fetchReinstall(url), name, activity));
             return;
         }
         reinstallDialog = UpdateDialog.create()
@@ -997,7 +1007,8 @@ public class Updater implements Download.Callback, UpdateListener {
                     }
                 })
                 .show(activity);
-        reinstallDownload = Download.create(url, Path.cache("update.apk")).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60)));
+        Path.clear(reinstallFile()); // 每次重装都从零下一次，别拿上回那份顶数
+        reinstallDownload = Download.create(url, reinstallFile()).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60)));
         reinstallDownload.start(new Download.Callback() {
             @Override
             public void progress(int progress) {
@@ -1013,7 +1024,7 @@ public class Updater implements Download.Callback, UpdateListener {
             @Override
             public void success(File file) {
                 dismissReinstall();
-                finishReinstall(file, activity);
+                finishReinstall(file, name, activity);
             }
         });
     }
@@ -1027,20 +1038,19 @@ public class Updater implements Download.Callback, UpdateListener {
         reinstallDownload = null;
     }
 
-    /** 重装包落地：能用就在系统下载目录留一份，交给系统安装器；不能用退回「检查更新」那条老路 */
-    private static void finishReinstall(File file, FragmentActivity activity) {
+    /** 重装包落地：能用就在系统下载目录留一份，交给系统安装器；不能用就明说，不偷偷转去走更新 */
+    private static void finishReinstall(File file, String name, FragmentActivity activity) {
         boolean usable = isInstallable(file);
-        if (usable) FileUtil.saveToDownload(file, file.getName());
+        if (usable) FileUtil.saveToDownload(file, name);
         App.post(() -> {
             if (!usable) {
                 Notify.show(R.string.update_reinstall_fail);
-                if (activity != null) create().force().start(activity);
                 return;
             }
-            FileUtil.installApkAsync(file, file.getName(), result -> {
+            FileUtil.installApkAsync(file, name, result -> {
                 if (result == null) return; // 系统弹了安装界面，没我们的事了
-                if (FileUtil.installNotify(file, file.getName())) return;
-                DebugLog.d("Install", "重装包没能交给系统安装器：" + file.getName());
+                if (FileUtil.installNotify(file, name)) return;
+                DebugLog.d("Install", "重装包没能交给系统安装器：" + name);
             });
         });
     }
@@ -1061,10 +1071,11 @@ public class Updater implements Download.Callback, UpdateListener {
         return "";
     }
 
-    /** 直接从 Gitee 一次性把包拉下来（它的 CDN 不认 Range，走不了断点续传） */
+    /** 直接从 Gitee 一次性把包拉下来（它的 CDN 不认 Range，走不了断点续传）；每次都从零下，不留上回的 */
     private static File fetchReinstall(String url) {
         try {
-            return Download.create(url, Path.cache("update.apk")).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60))).get();
+            Path.clear(reinstallFile());
+            return Download.create(url, reinstallFile()).verify(20L * 1024 * 1024).client(OkHttp.client(TimeUnit.SECONDS.toMillis(60))).get();
         } catch (Throwable e) {
             return null;
         }

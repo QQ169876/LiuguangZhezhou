@@ -105,7 +105,19 @@ class VodFallbackPolicy {
     private boolean mismatch(Vod item) {
         if (host.getVodId().equals(item.getId())) return true;
         if (state.hasFailedId(item.getId())) return true;
-        if (state.isAutoFallback()) return !item.getName().equals(state.getSearchKeyword());
-        return !item.getName().contains(state.getSearchKeyword());
+        if (state.isAutoFallback()) return !sameName(item.getName(), state.getSearchKeyword());
+        return !flat(item.getName()).contains(flat(state.getSearchKeyword()));
+    }
+
+    /**
+     * 自动换源要的是「同一部片」：名字一字不差才算（前后空格、中间空白、大小写不算差异）。
+     * 历史记录里的片名常常带尾随空格，源那边又不带，不归一化的话同名片搜出来也被当成不是一部。
+     */
+    private boolean sameName(String name, String keyword) {
+        return flat(name).equals(flat(keyword));
+    }
+
+    private String flat(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", "").toLowerCase();
     }
 }

@@ -193,30 +193,16 @@ public class Owner {
     /* ---------- 数据识别 ---------- */
 
     /**
-     * 一条历史/收藏在归属账本里的记号，按数据类型分开（马先生 2026-10-30 的设计）:
-     *   - 收藏（FAVORITE）：站点 key + 视频 id，**不带点播源** —— 收藏跟着账号走，
-     *     同一部片在两个源里各收藏一份，对账号来说就是同一个收藏；
-     *   - 观看记录（RECORD）：站点 key + 视频 id + 点播源 cid —— 记录跟着「源+账号」匹配，
-     *     主键末段本来就带着 cid（History/Keep 的 key 都是 site@@@vod@@@cid），
-     *     不同源的记录是两条不同的数据。
-     * 主键里没带 cid 的（老数据），按当前源算。
+     * 一条历史/收藏在归属账本里的记号（马先生 2026-11-02 改的口径）：
+     * **观看记录和收藏都跟着账号走，不看点播源** —— 两边都是账号（WebDAV 账号也好、影视站账号也好），
+     * 账号名下一部片就是一条数据，换了点播源不该把它变成另一条。
+     * 所以两种类型都只取「站点 key + 视频 id」，主键末段那个 cid（History/Keep 的 key 是 site@@@vod@@@cid）不参与。
      */
     public static String key(String value, int type) {
         if (value == null) return null;
         String[] parts = value.split(AppDatabase.SYMBOL);
         if (parts.length < 2) return null;
         if (parts[0].isEmpty() || parts[1].isEmpty()) return null;
-        if (type == FAVORITE) return parts[0].concat("+").concat(parts[1]);
-        String cid = parts.length > 2 && !parts[2].isEmpty() ? parts[2] : String.valueOf(cid());
-        return parts[0].concat("+").concat(parts[1]).concat("+").concat(cid);
-    }
-
-    /** 当前点播源；配置还没加载出来时是 0，老数据（主键不带 cid）就记在当前源名下 */
-    private static int cid() {
-        try {
-            return VodConfig.getCid();
-        } catch (Throwable e) {
-            return 0;
-        }
+        return parts[0].concat("+").concat(parts[1]);
     }
 }

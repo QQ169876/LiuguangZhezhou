@@ -23,8 +23,11 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -87,8 +90,21 @@ public class History implements Diffable<History> {
         return items == null ? Collections.emptyList() : items;
     }
 
+    /**
+     * 最近观看：跟着账号走，不跟着点播源走 —— 换了源照样看得到以前看过的。
+     * 同一部片在几个源底下可能各留了一条（换源前留下的旧数据），按「站点key+视频id」收成一条，只留最新那条。
+     */
     public static List<History> get() {
-        return get(VodConfig.getCid());
+        List<History> items = AppDatabase.get().getHistoryDao().findRecent(System.currentTimeMillis() - Constant.HISTORY_TIME);
+        Map<String, History> picked = new LinkedHashMap<>();
+        for (History item : items) {
+            String name = item.getSiteKey().concat(AppDatabase.SYMBOL).concat(item.getVodId());
+            History old = picked.get(name);
+            if (old == null || item.getCreateTime() > old.getCreateTime()) picked.put(name, item);
+        }
+        List<History> result = new ArrayList<>(picked.values());
+        result.sort((a, b) -> Long.compare(b.getCreateTime(), a.getCreateTime()));
+        return result;
     }
 
     public static List<History> get(int cid) {
@@ -99,9 +115,13 @@ public class History implements Diffable<History> {
         return AppDatabase.get().getHistoryDao().find(VodConfig.getCid(), key);
     }
 
+    /**
+     * 按片名找记录：跨点播源查 —— 换源之后原来那条可能还挂在旧源 cid 底下，
+     * 只查当前源就接不上进度（马先生 2026-11-03：换了点播源，历史里点进去该接着看）。
+     */
     public static List<History> findByName(String name) {
         try {
-            return AppDatabase.get().getHistoryDao().findByName(VodConfig.getCid(), name);
+            return AppDatabase.get().getHistoryDao().findByName(name);
         } catch (Exception e) {
             return Collections.emptyList();
         }
@@ -402,9 +422,13 @@ public class History implements Diffable<History> {
         setVodFlag(flags.get(0).getFlag());
         if (!flags.get(0).getEpisodes().isEmpty()) setVodRemarks(flags.get(0).getEpisodes().get(0).getName());
         for (History item : findByName(getVodName())) {
-            if (getPosition() >= 0) break;
+            // 新记录 position 默认是 0，拿「>= 0」当「已经有进度」会一进门就 break，
+            // 换源/换站后同名那条老记录的进度就永远接不过来 —— 只有真记过进度（>0）才停
+            if (getPosition() > 0) break;
             for (Flag flag : flags) {
                 Episode episode = flag.find(item.getVodRemarks(), true);
+                // 就一集的（电影）：不用挑集，直接接上原来看到的进度（各源给这一集起的名字不一样）
+                if (episode == null && flag.getEpisodes().size() == 1) episode = flag.getEpisodes().get(0);
                 if (episode == null) continue;
                 item.copyTo(this);
                 setVodFlag(flag.getFlag());

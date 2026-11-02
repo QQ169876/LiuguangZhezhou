@@ -138,6 +138,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private QuickAdapter mQuickAdapter;
     private StarStrip mStarStrip;
     private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
+    private String mDirector; // 当前这部的导演串（有的源写的是工作室），长按同样能关注
     private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
@@ -345,6 +346,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.name.setOnLongClickListener(view -> onChange());
         mBinding.content.setOnLongClickListener(view -> onCopy());
         mBinding.actor.setOnLongClickListener(view -> onActorFollow());
+        mBinding.director.setOnLongClickListener(view -> onDirectorFollow());
         mBinding.control.back.setOnClickListener(view -> onBack());
         mBinding.control.cast.setOnClickListener(view -> onPush());
         mBinding.control.info.setOnClickListener(view -> onInfo());
@@ -901,6 +903,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void setText(Vod item) {
         mDetail = item;
         mActor = item.getActor();
+        mDirector = item.getDirector(); // 导演/工作室也记下来，长按那一行能关注
         setText(mBinding.site, R.string.detail_site, getSite().getName());
         setText(mBinding.director, R.string.detail_director, item.getDirector());
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
@@ -1036,6 +1039,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private boolean onActorFollow() {
         if (mActor == null || mActor.isEmpty()) return false;
         StarDialog.create().actor(mActor).works(worksAction()).show(this);
+        return true;
+    }
+
+    /** 长按导演那一行：一样弹关注列表（有的源这里写的是工作室，照单收，关注完归到演员里） */
+    private boolean onDirectorFollow() {
+        if (mDirector == null || mDirector.isEmpty()) return false;
+        StarDialog.create().actor(mDirector).works(worksAction()).show(this);
         return true;
     }
 

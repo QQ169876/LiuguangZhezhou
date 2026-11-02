@@ -157,6 +157,13 @@ public class Keep implements Diffable<Keep> {
         return getKey().split(AppDatabase.SYMBOL)[1];
     }
 
+    /** 只改归属的点播源、不落库：同步时把这条挂到当前源名下（记录/收藏跟着账号走） */
+    public Keep cid(int cid) {
+        setKey(getSiteKey().concat(AppDatabase.SYMBOL).concat(getVodId()).concat(AppDatabase.SYMBOL) + cid);
+        setCid(cid);
+        return this;
+    }
+
     public void save(int cid) {
         setKey(getSiteKey().concat(AppDatabase.SYMBOL).concat(getVodId()).concat(AppDatabase.SYMBOL) + cid);
         setCid(cid);

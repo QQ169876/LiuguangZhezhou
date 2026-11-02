@@ -354,6 +354,16 @@ public class VodConfig extends BaseConfig {
         return getSites().stream().filter(item -> item.getKey().equals(key)).findFirst().orElse(new Site());
     }
 
+    /**
+     * 当前点播源里有没有这个站点（马先生 2026-11-03）：
+     * 历史/收藏是跨设备同步过来的，站点 key 可能属于另一个点播源，本机这个源里根本没有它。
+     */
+    public static boolean hasSite(String key) {
+        if (key == null || key.isEmpty()) return false;
+        for (Site item : get().getSites()) if (item.getKey().equals(key)) return true;
+        return false;
+    }
+
     private void setParse(Config config, Parse parse, boolean save) {
         this.parse = parse;
         this.parse.setSelected(true);

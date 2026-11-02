@@ -5,6 +5,7 @@ import androidx.annotation.NonNull;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.utils.CookieStore;
+import com.fongmi.android.tv.webdav.WebDavData;
 import com.fongmi.android.tv.utils.SpiderVault;
 import com.github.catvod.utils.Prefers;
 import com.google.gson.Gson;
@@ -69,14 +70,14 @@ public class Backup {
         AppDatabase.get().getSiteDao().insertOrUpdate(getSite());
         AppDatabase.get().getLiveDao().insertOrUpdate(getLive());
         AppDatabase.get().getKeepDao().insertOrUpdate(getKeep());
-        AppDatabase.get().getConfigDao().insertOrUpdate(Backup.withoutSources(getConfig()));
+        // 本地备份恢复是用户自己的操作：连源一起还原（源只是「不参与多机同步」，不是「不许备份」）
+        AppDatabase.get().getConfigDao().insertOrUpdate(getConfig());
         AppDatabase.get().getHistoryDao().insertOrUpdate(getHistory());
         Star.merge(getStar());
         for (Map.Entry<String, ?> entry : getPrefers().entrySet()) {
             String k = entry.getKey();
             if (k == null) continue;
-            if (k.startsWith("webdav_") || k.startsWith("moontv_") || k.startsWith("owner_") || k.startsWith("route") || k.startsWith("mpv_blocked") || k.startsWith("hwdec_") || k.startsWith("debug_")) continue;
-            if (k.startsWith("config_")) continue;
+            if (WebDavData.localOnly(k)) continue; // 只有同步账号/代理这些本机独有的不套用别人的
             Prefers.put(k, entry.getValue());
         }
         CookieStore.apply(getCookies());

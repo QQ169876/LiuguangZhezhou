@@ -118,12 +118,14 @@ public class WebDavData {
     }
 
     /**
-     * 源地址相关的 Prefers 键（config_0=点播源 config_1=直播源 config_2=壁纸，
-     * config_cache_url_0/1=源缓存 URL 标记）：上传、合并、落库全部跳过——
-     * 每台设备配自己的源，不能被别台的拉过来覆盖。
+     * 同步时要跳过的「那 3 项设置」本身，只此一家别无分店：
+     * config_0=点播源、config_1=直播源、config_2=壁纸，外加跟着源走的缓存标记 config_cache_url_0/1。
+     * 除这几个键以外的设置一律照常同步（历史、收藏、站点、直播、Cookie 等等都不在这儿）。
      */
     public static boolean isSourcePref(String key) {
-        return key != null && key.startsWith("config_");
+        if (key == null) return false;
+        if (key.equals("config_0") || key.equals("config_1") || key.equals("config_2")) return true;
+        return key.startsWith("config_cache_url_");
     }
 
     /**
