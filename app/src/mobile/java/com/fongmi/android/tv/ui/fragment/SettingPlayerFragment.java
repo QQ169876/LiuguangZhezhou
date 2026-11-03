@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.viewbinding.ViewBinding;
 
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.FragmentSettingPlayerBinding;
 import com.fongmi.android.tv.impl.BufferListener;
@@ -48,9 +49,21 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
     }
 
+    private void onAiModel(View view) {
+        com.fongmi.android.tv.ui.dialog.AiModelDialog.show(requireActivity());
+    }
+
     private void setAi(View view) {
         AiSetting.putEnabled(!AiSetting.isEnabled());
         mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
+        mBinding.aiModelText.setText(aiModelText()); // 总开关一关，配了几条都不问了，副标题跟着变
+    }
+
+    /** 「大模型」那行右边写什么：关着写「关」，开着但一条都没有写「未配置」，有就写条数 */
+    private String aiModelText() {
+        if (!AiSetting.isEnabled()) return App.get().getString(R.string.ai_model_off);
+        int size = AiSetting.channels().size();
+        return size == 0 ? App.get().getString(R.string.ai_model_none) : String.valueOf(size);
     }
 
     @Override
@@ -59,6 +72,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         setPlaybackModeText();
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
         mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
+        mBinding.aiModelText.setText(aiModelText());
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
         mBinding.bufferText.setText(String.valueOf(PlayerSetting.getBuffer()));
         mBinding.mpvVulkanText.setText(Setting.getSwitch(PlayerSetting.isMpvVulkan()));
@@ -73,6 +87,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.decode.setOnClickListener(this::onDecode);
         mBinding.binge.setOnClickListener(this::setBinge);
         mBinding.ai.setOnClickListener(this::setAi);
+        mBinding.aiModel.setOnClickListener(this::onAiModel);
         mBinding.adblock.setOnClickListener(this::setAdblock);
         mBinding.mpvConf.setOnClickListener(this::onMpvConf);
         mBinding.mpvGpuNext.setOnClickListener(this::setMpvGpuNext);

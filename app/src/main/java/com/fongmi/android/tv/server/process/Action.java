@@ -6,6 +6,7 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Constant;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.bean.AiModel;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Backup;
 import com.fongmi.android.tv.bean.Device;
@@ -25,6 +26,7 @@ import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.activity.MusicActivity;
 import com.fongmi.android.tv.server.impl.Process;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.CookieStore;
 import com.fongmi.android.tv.utils.FileUtil;
@@ -73,6 +75,7 @@ public class Action implements Process {
             case "spider" -> onSpider(params);
             case "moontv" -> onMoonTV(params);
             case "music" -> onMusic(params);
+            case "ai" -> onAi(params);
             case "random" -> onRandom();
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
@@ -365,5 +368,23 @@ public class Action implements Process {
                 Notify.show(msg);
             }
         };
+    }
+
+    /**
+     * 网页 / 局域网提交的大模型参数：直接进本机模型列表（马先生 2026-11-03：扫码录入就是干这个的）。
+     * 地址/Key/模型名缺一样就不写，免得存一条用不了的进去。
+     */
+    private void onAi(Map<String, String> params) {
+        String endpoint = params.get("endpoint");
+        String key = params.get("key");
+        String model = params.get("model");
+        if (TextUtils.isEmpty(endpoint) || TextUtils.isEmpty(key) || TextUtils.isEmpty(model)) return;
+        AiModel item = AiModel.create();
+        item.setName(params.get("name") == null ? "" : params.get("name"));
+        item.setEndpoint(endpoint.trim());
+        item.setKey(key.trim());
+        item.setModel(model.trim());
+        AiSetting.save(item);
+        App.post(() -> Notify.show(R.string.ai_model_saved));
     }
 }

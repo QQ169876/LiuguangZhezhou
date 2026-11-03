@@ -150,7 +150,22 @@
                         <input id="socks_pass" class="md-input" type="password" placeholder="密碼（免認證可留空）" />
                     </div>
                     <p style="margin:0;font-size:13px;line-height:1.6;color:var(--md-on-surface-variant)">格式 socks5://用戶名:密碼@地址:埠號，免認證的只填地址和埠號。</p>
-                    <button class="md-btn md-btn-filled md-btn-full" onclick="socks()">確定</button>
+            <div id="panel10" class="tab-panel">
+                <div class="panel-content">
+                    <div class="md-field">
+                        <input id="ai_name" class="md-input" type="text" placeholder="名稱（可留空）..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="ai_endpoint" class="md-input" type="text" placeholder="接入地址，如 https://xxx/v1" />
+                    </div>
+                    <div class="md-field">
+                        <input id="ai_key" class="md-input" type="password" placeholder="API Key..." />
+                    </div>
+                    <div class="md-field">
+                        <input id="ai_model" class="md-input" type="text" placeholder="模型名稱，如 gpt-4o-mini" />
+                    </div>
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:var(--md-on-surface-variant)">提交後寫入設備的大模型列表，跟賬號同步；自己加的模型優先級最高。</p>
+                    <button class="md-btn md-btn-filled md-btn-full" onclick="ai()">確定</button>
                 </div>
             </div>
         </div>
@@ -209,6 +224,12 @@
                     <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
                 </div>
                 <span class="md-nav-label">音樂</span>
+            </div>
+            <div id="tab10" class="md-nav-item" onclick="showPanel(10)">
+                <div class="md-nav-indicator">
+                    <svg class="md-nav-icon" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                </div>
+                <span class="md-nav-label">大模型</span>
             </div>
 </nav>
     </div>

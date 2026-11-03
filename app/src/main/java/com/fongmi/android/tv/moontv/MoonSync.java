@@ -543,6 +543,11 @@ public class MoonSync {
         for (Entry entry : sort(remote)) {
             JSONObject item = entry.item;
             String name = entry.source.concat("+").concat(entry.id);
+            // 保留键：这条不是收藏，是塞在收藏通道里的大模型配置（MoonAi），取出来就走
+            if (MoonAi.is(entry.source, entry.id)) {
+                MoonAi.apply(entry.item);
+                continue;
+            }
             // 收藏跟着账号走：站点在不在当前源里都落本地，换源之后照样看得到
             if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             mark(owner, name);
@@ -1206,6 +1211,7 @@ public class MoonSync {
             }
         }
         if (dirty) Owner.save(Owner.MOON, Owner.FAVORITE, owner);
+        MoonAi.push(); // 顺手把大模型配置推上去：站点上没有的本机配置就靠这一下补过去
         return new int[]{add, update};
     }
 

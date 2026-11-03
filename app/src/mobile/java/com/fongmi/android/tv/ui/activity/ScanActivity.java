@@ -12,6 +12,7 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.databinding.ActivityScanBinding;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.utils.Util;
+import com.fongmi.android.tv.utils.AiCode;
 import com.fongmi.android.tv.webdav.WebDavCode;
 import com.google.zxing.BarcodeFormat;
 import com.journeyapps.barcodescanner.BarcodeCallback;
@@ -51,7 +52,7 @@ public class ScanActivity extends BaseActivity implements BarcodeCallback {
     public void barcodeResult(BarcodeResult result) {
         String text = result.getText();
         if (text == null || text.isEmpty()) return;
-        if (!text.startsWith("http") && !WebDavCode.isWebDav(text)) return;
+        if (!text.startsWith("http") && !WebDavCode.isWebDav(text) && !AiCode.isAi(text)) return;
         setResult(RESULT_OK, new Intent().putExtra("address", text));
         finish();
     }

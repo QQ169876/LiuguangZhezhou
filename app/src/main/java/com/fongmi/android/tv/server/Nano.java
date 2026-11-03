@@ -13,6 +13,7 @@ import com.fongmi.android.tv.server.process.Media;
 import com.fongmi.android.tv.server.process.Parse;
 import com.fongmi.android.tv.server.process.Proxy;
 import com.fongmi.android.tv.server.process.Screen;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.utils.Asset;
 
@@ -123,6 +124,7 @@ public class Nano extends NanoHTTPD {
         if (url.startsWith("/webdav")) return ok(WebDavSetting.toJson());
         if (url.startsWith("/moontv")) return ok(MoonSetting.toJson());
         if (url.startsWith("/music")) return ok(MusicSetting.toJson());
+        if (url.startsWith("/ai")) return ok(AiSetting.toJson());
         for (Process process : process) if (process.isRequest(session, url)) return process.doResponse(session, url, files);
         return getAssets(url.substring(1));
     }

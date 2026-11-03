@@ -217,6 +217,11 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
             Notify.show(R.string.ai_search_off);
             return;
         }
+        if (!AiSetting.ready()) { // 开关开着但一条能用的模型都没有：跳过模型，照样按这句话本地搜
+            Notify.show(R.string.ai_no_model);
+            onSearch();
+            return;
+        }
         if (empty()) {
             if (mBinding.mic.voiceAvailable()) {
                 aiVoice = true; // 标记一下：这次语音识别的结果要进智能搜索，不是普通搜索

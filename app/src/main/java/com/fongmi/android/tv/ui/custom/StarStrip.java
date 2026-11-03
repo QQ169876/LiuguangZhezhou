@@ -17,6 +17,7 @@ import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.textview.MaterialTextView;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -56,26 +57,30 @@ public class StarStrip {
     }
 
     /**
-     * 换一部剧/详情刷新时调：重新按演员串铺一遍牌。
-     * 站点压根没给演员（短剧站常有的事）时，拿剧名去问一句大模型，
+     * 换一部剧/详情刷新时调：重新按「演员 + 导演（有的源这里写的是工作室 / 创作团队）」铺一遍牌。
+     * 只铺**当前这部**的人，跟收藏页那份「已关注名单」是两码事。
+     *
+     * 马先生 2026-11-03：这块改叫「演员导演创作团队」，演员、导演、工作室、创作团队都往里放；
+     * 而且**没有数据时区域和标题要留着，内容空着就行**，别整块藏起来（藏了就不知道有这回事）。
+     *
+     * 站点压根没给（短剧站常有的事）时，拿剧名去问一句大模型，
      * 它想得起来就补上——牌的用法一模一样，能关注、能长按看作品。
      * 站点给了但拆不开、或中英文名混成一串（2026-10-20 马先生点名）：也走大模型，
      * 按片名+年份去查（年份必须带上：同名剧、翻拍版靠它区分），查回来用它报的名单，
      * 原来那串乱的垫底——模型不认识这部剧时再回头铺它，好歹比空白强。
-     * 问不到（关了开关、断网、模型不认识）就还按没有演员处理，整块不显示。
+     * 问不到（关了开关、断网、模型不认识）就空着，区域还在。
      * 漫剧/动画这类没有真人演员，传上类型让 AiJudge 直接拦掉，别让模型顺着关注名单瞎认领。
      */
-    public void set(String actor, String vodName, String typeName, String year) {
+    public void set(String actor, String director, String vodName, String typeName, String year) {
         binding.starList.removeAllViews();
-        List<String> names = Star.split(actor);
+        List<String> names = join(Star.split(actor), Star.split(director));
+        binding.getRoot().setVisibility(View.VISIBLE); // 区域和标题一直在，没内容就空着
         if (!names.isEmpty() && !Star.messy(names)) {
             fallback = null;
-            binding.getRoot().setVisibility(View.VISIBLE);
             for (String name : names) binding.starList.addView(chip(name));
             return;
         }
         fallback = Star.messy(names) ? names : null; // 拆不开的那串先存着，模型查不到再回头铺它
-        binding.getRoot().setVisibility(View.GONE);
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
         AiJudge.Cast cached = AiJudge.peekActors(askingFor, typeName, year);
@@ -84,6 +89,14 @@ public class StarStrip {
             return;
         }
         AiJudge.actors(askingFor, typeName, "", year, cast -> apply(cast, askingFor));
+    }
+
+    /** 演员在前、导演/工作室在后，同名的只留一个（有的源导演栏里写的就是演员本人） */
+    private List<String> join(List<String> actor, List<String> director) {
+        List<String> names = new ArrayList<>();
+        if (actor != null) for (String name : actor) if (!names.contains(name)) names.add(name);
+        if (director != null) for (String name : director) if (!names.contains(name)) names.add(name);
+        return names;
     }
 
     /** 异步回来时页面可能已经换了剧/退了：剧名对不上或这块已经不在窗口上，就别贴了 */

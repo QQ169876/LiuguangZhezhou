@@ -15,6 +15,7 @@ import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.db.AppDatabase;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.impl.Callback;
@@ -51,6 +52,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class SyncManager {
@@ -664,6 +666,13 @@ public class SyncManager {
             Object l = local.get(name);
             Object r = remote.get(name);
             if (l == null && r == null) continue;
+            // 大模型模型列表（ai_models）是一整串 JSON，按字符串比谁新会整块互相盖掉——
+            // 得**按每条模型的 id 合**：一边加的、一边删的（删除标记）都要留着，谁改得晚听谁的
+            if (AiSetting.KEY_MODELS.equals(name)) {
+                JSONArray merged = AiSetting.merge(array(b), array(l), array(r));
+                if (merged.length() > 0) result.put(name, merged.toString());
+                continue;
+            }
             boolean localChanged = l != null && !Objects.equals(l, b);
             boolean remoteChanged = r != null && !Objects.equals(r, b);
             if (l == null) {
@@ -1072,5 +1081,17 @@ public class SyncManager {
                 }
             });
         });
+    }
+
+    /** 三份里的同一键取出来当 JSON 数组（大模型那串是数组，别的键用不到） */
+    private static JSONArray array(Object value) {
+        if (!(value instanceof String)) return new JSONArray();
+        String text = ((String) value).trim();
+        if (text.isEmpty()) return new JSONArray();
+        try {
+            return new JSONArray(text);
+        } catch (Exception e) {
+            return new JSONArray();
+        }
     }
 }

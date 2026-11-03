@@ -27,7 +27,7 @@
     <string name="tab_star">演员</string>
 
     <!-- Star -->
-    <string name="star">关注演员</string>
+    <string name="star">演员导演创作团队</string>
     <string name="star_hint">点一下关注 · 长按看他的作品</string>
     <string name="star_add">已关注该演员</string>
     <string name="star_del">已取消关注</string>
@@ -576,7 +576,34 @@
     <string name="ai_search_error">AI 暂时没回应，可以直接用关键词搜索</string>
     <string name="ai_search_empty">没想到合适的，换个说法试试</string>
     <string name="ai_search_ask_first">先在搜索框输入想问的，比如「找部今年的动作片」</string>
+    <string name="setting_ai_model">大模型</string>
+    <string name="ai_model_tip">自己加的模型最优先；内置那两条只有用快捷码录过源的设备才有。一条都没配就只用本地搜索。</string>
+    <string name="ai_model_empty">还没有自建模型——手动加一条，或用手机扫码录入。</string>
+    <string name="ai_model_first">优先</string>
+    <string name="ai_model_testing">正在测试…</string>
+    <string name="ai_model_incomplete">接入地址、API Key、模型名称都要填</string>
+    <string name="ai_model_scan_tip">用手机扫这个二维码，在网页里填好提交</string>
+    <string name="ai_model_none">未配置</string>
+    <string name="ai_model_tip_user">自己加的模型按顺序使用，越靠前越优先；一条都没配就只用本地搜索。</string>
+    <string name="ai_model_add">手动添加</string>
+    <string name="ai_model_scan">扫码录入</string>
+    <string name="ai_model_qrcode">生成二维码</string>
+    <string name="ai_model_name">名称</string>
+    <string name="ai_model_endpoint">接入地址</string>
+    <string name="ai_model_endpoint_tip">OpenAI 兼容的地址，比如 https://example.com/v1</string>
+    <string name="ai_model_key">API Key</string>
+    <string name="ai_model_model">模型名称</string>
+    <string name="ai_model_test">测一下</string>
+    <string name="ai_model_on">启用中</string>
+    <string name="ai_model_off">已停用</string>
+    <string name="ai_model_builtin">内置</string>
+    <string name="ai_model_saved">已保存</string>
+    <string name="ai_model_test_ok">通了</string>
+    <string name="ai_model_test_fail">不通：%1$s</string>
+    <string name="ai_model_del">删除这条模型？</string>
+    <string name="ai_model_delete">删除</string>
     <string name="ai_search_off">智能搜索未开启，请先到设置里打开「智能识别」</string>
+    <string name="ai_no_model">没配大模型，这回只用本地搜索；要用就在设置的「大模型」里录一条</string>
     <string name="ai_pick_rating">评分 %1$s</string>
     <string name="ai_pick_movie">电影</string>
     <string name="ai_pick_tv">剧集</string>

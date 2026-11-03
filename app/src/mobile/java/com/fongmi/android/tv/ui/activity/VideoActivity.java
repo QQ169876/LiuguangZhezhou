@@ -342,7 +342,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.actor.setOnClickListener(view -> onActor());
         mBinding.content.setOnClickListener(view -> onContent());
         mBinding.reverse.setOnClickListener(view -> onReverse());
-        mBinding.director.setOnClickListener(view -> onDirector());
+        mBinding.director.setOnClickListener(view -> onDirectorFollow());
         mBinding.name.setOnLongClickListener(view -> onChange());
         mBinding.content.setOnLongClickListener(view -> onCopy());
         mBinding.actor.setOnLongClickListener(view -> onActorFollow());
@@ -907,7 +907,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setText(mBinding.site, R.string.detail_site, getSite().getName());
         setText(mBinding.director, R.string.detail_director, item.getDirector());
         setText(mBinding.actor, R.string.detail_actor, item.getActor());
-        if (mStarStrip != null) mStarStrip.set(mActor, item.getName(), item.getTypeName(), item.getYear()); // 站点没给演员或演员串拆不开的，让大模型按片名+年份去查
+        if (mStarStrip != null) mStarStrip.set(mActor, item.getDirector(), item.getName(), item.getTypeName(), item.getYear()); // 演员+导演（有的源写的是工作室/创作团队）；都没给就让大模型按片名+年份去查
         setText(mBinding.content, 0, item.getContent());
         setText(mBinding.remark, 0, item.getRemarks());
         setOther(mBinding.other, item);
@@ -1042,9 +1042,15 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         return true;
     }
 
-    /** 长按导演那一行：一样弹关注列表（有的源这里写的是工作室，照单收，关注完归到演员里） */
+    /**
+     * 导演（有的源这里写的是工作室）那一行：弹关注列表，跟演员一个操作，关注完归到演员里。
+     * 手机上是「点这一行 / 长按这一行都行」——只有点在名字上（那条可点的搜索链）才是去搜片子。
+     */
     private boolean onDirectorFollow() {
-        if (mDirector == null || mDirector.isEmpty()) return false;
+        if (mDirector == null || mDirector.isEmpty()) {
+            onDirector(); // 这一行本来就是空的：退回老动作（展开/收起）
+            return true;
+        }
         StarDialog.create().actor(mDirector).works(worksAction()).show(this);
         return true;
     }

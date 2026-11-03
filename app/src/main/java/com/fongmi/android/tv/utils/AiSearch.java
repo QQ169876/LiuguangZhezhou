@@ -122,7 +122,7 @@ public class AiSearch {
 
     /** 已经问过并有结论的，直接给；没问过返回 null */
     public static Plan peek(String question) {
-        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，缓存里的模型答案一律不翻
+        if (!AiSetting.ready()) return null; // 铁律：开关没开，缓存里的模型答案一律不翻
         if (TextUtils.isEmpty(question) || AiGuard.blocked(question)) return null;
         load();
         Entry entry = MEMO.get(key(question));
@@ -166,7 +166,7 @@ public class AiSearch {
         }
         // 铁律（2026-10-24 马先生重申）：开关没开，任何数据都不走大模型——
         // 连上次问出来的缓存也不许翻出来用，那也是模型给的答案。
-        if (!AiSetting.isEnabled()) {
+        if (!AiSetting.ready()) {
             reply(callback, Plan.error());
             return;
         }

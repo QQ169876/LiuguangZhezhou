@@ -44,6 +44,11 @@ function musicRandom() {
     warnToast('已讓設備隨便聽聽，請查看設備');
 }
 
+function ai() {
+    doAction('ai', { name: $('#ai_name').val(), endpoint: $('#ai_endpoint').val(), key: $('#ai_key').val(), model: $('#ai_model').val() });
+    warnToast('已提交，請查看設備提示');
+}
+
 function socks() {
     doAction('socks', { host: $('#socks_host').val(), port: $('#socks_port').val(), user: $('#socks_user').val(), pass: $('#socks_pass').val() });
     warnToast('已提交，請查看設備提示');
@@ -291,7 +296,8 @@ let musicDisabled = true;
 
 function showPanel(id) {
     if (Number.isInteger(id) && id === 9 && musicDisabled) id = 1;
-    for (let i = 1; i <= 9; i++) {
+    if (id === 10) loadAi();
+    for (let i = 1; i <= 10; i++) {
         document.getElementById('panel' + i).classList.toggle('active', i === id);
         document.getElementById('tab' + i).classList.toggle('active', i === id);
     }
@@ -327,6 +333,21 @@ function loadMoonTV() {
         $('#moontv_url').val(info.url || '');
         $('#moontv_user').val(info.user || '');
         $('#moontv_pass').val(info.pass || '');
+    });
+}
+
+function loadAi() {
+    $.get('/ai', function (res) {
+        let info;
+        try {
+            info = JSON.parse(res);
+        } catch (e) {
+            return;
+        }
+        $('#ai_name').val(info.name || '');
+        $('#ai_endpoint').val(info.endpoint || '');
+        $('#ai_key').val(info.key || '');
+        $('#ai_model').val(info.model || '');
     });
 }
 
@@ -374,5 +395,6 @@ $(function () {
     $('#webdav_url, #webdav_user, #webdav_pass, #webdav_folder').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); webdav(); } });
     $('#moontv_url, #moontv_user, #moontv_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); moontv(); } });
     $('#socks_host, #socks_port, #socks_user, #socks_pass').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); socks(); } });
+    $('#ai_name, #ai_endpoint, #ai_key, #ai_model').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); ai(); } });
     $('#newFolderContent').on('keydown', function (e) { if (e.key === 'Enter') { this.blur(); confirmNewFolder(1); } });
 });

@@ -14,6 +14,7 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.api.config.VodConfig;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.api.config.WallConfig;
 import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.databinding.DialogConfigBinding;
@@ -146,6 +147,7 @@ public class ConfigDialog extends BaseAlertDialog {
         String text = shortcut(raw);
         String name = binding.name.getText().toString().trim();
         Shortcut.moon(raw); // 快捷码顺带把影视站网址带上
+        markInsider(raw); // 快捷码录进来的算自己人：内置大模型放行，并把智能识别打开
         if (edit) Config.find(url, type).url(text).update();
         if (text.isEmpty()) Config.delete(url, type);
         if (name.isEmpty()) ((ConfigListener) requireActivity()).setConfig(Config.find(text, type));
@@ -195,4 +197,15 @@ public class ConfigDialog extends BaseAlertDialog {
         ((ConfigListener) requireActivity()).setConfig(Config.find("file:/" + FileChooser.getPathFromUri(result.getData().getData()).replace(Path.rootPath(), ""), type));
         dismiss();
     });
+
+    /**
+     * 快捷码（520/521/6669）录进来的：这是自己人（马先生 2026-11-03 定）——
+     * 内置那两条大模型放行，并**顺手把智能识别打开**（新装的默认是关的）。
+     * 标记走账号同步，别的设备同步到它也能用内置的。
+     */
+    private void markInsider(String raw) {
+        if (!Shortcut.isCode(raw)) return;
+        AiSetting.putInsider(true);
+        AiSetting.putEnabled(true);
+    }
 }

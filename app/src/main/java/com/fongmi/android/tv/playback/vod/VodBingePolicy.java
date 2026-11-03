@@ -221,7 +221,7 @@ class VodBingePolicy {
             String key = BingeTags.compileKey(name, "", episodes, duration);
             Boolean hit = AiJudge.peek(key);
             if (hit != null) return hit; // 模型给过结论就按模型的来
-            if (AiSetting.isEnabled()) AiJudge.ask(key, name, "", episodes, duration, host.getVodMark(), null); // 先问着，播完就有结论了
+            if (AiSetting.ready()) AiJudge.ask(key, name, "", episodes, duration, host.getVodMark(), null); // 先问着，播完就有结论了
             return BingeTags.compileFallback(name, "", episodes, duration); // 模型没结论，本地评分兜底
         }
         return false;
@@ -354,7 +354,7 @@ class VodBingePolicy {
             addNext(next, true);
             return;
         }
-        if (!AiSetting.isEnabled()) return;
+        if (!AiSetting.ready()) return;
         final int myEpoch = epoch;
         AiJudge.nextUp(name, typeName, region, BingeTags.kindWord(kind), actor, seriesMain, seriesIndex, got -> {
             if (myEpoch != epoch) return; // 这一轮已经作废，留给下一部
@@ -390,7 +390,7 @@ class VodBingePolicy {
      * 它还带 has_next：明说没有续作的话，就不用指望后续的 local 写法能撞出来了。
      */
     private void askSimilar(String name) {
-        if (!AiSetting.isEnabled()) return;
+        if (!AiSetting.ready()) return;
         final int myEpoch = epoch;
         AiJudge.nextMovie(name, typeName, region, singlePart ? "" : BingeTags.kindWord(kind), actor, seriesMain, seriesIndex, got -> {
             if (myEpoch != epoch) return; // 这一轮已经作废，留给下一部
@@ -467,7 +467,7 @@ class VodBingePolicy {
      * 接下一部的时候不用干等模型。
      */
     private void prewarmNext() {
-        if (!AiSetting.isEnabled() || singlePart) return; // 单部作品有它自己那一问（begin/fallback 里发），别再问一遍刷剧的
+        if (!AiSetting.ready() || singlePart) return; // 单部作品有它自己那一问（begin/fallback 里发），别再问一遍刷剧的
         String name = host.getVodName();
         // 违禁词那道闸在 AiJudge.nextUp 里（先抠词、理顺再发，抠光了才拒答），这里不再重复拦
         AiJudge.nextUp(name, typeName, region, BingeTags.kindWord(kind), actor, BingeTags.serialMainOf(name), BingeTags.serialOf(name), null);
@@ -623,7 +623,7 @@ class VodBingePolicy {
                     String word = suggested.get(i);
                     if (!base.contains(word)) base.add(insertAt, word);
                 }
-            } else if (AiSetting.isEnabled()) {
+            } else if (AiSetting.ready()) {
                 AiJudge.suggest(name, typeName, region, null); // 先问着，不用等
             }
         }
@@ -726,7 +726,7 @@ class VodBingePolicy {
             return;
         }
         // 单部作品（电影）不等这一问：它那一问是「同类推荐」，留给降级那一步用（见 fallbackSimilar）
-        if (serialMode && !singlePart && !aiAnswered && !waitingAi && seriesHasNext == null && AiSetting.isEnabled()) {
+        if (serialMode && !singlePart && !aiAnswered && !waitingAi && seriesHasNext == null && AiSetting.ready()) {
             waitingAi = true;
             DebugLog.d("Binge", "本地写法都没搜到下一季，等大模型给个说法");
             App.post(aiTimeoutTask, SERIES_AI_GRACE);
@@ -966,7 +966,7 @@ class VodBingePolicy {
      * 返回 false 表示这次先放下（没结论），不是判它死刑——下一轮搜到还会再问一次，但只问一次就记住了。
      */
     private boolean ask(Vod item, int episodes) {
-        if (!AiSetting.isEnabled()) return false;
+        if (!AiSetting.ready()) return false;
         String name = item.getName();
         // 单集电影不问大模型（2026-10-21 边界）：本地先看有没有剧集相，没有就判「不是」，不烧 token
         if (!BingeTags.askable(name, item.getRemarks(), episodes)) return false;
@@ -1489,7 +1489,7 @@ class VodBingePolicy {
         keywords = new ArrayList<>(); // 只拿模型给的名字去搜，别再用主标题瞎撞
         DebugLog.d("Binge", "《" + seriesMain + "》没有下一部了，改按大模型推荐找同类作品");
         if (similarAsked) useSimilar(); // 答案早到了
-        else if (AiSetting.isEnabled() && similarNext == null) {
+        else if (AiSetting.ready() && similarNext == null) {
             waitingAi = true;
             App.post(aiTimeoutTask, MOVIE_AI_GRACE);
         } else return false; // 模型关着，没的可推
@@ -1507,7 +1507,7 @@ class VodBingePolicy {
      */
     private boolean fallbackTaste() {
         if (!serialMarked || tasteFallback) return false;
-        if (!AiSetting.isEnabled()) return false; // 模型关着就没这一问，老实走题材词那条路
+        if (!AiSetting.ready()) return false; // 模型关着就没这一问，老实走题材词那条路
         tasteFallback = true;
         serialMode = false;
         searchHome = false;

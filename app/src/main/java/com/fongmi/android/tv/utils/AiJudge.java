@@ -171,7 +171,7 @@ public class AiJudge {
 
     /** 已经问过并有结论的，直接给；没问过返回 null */
     public static Boolean peek(String cacheKey) {
-        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，连上次问出来的缓存也不许用
+        if (!AiSetting.ready()) return null; // 铁律：开关没开，连上次问出来的缓存也不许用
         if (AiGuard.blocked(cacheKey)) return null; // 敏感条目连缓存都不查
         load();
         return MEMO.get(cacheKey);
@@ -195,7 +195,7 @@ public class AiJudge {
             reply(callback, hit);
             return;
         }
-        if (!AiSetting.isEnabled()) {
+        if (!AiSetting.ready()) {
             reply(callback, false);
             return;
         }
@@ -232,7 +232,7 @@ public class AiJudge {
 
     /** 大模型给过的题材词，直接给；没问过返回 null。敏感剧名连缓存都不查 */
     public static List<String> peekSuggest(String name) {
-        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，缓存里的模型答案一律不翻
+        if (!AiSetting.ready()) return null; // 铁律：开关没开，缓存里的模型答案一律不翻
         if (AiGuard.blocked(name)) return null;
         loadSuggest();
         return SUGGEST.get(name);
@@ -256,7 +256,7 @@ public class AiJudge {
             replySuggest(callback, hit);
             return;
         }
-        if (!AiSetting.isEnabled()) {
+        if (!AiSetting.ready()) {
             replySuggest(callback, null);
             return;
         }
@@ -308,7 +308,7 @@ public class AiJudge {
     /** 大模型给过的「人」（主演名单 + 出品方），直接给；没问过返回 null。敏感剧名连缓存都不查 */
     public static Cast peekActors(String name, String typeName, String year) {
         if (name == null || name.isEmpty()) return null;
-        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，缓存里的演员名单也不许翻出来
+        if (!AiSetting.ready()) return null; // 铁律：开关没开，缓存里的演员名单也不许翻出来
         if (AiGuard.blocked(name)) return null;
         loadActors();
         return ACTORS.get(actorKey(name, year)); // 缓存按「洗干净的剧名+年份」记：换文件名认得，同名不同版也不串
@@ -372,7 +372,7 @@ public class AiJudge {
             replyActors(callback, hit.empty() ? null : hit); // 空＝问过但没结果，不再问第二次
             return;
         }
-        if (!AiSetting.isEnabled()) {
+        if (!AiSetting.ready()) {
             replyActors(callback, null);
             return;
         }
@@ -412,7 +412,7 @@ public class AiJudge {
      */
     public static Next peekNext(String name, String kindWord, String region) {
         if (name == null || name.isEmpty()) return null;
-        if (!AiSetting.isEnabled()) return null; // 铁律：开关没开，缓存里的推荐也不许用
+        if (!AiSetting.ready()) return null; // 铁律：开关没开，缓存里的推荐也不许用
         if (AiGuard.blocked(name)) return null;
         loadNext();
         return NEXT.get(nextKey(name, kindWord, region, MODE_GENERIC));
@@ -500,7 +500,7 @@ public class AiJudge {
             replyNext(callback, hit.useless() ? null : hit); // 空＝问过没结果，别再问第二次（明确答复「没有下一季」的不算空）
             return;
         }
-        if (!AiSetting.isEnabled()) {
+        if (!AiSetting.ready()) {
             replyNext(callback, null);
             return;
         }

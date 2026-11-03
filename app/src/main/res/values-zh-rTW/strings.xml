@@ -27,7 +27,7 @@
     <string name="tab_star">演員</string>
 
     <!-- Star -->
-    <string name="star">關注演員</string>
+    <string name="star">演員導演創作團隊</string>
     <string name="star_hint">點一下關注 · 長按看他的作品</string>
     <string name="star_add">已關注該演員</string>
     <string name="star_del">已取消關注</string>
@@ -576,6 +576,32 @@
     <string name="ai_search_error">AI 暫時沒回應，可以直接用關鍵字搜尋</string>
     <string name="ai_search_empty">沒想到合適的，換個說法試試</string>
     <string name="ai_search_ask_first">先在搜尋框輸入想問的，比如「找部今年的動作片」</string>
+    <string name="setting_ai_model">大模型</string>
+    <string name="ai_model_tip">自己加的模型最優先；內建那兩條只有用快捷碼錄過源的設備才有。一條都沒配就只用本地搜索。</string>
+    <string name="ai_model_empty">還沒有自建模型——手動加一條，或用手機掃碼錄入。</string>
+    <string name="ai_model_first">優先</string>
+    <string name="ai_model_testing">正在測試…</string>
+    <string name="ai_model_incomplete">接入地址、API Key、模型名稱都要填</string>
+    <string name="ai_model_scan_tip">用手機掃這個二維碼，在網頁裡填好提交</string>
+    <string name="ai_model_none">未配置</string>
+    <string name="ai_model_tip_user">自己加的模型按順序使用，越靠前越優先；一條都沒配就只用本地搜索。</string>
+    <string name="ai_model_add">手動添加</string>
+    <string name="ai_model_scan">掃碼錄入</string>
+    <string name="ai_model_qrcode">生成二維碼</string>
+    <string name="ai_model_name">名稱</string>
+    <string name="ai_model_endpoint">接入地址</string>
+    <string name="ai_model_endpoint_tip">OpenAI 相容的地址，比如 https://example.com/v1</string>
+    <string name="ai_model_key">API Key</string>
+    <string name="ai_model_model">模型名稱</string>
+    <string name="ai_model_test">測一下</string>
+    <string name="ai_model_on">啟用中</string>
+    <string name="ai_model_off">已停用</string>
+    <string name="ai_model_builtin">內建</string>
+    <string name="ai_model_saved">已保存</string>
+    <string name="ai_model_test_ok">通了</string>
+    <string name="ai_model_test_fail">不通：%1$s</string>
+    <string name="ai_model_del">刪除這條模型？</string>
+    <string name="ai_model_delete">刪除</string>
     <string name="ai_search_off">智慧搜尋未開啟，請先到設定裡開啟「智能識別」</string>
     <string name="ai_pick_rating">評分 %1$s</string>
     <string name="ai_pick_movie">電影</string>

@@ -8,6 +8,7 @@ import android.view.View;
 import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.BuildConfig;
+import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.Updater;
 import com.fongmi.android.tv.api.config.LiveConfig;
@@ -98,6 +99,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.dohText.setText(getDohList()[getDohIndex()]);
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
         mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
+        mBinding.aiModelText.setText(aiModelText());
         mBinding.incognitoText.setText(Setting.getSwitch(Setting.isIncognito()));
         mBinding.debugText.setText(Setting.getSwitch(DebugLog.isEnabled()));
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
@@ -154,6 +156,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.wall.setOnLongClickListener(this::onWallEdit);
         mBinding.binge.setOnClickListener(this::setBinge);
         mBinding.ai.setOnClickListener(this::setAi);
+        mBinding.aiModel.setOnClickListener(this::onAiModel);
         mBinding.incognito.setOnClickListener(this::setIncognito);
         mBinding.debug.setOnClickListener(this::setDebug);
         mBinding.vodHistory.setOnClickListener(this::onVodHistory);
@@ -330,9 +333,21 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
         mBinding.bingeText.setText(Setting.getSwitch(BingeSetting.isEnabled()));
     }
 
+    private void onAiModel(View view) {
+        com.fongmi.android.tv.ui.dialog.AiModelDialog.show(this);
+    }
+
     private void setAi(View view) {
         AiSetting.putEnabled(!AiSetting.isEnabled());
         mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
+        mBinding.aiModelText.setText(aiModelText()); // 总开关一关，配了几条都不问了，副标题跟着变
+    }
+
+    /** 「大模型」那行右边写什么：关着写「关」，开着但一条都没有写「未配置」，有就写条数 */
+    private String aiModelText() {
+        if (!AiSetting.isEnabled()) return getString(R.string.ai_model_off);
+        int size = AiSetting.channels().size();
+        return size == 0 ? getString(R.string.ai_model_none) : String.valueOf(size);
     }
 
     private void setIncognito(View view) {

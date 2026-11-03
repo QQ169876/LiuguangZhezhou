@@ -27,7 +27,7 @@
     <string name="tab_star">Actors</string>
 
     <!-- Star -->
-    <string name="star">Follow actor</string>
+    <string name="star">Cast, directors &amp; studios</string>
     <string name="star_hint">Tap to follow · Long-press for works</string>
     <string name="star_add">Followed</string>
     <string name="star_del">Unfollowed</string>
@@ -577,7 +577,34 @@
     <string name="ai_search_error">AI is not responding right now — keyword search still works</string>
     <string name="ai_search_empty">Nothing suitable came up — try rephrasing</string>
     <string name="ai_search_ask_first">Type what you want first, e.g. “a new action movie this year”</string>
+    <string name="setting_ai_model">Models</string>
+    <string name="ai_model_tip">Models you add come first; the two built-in ones only work on devices set up with a shortcut code. Nothing configured = local search only.</string>
+    <string name="ai_model_empty">No model yet — add one, or scan the QR code to fill it in from your phone.</string>
+    <string name="ai_model_first">First</string>
+    <string name="ai_model_testing">Testing…</string>
+    <string name="ai_model_incomplete">Endpoint, API Key and model name are all required</string>
+    <string name="ai_model_scan_tip">Scan this QR code with your phone, fill in the form and submit</string>
+    <string name="ai_model_none">None</string>
+    <string name="ai_model_tip_user">Models you add are used first. Nothing configured = local search only.</string>
+    <string name="ai_model_add">Add manually</string>
+    <string name="ai_model_scan">Scan to fill in</string>
+    <string name="ai_model_qrcode">Show QR code</string>
+    <string name="ai_model_name">Name</string>
+    <string name="ai_model_endpoint">Endpoint</string>
+    <string name="ai_model_endpoint_tip">OpenAI-compatible base URL, e.g. https://example.com/v1</string>
+    <string name="ai_model_key">API Key</string>
+    <string name="ai_model_model">Model name</string>
+    <string name="ai_model_test">Test</string>
+    <string name="ai_model_on">On</string>
+    <string name="ai_model_off">Off</string>
+    <string name="ai_model_builtin">Built-in</string>
+    <string name="ai_model_saved">Saved</string>
+    <string name="ai_model_test_ok">Working</string>
+    <string name="ai_model_test_fail">Not working: %1$s</string>
+    <string name="ai_model_del">Delete this model?</string>
+    <string name="ai_model_delete">Delete</string>
     <string name="ai_search_off">AI search is off — enable “Smart match” in Settings first</string>
+    <string name="ai_no_model">No model configured — searching locally. Add one under “Models” in Settings</string>
     <string name="ai_pick_rating">Rated %1$s</string>
     <string name="ai_pick_movie">Movie</string>
     <string name="ai_pick_tv">Series</string>

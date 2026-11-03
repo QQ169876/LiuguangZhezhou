@@ -206,6 +206,12 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
             Notify.show(R.string.ai_search_off);
             return;
         }
+        if (!AiSetting.ready()) { // 开关开着但一条能用的模型都没有：跳过模型，照样按这句话本地搜
+            Notify.show(R.string.ai_no_model);
+            Util.hideKeyboard(mBinding.keyword);
+            search();
+            return;
+        }
         Util.hideKeyboard(mBinding.keyword);
         AiSearchDialog.create(mBinding.keyword.getText().toString().trim(), text -> {
             setKeyword(text);
