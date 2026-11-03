@@ -37,6 +37,8 @@ import com.fongmi.android.tv.ui.base.BaseFragment;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.dialog.AiSearchDialog;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.utils.AiSearch;
+import com.fongmi.android.tv.utils.AiSearchRunner;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.net.OkHttp;
@@ -139,7 +141,33 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
         String keyword = mBinding.keyword.getText().toString().trim();
         App.post(() -> mRecordAdapter.add(keyword), 250);
         Util.hideKeyboard(mBinding.keyword);
+        if (smart(keyword)) return; // 这句话得先翻译（「持械入宋最新」→「持械入宋 第十一季」），翻译完再搜
         collect(keyword);
+    }
+
+    /**
+     * 普通搜索键也走一遍智能翻译：掺了「最新/第几季/推荐…」这类说法的，按原话搜站里必定空，
+     * 先让模型翻译成站里真有的写法，再拿它全站搜（2026-11-03 马先生：《持械入宋最新》搜不到就是这个原因）。
+     * 看着就是片名的、模型没搭理的，一律照常搜，绝不让用户干等。返回 true = 已经接管。
+     */
+    private boolean smart(final String raw) {
+        if (!AiSearchRunner.interpret(raw, new AiSearchRunner.Direct() {
+
+            @Override
+            public void onKeyword(String keyword) {
+                if (!isAdded()) return;
+                setKeyword(keyword);
+                collect(keyword);
+            }
+
+            @Override
+            public void onPick(AiSearch.Plan plan) {
+                if (!isAdded()) return;
+                showAi(raw); // 要挑一挑的（演员作品表/同类推荐）：弹智能搜索的候选单，答案已在缓存里不会再问一次
+            }
+        })) return false;
+        Notify.show(R.string.ai_search_thinking);
+        return true;
     }
 
     private void collect(String keyword) {
@@ -213,7 +241,12 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
             return;
         }
         Util.hideKeyboard(mBinding.keyword);
-        AiSearchDialog.create(mBinding.keyword.getText().toString().trim(), text -> {
+        showAi(mBinding.keyword.getText().toString().trim());
+    }
+
+    /** 智能搜索的候选单：点哪条就拿它的名字走正常的全站搜索 */
+    private void showAi(String question) {
+        AiSearchDialog.create(question, text -> {
             setKeyword(text);
             search();
         }).show(requireActivity());

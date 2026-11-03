@@ -30,6 +30,7 @@ import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.CustomKeyboard;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.utils.AiSearch;
 import com.fongmi.android.tv.utils.AiSearchRunner;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
@@ -197,6 +198,36 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
         String keyword = mBinding.keyword.getText().toString().trim();
         App.post(() -> mRecordAdapter.add(keyword), 250);
         Util.hideKeyboard(mBinding.keyword);
+        if (smart(keyword)) return; // 这句话得先翻译（「持械入宋最新」→「持械入宋 第十一季」），翻译完再搜
+        go(keyword);
+    }
+
+    /**
+     * 普通搜索键也走一遍智能翻译：掺了「最新/第几季/推荐…」这类说法的，按原话搜站里必定空，
+     * 先让模型翻译成站里真有的写法，再拿它全站搜。看着就是片名的、模型没搭理的，一律照常搜（见 AiSearchRunner）。
+     * 返回 true = 已经接管，结果在回调里出来。
+     */
+    private boolean smart(final String raw) {
+        if (!AiSearchRunner.interpret(raw, new AiSearchRunner.Direct() {
+
+            @Override
+            public void onKeyword(String keyword) {
+                if (isFinishing() || isDestroyed()) return;
+                setKeyword(keyword);
+                go(keyword);
+            }
+
+            @Override
+            public void onPick(AiSearch.Plan plan) {
+                if (isFinishing() || isDestroyed()) return;
+                startAi(raw); // 要挑一挑的（演员作品表/同类推荐）：答案已在缓存里，本页结果区接着展示，不会再问一次
+            }
+        })) return false;
+        Notify.show(R.string.ai_search_thinking);
+        return true;
+    }
+
+    private void go(String keyword) {
         CollectActivity.start(this, keyword);
     }
 
@@ -234,7 +265,12 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
             return;
         }
         Util.hideKeyboard(mBinding.keyword);
-        aiQuestion = mBinding.keyword.getText().toString().trim();
+        startAi(mBinding.keyword.getText().toString().trim());
+    }
+
+    /** 进智能搜索：结果区让给 AI，问句记下来（用户一改字就把迟到的结果扔掉） */
+    private void startAi(String question) {
+        aiQuestion = question == null ? "" : question.trim();
         aiMode = true;
         mBinding.word.setVisibility(View.GONE);
         mBinding.wordRecycler.setVisibility(View.GONE);
@@ -287,7 +323,7 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
         public void onDirect(String keyword) {
             if (expired()) return;
             setKeyword(keyword);
-            onSearch();
+            go(keyword); // 已经翻译过的词，别再进一遍 onSearch（会又去问模型）
         }
     };
 

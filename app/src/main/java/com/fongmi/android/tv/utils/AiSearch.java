@@ -52,17 +52,22 @@ public class AiSearch {
             + "\"genre\":\"类型\","
             + "\"year_min\":0,\"min_rating\":0,\"media\":\"movie|tv|both\"}\n"
             + "规则：\n"
-            + "1. 给了明确片名或题材关键词 → keyword，keywords 给 1~3 个最可能搜到的写法（第一个是主关键词）。\n"
+            + "1. 给了明确片名或题材关键词 → keyword，keywords 给 1~5 个最可能搜到的写法（第一个是主关键词）。\n"
+            + "点名了某部作品又带「最新/最新一季/最近更新/第几季/第几部/下一部/更新到第几集/续集」这类说法的，"
+            + "一律算 keyword：把季数或部数写进关键词（例如「持械入宋最新」→「持械入宋 第十一季」），"
+            + "并把站里常见的几种写法都列出来（中文数字、阿拉伯数字、带不带空格、带不带冒号），第一个写你最拿得准的那个；"
+            + "**「最新」「最近」「更新」这类词绝不能留在关键词里**——站里没有叫「最新」的片子，那样搜必定空。\n"
             + "2. 点名演员或导演，要找他/她的作品 → actor。\n"
             + "3. 「类似/像《X》这种」→ similar：similar 填参照作品名；"
             + "form 填它的形态（AI漫剧/动态漫/沙雕漫填「漫剧」，动漫/动画/卡通填「动画」，真人出演的剧填「真人剧」，"
             + "电影填「电影」，拿不准填「未知」）；tags 填 3~5 个同类题材词（形态词要保留）；"
             + "titles 提名 3~6 部**跟它同一种形态、同一类题材**的作品名——参照是 AI 漫剧就只提 AI 漫剧，"
             + "不许跨形态推真人剧，也不许把电影、综艺、解说混进来；没把握就给空数组，绝不编造不存在的作品。\n"
-            + "4. 「最新的/今年/近几年/评分高/推荐几部」这类筛选推荐 → discover：genre 填类型"
+            + "4. **没有点名具体作品**的泛筛选（「今年新出的」「评分高的」「推荐几部」）→ discover：genre 填类型"
             + "（动作/喜剧/爱情/科幻/奇幻/悬疑/恐怖/惊悚/动画/犯罪/战争/历史/家庭/古装/剧情等），"
             + "year_min 按今天日期折算（今年就填今年的年份，近几年就往前推），有评分要求就填 min_rating（比如「评分高」填 7），"
-            + "media：电影=movie，剧集/短剧/漫剧=tv，没说=both。\n"
+            + "media：电影=movie，剧集/短剧/漫剧=tv，没说=both。"
+            + "只要点名了具体作品（哪怕带「最新」「第几季」），就按规则 1 判 keyword，不许判成 discover。\n"
             + "5. 与影视找片无关 → refused，其它字段留空。\n"
             + "6. summary 始终用中文，拿不准就填用户原话的缩写。";
 
@@ -247,7 +252,7 @@ public class AiSearch {
                     return null; // 模型说了听不懂的话，就当没问
             }
             plan.summary = clean(json.optString("summary"), 24);
-            plan.keywords = cleanList(json.optJSONArray("keywords"), 3, 24);
+            plan.keywords = cleanList(json.optJSONArray("keywords"), 5, 24); // 「X最新」要列好几种写法才撞得上站里的真名
             plan.actor = clean(json.optString("actor"), 24);
             plan.similar = cleanList(json.optJSONArray("similar"), 4, 30);
             plan.tags = cleanList(json.optJSONArray("tags"), 5, 12);
