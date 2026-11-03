@@ -608,10 +608,12 @@ public class PlayerManager implements ParseCallback {
     private void ensureEngine(PlaySpec spec) {
         if (PlayerEngineFactory.matches(engine, spec)) return;
         PlayerEngine old = engine;
-        player.removeListener(listener);
+        // 判空防崩（2026-11-03 华为 TV 的崩溃）：起播前 400ms 的缓一缓重入在播放器已释放后才回来，
+        // 这时 player/engine 都是 null，直接 removeListener 就空指针了
+        if (player != null) player.removeListener(listener);
         engine = PlayerEngineFactory.create(decode, spec, listener);
         setPlayer(engine.getPlayer());
-        old.release();
+        if (old != null) old.release();
     }
 
     public void browse(PlaySpec spec, long startPositionMs) {
@@ -649,6 +651,7 @@ public class PlayerManager implements ParseCallback {
 
     private void setMediaItem(long timeout, long startPositionMs) {
         if (spec == null || spec.getUrl() == null) return;
+        if (engine == null) return; // 已释放（页面退了）：迟到的重入别再起播，release 里的 removeCallbacks 拦不到 400ms 那个
         long delta = System.currentTimeMillis() - lastStop;
         if (delta < 400) { // 刚停过：老 codec 的 release 还在路上，缓一缓再压下一个
             DebugLog.d("Player", "距上次停播 " + delta + "ms，缓到 400ms 再起播");

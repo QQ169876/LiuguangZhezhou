@@ -93,7 +93,8 @@ public class AiSiteProbe {
     /** 比名字用的写法：去掉空格和标点，「万物生 第2季」跟「万物生第二季」算一部 */
     public static String plain(String text) {
         if (text == null) return "";
-        return text.replaceAll("[\\s\\pP\\pS]", "");
+        // \pP/\pS 这种单字母简写在 API 36 的 ICU 里直接 PatternSyntaxException（157 崩溃点），必须写全 \p{P}
+        return text.replaceAll("[\\s\\p{P}\\p{S}]", "");
     }
 
     private static List<Site> searchable() {

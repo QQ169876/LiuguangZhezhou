@@ -187,11 +187,11 @@ public class MoonSync {
         return Owner.pref(Owner.MOON_BASE[Owner.FAVORITE], Owner.MOON);
     }
 
-    private static String tombRecord() {
+    static String tombRecord() {
         return Owner.pref(Owner.MOON_TOMB[Owner.RECORD], Owner.MOON);
     }
 
-    private static String tombFavorite() {
+    static String tombFavorite() {
         return Owner.pref(Owner.MOON_TOMB[Owner.FAVORITE], Owner.MOON);
     }
 
@@ -379,6 +379,7 @@ public class MoonSync {
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        MoonTomb.pullIn(favorites); // 先把别台设备删过的墓碑合进来：本机还留着的对应条目跟着删，下面的拉取才不会又拉回来
         DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         JSONObject ownerRecord = ownerRecord();
         JSONObject ownerFavorite = ownerFavorite();
@@ -410,6 +411,7 @@ public class MoonSync {
         Owner.touch();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        MoonTomb.pullIn(favorites); // 先合墓碑：站点上已被别的设备删掉的，本机跟着删，上传才不会把它推回去
         DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         dedupe();
         dropAlive();
@@ -548,6 +550,11 @@ public class MoonSync {
                 MoonAi.apply(entry.item);
                 continue;
             }
+            // 保留键：这条不是收藏，是塞在收藏通道里的删除墓碑（MoonTomb），取出来就走
+            if (MoonTomb.is(entry.source, entry.id)) {
+                MoonTomb.apply(entry.item);
+                continue;
+            }
             // 收藏跟着账号走：站点在不在当前源里都落本地，换源之后照样看得到
             if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             mark(owner, name);
@@ -587,6 +594,7 @@ public class MoonSync {
         Owner.touch();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
+        MoonTomb.pullIn(favorites); // 先合墓碑：站点上已被别的设备删掉的，本机跟着删，后面的合并才不会又拉回来
         DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         int cid = VodConfig.getCid();
         JSONObject ownerRecord = ownerRecord();
@@ -649,7 +657,12 @@ public class MoonSync {
             return;
         }
         saveTomb(pref, map);
-        if (mine) flushTomb(siteKey, favorite);
+        // 墓碑立刻推到站点一份（MoonTomb）：别的设备拉到它就会把本地对应条目删掉，
+        // 不然它们本地还留着这条，下一次上传又把它推回站点，删除等于白删（2026-11-03 马先生的坑）
+        if (mine) {
+            flushTomb(siteKey, favorite);
+            Task.execute(MoonTomb::push);
+        }
     }
 
     /**
@@ -704,6 +717,7 @@ public class MoonSync {
                 } catch (Throwable ignored) {
                 }
             }
+            MoonTomb.push(); // 整批清空的墓碑也推一份，别的设备才不会把旧记录又补回来
         });
     }
 
@@ -748,7 +762,7 @@ public class MoonSync {
     }
 
     /** 同一部片在本机可能还留着别的条目（重复项、换过点播配置留下的旧 cid 记录），一起清掉 */
-    private static void purgeLocal(String siteKey, boolean favorite) {
+    static void purgeLocal(String siteKey, boolean favorite) {
         if (favorite) {
             for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
                 if (item.getType() != 0) continue;
@@ -876,7 +890,7 @@ public class MoonSync {
         if (next.length() != tomb.length()) saveTomb(pref, next);
     }
 
-    private static JSONObject loadTomb(String pref) {
+    static JSONObject loadTomb(String pref) {
         String text = Prefers.getString(pref);
         if (text.isEmpty()) return new JSONObject();
         try {
@@ -896,7 +910,7 @@ public class MoonSync {
         }
     }
 
-    private static void saveTomb(String pref, JSONObject map) {
+    static void saveTomb(String pref, JSONObject map) {
         Prefers.put(pref, map.toString());
     }
 
@@ -1212,6 +1226,7 @@ public class MoonSync {
         }
         if (dirty) Owner.save(Owner.MOON, Owner.FAVORITE, owner);
         MoonAi.push(); // 顺手把大模型配置推上去：站点上没有的本机配置就靠这一下补过去
+        MoonTomb.push(); // 墓碑也推一份：本机删过的条目，别的设备拉到墓碑才不会又补回来
         return new int[]{add, update};
     }
 
