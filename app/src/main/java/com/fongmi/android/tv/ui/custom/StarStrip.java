@@ -13,6 +13,7 @@ import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.databinding.ViewStarStripBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.utils.AiJudge;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.textview.MaterialTextView;
@@ -74,13 +75,17 @@ public class StarStrip {
     public void set(String actor, String director, String vodName, String typeName, String year) {
         binding.starList.removeAllViews();
         List<String> names = join(Star.split(actor), Star.split(director));
+        // 一个都拆不出来（站点那栏被判成脏数据/占位词，或者干脆没给）：拿原样垫一个牌子。
+        // 「XX漫剧工作室」这种出品方在上面那行看得见，这块却空着，看着就像坏了（马先生 2026-11-03）
+        if (names.isEmpty()) names = joinRaw(actor, director);
+        DebugLog.d("StarStrip", "「" + vodName + "」演员=" + actor + " 导演=" + director + " → " + names);
         binding.getRoot().setVisibility(View.VISIBLE); // 区域和标题一直在，没内容就空着
+        if (!names.isEmpty()) for (String name : names) binding.starList.addView(chip(name)); // 站点给的先铺上，模型查到更好的再换
         if (!names.isEmpty() && !Star.messy(names)) {
             fallback = null;
-            for (String name : names) binding.starList.addView(chip(name));
             return;
         }
-        fallback = Star.messy(names) ? names : null; // 拆不开的那串先存着，模型查不到再回头铺它
+        fallback = names.isEmpty() ? null : names; // 拆不开的那串先存着，模型查不到就留着它
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
         AiJudge.Cast cached = AiJudge.peekActors(askingFor, typeName, year);
@@ -89,6 +94,16 @@ public class StarStrip {
             return;
         }
         AiJudge.actors(askingFor, typeName, "", year, cast -> apply(cast, askingFor));
+    }
+
+    /** 两栏都拆不出名单时的垫底：各取原样第一个能看的字（演员在前、导演/工作室在后，同名的只留一个） */
+    private List<String> joinRaw(String actor, String director) {
+        List<String> names = new ArrayList<>();
+        String one = Star.raw(actor);
+        String two = Star.raw(director);
+        if (!one.isEmpty()) names.add(one);
+        if (!two.isEmpty() && !two.equals(one)) names.add(two);
+        return names;
     }
 
     /** 演员在前、导演/工作室在后，同名的只留一个（有的源导演栏里写的就是演员本人） */
@@ -103,6 +118,8 @@ public class StarStrip {
     private void apply(AiJudge.Cast cast, String forName) {
         if (!binding.getRoot().isAttachedToWindow()) return;
         if (!forName.equals(askingFor)) return;
+        // 空白到底是哪种空，记一笔：下次报「这块没内容」拉日志就能分清是站点没给、开关没开、还是模型答不上来
+        DebugLog.d("StarStrip", "模型回话「" + forName + "」：" + (cast == null ? "没答上来（开关关着 / 调用失败 / 它不认识这部）" : "演员" + cast.names + " 出品方" + (cast.studio.isEmpty() ? "（空）" : cast.studio)));
         // 有演员铺演员；漫剧这类没有真人演员的，改铺模型报的出品方（导演 / 工作室 / 版权方），
         // 一样能关注、能长按看作品；两样都没有才回头垫站点原来那串（2026-10-24 马先生定的分层）
         List<String> show = cast != null && !cast.names.isEmpty() ? cast.names

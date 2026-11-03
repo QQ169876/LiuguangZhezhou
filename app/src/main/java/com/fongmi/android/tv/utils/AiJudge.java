@@ -37,8 +37,12 @@ public class AiJudge {
             + "只输出 JSON，不要任何解释：{\"tags\":[\"词1\",\"词2\",\"词3\"]}";
 
     /**
-     * 补演员：不少站点（夸克网盘这类站源尤其常见）压根不给演员信息，演员区就空着。
-     * 这时候请大模型按剧名回忆一下主演，想得出来就填进去（照样能关注、能长按看他的作品）。
+     * 补档案：不少站点（夸克网盘这类站源尤其常见）演员、导演、简介全是空的，详情页看着就剩个片名。
+     * 这时候请大模型按剧名回忆一下主演 / 出品方 / 剧情简介，想得出来就填进去
+     * （照样能关注、能长按看他的作品；简介填到详情页那块）。
+     *
+     * 马先生 2026-11-03：一次问全（演员 + 出品方 + 简介），别分三趟烧钱；
+     * 问不到就照旧空着，绝不拿不知道的东西糊上去。
      *
      * 2026-10-12 马先生点名要的「按关注的演员筛选检索」：提问时把本机关注的演员名单一起给模型，
      * 让它先判断名单里哪些人参演了这部剧（有的排在最前），再补上它记得的其他主演。
@@ -48,8 +52,8 @@ public class AiJudge {
      * 漫剧/动态漫/动画没有真人演员，演员区整块不显示；真人剧才把演员列出来。
      * 形态由模型报、由本地再卡一道，比只指望它自觉返回空数组稳。
      */
-    private static final String SYSTEM_ACTORS = "你是影视资料助手。先判断这部作品是什么形态，再回忆它的主要演员。"
-            + "只输出 JSON，不要任何解释：{\"form\":\"漫剧|动态漫|动画|真人剧|电影|未知\",\"actors\":[\"名字1\",\"名字2\"],\"studio\":\"出品方\"}。"
+    private static final String SYSTEM_ACTORS = "你是影视资料助手。先判断这部作品是什么形态，再回忆它的主要演员和剧情简介。"
+            + "只输出 JSON，不要任何解释：{\"form\":\"漫剧|动态漫|动画|真人剧|电影|未知\",\"actors\":[\"名字1\",\"名字2\"],\"studio\":\"出品方\",\"plot\":\"剧情简介\"}。"
             + "form：AI漫剧、动态漫、沙雕漫填「漫剧」；动漫、动画、卡通填「动画」；真人出演的剧集或短剧填「真人剧」；"
             + "电影填「电影」；拿不准填「未知」。"
             + "actors：2 到 6 个主演的人名（只要人名，中文）。"
@@ -61,7 +65,10 @@ public class AiJudge {
             + "但 studio 要填它的出品方——导演、工作室、版权方、出品公司都行（比如「某某漫剧工作室」），"
             + "用户要的就是关注这个出品方，好接着看它出的其它漫剧；确实查不到就填空串。"
             + "真人剧的 studio 填空串即可（那类看演员就够了）。"
-            + "真不知道就返回 {\"form\":\"未知\",\"actors\":[],\"studio\":\"\"}，不要编造。";
+            + "plot：一段 60 到 200 字的中文剧情简介，讲清楚它讲了个什么故事（不要写「暂无简介」这类废话，"
+            + "不要写演员表、导演、评分、播出信息，也不要带剧名前缀）。"
+            + "认不出这部作品就给空串——宁可空着，也绝不编一段不存在的剧情。"
+            + "真不知道就返回 {\"form\":\"未知\",\"actors\":[],\"studio\":\"\",\"plot\":\"\"}，不要编造。";
 
     /**
      * 刷剧「下一部」：以前是我们拿题材词去站里撞，撞到什么算什么（相关度全靠名字里有没有那个词）。
@@ -115,6 +122,8 @@ public class AiJudge {
     private static final ConcurrentHashMap<String, Boolean> SUGGESTING = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Cast> ACTORS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ACTOR_ASKING = new ConcurrentHashMap<>();
+    /** 同一部剧第二次来问的回调：结果回来一起分发（补简介和补演员常常同时发起） */
+    private static final ConcurrentHashMap<String, List<ActorsCallback>> ACTOR_WAIT = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Next> NEXT = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> NEXT_ASKING = new ConcurrentHashMap<>();
     private static final int MEMO_LIMIT = 800;
@@ -337,21 +346,33 @@ public class AiJudge {
 
         public final List<String> names;
         public final String studio;
+        /** 剧情简介（网盘站源连一段简介都不给，补出来填在详情页那块） */
+        public final String plot;
 
         Cast(List<String> names, String studio) {
+            this(names, studio, "");
+        }
+
+        Cast(List<String> names, String studio, String plot) {
             this.names = names == null ? new ArrayList<>() : names;
             this.studio = studio == null ? "" : studio;
+            this.plot = plot == null ? "" : plot;
         }
 
         boolean empty() {
-            return names.isEmpty() && studio.isEmpty();
+            return names.isEmpty() && studio.isEmpty() && plot.isEmpty();
         }
     }
 
     /**
-     * 站点没给演员（或给的演员串拆不开）时，请大模型按剧名+年份回忆主演。结果记在本机，同剧不再重复问；
-     * 问不到（断网/超时/模型说不认识）返回 null，调用方就当没演员，整块不显示。
-     * 漫剧、动画不问演员，但仍要问出品方（actor 那一段就交白卷，studio 才是要的）。
+     * 站点没给演员 / 没给简介（或给的演员串拆不开）时，请大模型按剧名+年份回忆主演、出品方和简介。
+     * 结果记在本机，同剧不再重复问；问不到（断网/超时/模型说不认识）返回 null，
+     * 调用方就当没问出来，该空着的还是空着。
+     * 漫剧、动画不问演员，但仍要问出品方（actor 那一段就交白卷，studio 才是要的）；
+     * 简介不分形态，问得到就填。
+     *
+     * 一部剧可能同时被两处问（详情页补简介、演员区补人）——同一个 key 只发一次请求，
+     * 后到的挂在 {@link #ACTOR_WAIT} 上，结果回来一起分发，不重复烧钱也不漏给谁。
      */
     public static void actors(String name, String typeName, String site, String year, ActorsCallback callback) {
         if (name == null || name.isEmpty()) {
@@ -377,7 +398,8 @@ public class AiJudge {
             return;
         }
         if (ACTOR_ASKING.putIfAbsent(key, Boolean.TRUE) != null) {
-            replyActors(callback, null); // 已经在问了，别重复烧钱
+            // 已经在问了：挂个号，回来一起给（以前是直接给 null，第二个来问的就白等了）
+            ACTOR_WAIT.computeIfAbsent(key, k -> new ArrayList<>()).add(callback);
             return;
         }
         POOL.execute(() -> {
@@ -395,7 +417,11 @@ public class AiJudge {
                 saveActors();
             }
             Cast result = cast == null || cast.empty() ? null : cast;
-            App.post(() -> replyActors(callback, result));
+            App.post(() -> {
+                replyActors(callback, result);
+                List<ActorsCallback> waiters = ACTOR_WAIT.remove(key); // 同剧第二次来问的，一并给
+                if (waiters != null) for (ActorsCallback waiter : waiters) replyActors(waiter, result);
+            });
         });
     }
 
@@ -734,7 +760,8 @@ public class AiJudge {
                 + (y.isEmpty() ? "" : "\n年份：" + y + "（同名剧、翻拍版要靠这个年份区分，认准这个年份的版本）")
                 + "\n类型：" + (TextUtils.isEmpty(typeName) ? "未知" : typeName)
                 + "\n来源站：" + (TextUtils.isEmpty(site) ? "未知" : site)
-                + "\n问：这部剧的主演有哪些？没有真人演员的（漫剧/动画）就给出品方（导演、工作室、版权方）。";
+                + "\n问：这部剧的主演有哪些、剧情讲了什么？没有真人演员的（漫剧/动画）就给出品方（导演、工作室、版权方）。"
+                + "剧名、年份、类型这些已经给过你了，plot 里不要再重复一遍；认不出这部剧就把对应字段留空，不要编。";
 
         // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
         return parseCast(AiChat.chat(SYSTEM_ACTORS, question));
@@ -748,6 +775,20 @@ public class AiJudge {
         return AiGuard.blocked(name) ? "" : name;
     }
 
+    /**
+     * 剧情简介：太短（「暂无简介」这类废话）、太长（模型啰嗦起来没完，详情页也放不下）都不要；
+     * 碰线的词按老规矩抠掉再留，抠光了就当它没给。
+     */
+    private static String cleanPlot(String plot) {
+        if (plot == null) return "";
+        String text = plot.trim().replaceAll("(?i)^\\s*(剧情简介|剧情|简介|plot)\\s*[:：]?\\s*", "").trim();
+        text = text.replaceAll("\\s+", " ");
+        if (text.length() < 10 || text.length() > 600) return "";
+        if (text.contains("暂无简介") || text.contains("暂无介绍")) return "";
+        String safe = AiGuard.scrub(text);
+        return safe.isEmpty() ? "" : safe;
+    }
+
     /** 模型吐的人名逐个过闸：太短太长都不像人名、脏词直接扔；一个能用的都没有就当没问 */
     private static Cast parseCast(String content) {
         if (content == null) return null;
@@ -758,13 +799,14 @@ public class AiJudge {
         try {
             JSONObject json = new JSONObject(text.substring(start, end + 1));
             String studio = cleanStudio(json.optString("studio"));
+            String plot = cleanPlot(json.optString("plot"));
             // 形态这道闸本地再卡一遍：模型报了漫剧/动画却还列了一串人名，那串也不能信（2026-10-24）
             if (noCastForm(json.optString("form"))) {
                 DebugLog.d("AiJudge", "模型报的形态没有真人演员，只显示出品方：" + studio);
-                return new Cast(new ArrayList<>(), studio);
+                return new Cast(new ArrayList<>(), studio, plot);
             }
             JSONArray array = json.optJSONArray("actors");
-            if (array == null) return new Cast(new ArrayList<>(), studio);
+            if (array == null) return new Cast(new ArrayList<>(), studio, plot);
             List<String> names = new ArrayList<>();
             for (int i = 0; i < array.length() && names.size() < 6; i++) {
                 String name = array.optString(i, "").trim();
@@ -775,8 +817,8 @@ public class AiJudge {
                 if (AiGuard.blocked(name)) continue;
                 if (!names.contains(name)) names.add(name);
             }
-            DebugLog.d("AiJudge", "补演员 " + names + "，出品方 " + studio);
-            return new Cast(names, studio);
+            DebugLog.d("AiJudge", "补档案 演员" + names + " 出品方" + studio + " 简介" + (plot.isEmpty() ? "（空）" : plot.length() + "字"));
+            return new Cast(names, studio, plot);
         } catch (Exception e) {
             return null; // 模型说了听不懂的话，就当没问
         }
@@ -804,7 +846,9 @@ public class AiJudge {
                             JSONObject object = json.optJSONObject(key);
                             if (object == null) continue;
                             String studio = object.optString("studio", "");
-                            ACTORS.put(key, new Cast(read(object.optJSONArray("actors")), AiGuard.blocked(studio) ? "" : studio));
+                            String plot = object.optString("plot", "");
+                            if (!plot.isEmpty() && AiGuard.blocked(plot)) plot = "";
+                            ACTORS.put(key, new Cast(read(object.optJSONArray("actors")), AiGuard.blocked(studio) ? "" : studio, plot));
                         }
                     }
                 }
@@ -832,6 +876,7 @@ public class AiJudge {
                 JSONObject item = new JSONObject();
                 item.put("actors", new JSONArray(entry.getValue().names));
                 item.put("studio", entry.getValue().studio);
+                item.put("plot", entry.getValue().plot);
                 json.put(entry.getKey(), item);
             }
             try (FileOutputStream out = new FileOutputStream(actorFile())) {

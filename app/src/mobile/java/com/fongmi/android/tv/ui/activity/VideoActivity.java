@@ -108,6 +108,7 @@ import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.StarDialog;
 import com.fongmi.android.tv.ui.dialog.StarWorksDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
+import com.fongmi.android.tv.utils.AiJudge;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.FileChooser;
@@ -140,6 +141,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private String mActor; // 当前这部的演员串，长按那一行要拿它弹关注列表
     private String mDirector; // 当前这部的导演串（有的源写的是工作室），长按同样能关注
     private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
+    private String mAskFor; // 正在找大模型补资料的是哪一部（换剧了就别把上一部的信息贴上来）
     private ViewGroup.LayoutParams mFrameParams;
     private ValueAnimator mAnimator;
     private CustomKeyDown mKeyDown;
@@ -911,6 +913,41 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setText(mBinding.content, 0, item.getContent());
         setText(mBinding.remark, 0, item.getRemarks());
         setOther(mBinding.other, item);
+        askProfile(item); // 网盘那类源连简介带演员全是空的：让大模型按片名补一份，补到什么填什么
+    }
+
+    /**
+     * 详情页缺什么就补什么（马先生 2026-11-03：网盘源没简介没演员，看着就剩个片名）。
+     * 只在**简介空**、或**演员和导演都空**时才问，站源给全了的剧一个字都不外发；
+     * 问不到（开关没开、没配模型、它不认识这部）就照旧空着，不提示不报错。
+     * 演员那行由下面演员区自己补（同一个请求，只发一次），这里只管简介和出品方。
+     */
+    private void askProfile(Vod item) {
+        if (item == null || item.getName().isEmpty()) return;
+        boolean needPlot = item.getContent().isEmpty();
+        boolean needCast = mActor.isEmpty() && item.getDirector().isEmpty();
+        if (!needPlot && !needCast) return;
+        mAskFor = item.getName();
+        String site = getSite() == null ? "" : getSite().getName();
+        AiJudge.Cast cached = AiJudge.peekActors(mAskFor, item.getTypeName(), item.getYear());
+        if (cached != null) {
+            applyProfile(cached, mAskFor);
+            return;
+        }
+        AiJudge.actors(mAskFor, item.getTypeName(), site, item.getYear(), cast -> applyProfile(cast, mAskFor));
+    }
+
+    private void applyProfile(AiJudge.Cast cast, String name) {
+        if (cast == null || mDetail == null || !name.equals(mAskFor)) return; // 页面已经换剧了就别贴
+        if (!cast.plot.isEmpty() && mDetail.getContent().isEmpty()) {
+            mDetail.setContent(cast.plot);
+            setText(mBinding.content, 0, cast.plot);
+        }
+        if (!cast.studio.isEmpty() && mDetail.getDirector().isEmpty()) {
+            mDetail.setDirector(cast.studio);
+            mDirector = cast.studio;
+            setText(mBinding.director, R.string.detail_director, cast.studio);
+        }
     }
 
     private void setText(TextView view, int resId, String text) {

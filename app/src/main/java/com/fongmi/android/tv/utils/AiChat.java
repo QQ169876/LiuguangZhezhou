@@ -54,8 +54,20 @@ public class AiChat {
     /**
      * 按顺序问：**用户自建的排最前**（多条时按他在列表里排的顺序），后面才是内置的豆包、千问。
      * 一条挂了就往下一条走，全挂就抛上去——上层当「没问」处理，绝不卡播放。
+     *
+     * ⚠️ 铁律（马先生 2026-11-03）：**任何内容出网前一律先脱敏，命中过的关键字一个都不带出去。**
+     * 各调用方自己那道 AiGuard.pass() 只管得住它亲手拼的那几个字段（剧名、类型、站名），
+     * 谁再往里塞点别的就漏了，所以**最后一道闸设在这个唯一出口上**：整段内容再抠一遍违禁词，
+     * 抠完还剩什么就发什么；整句都是违禁词的直接拒发，一个字节都不外发，上层当「没问」。
      */
     public static String chat(String system, String user) throws Exception {
+        String safe = user == null ? "" : AiGuard.scrub(user);
+        if (safe.isEmpty()) { // 抠光了＝整句都是违禁词：拒答，不外发
+            DebugLog.d("AiChat", "整句都是违禁词，拒发大模型");
+            return null;
+        }
+        if (!safe.equals(user)) DebugLog.d("AiChat", "脱敏后外发：" + safe);
+        user = safe;
         List<AiModel> list = AiSetting.channels();
         if (list.isEmpty()) throw new IOException("没有可用的模型通道");
         int first = firstAlive(list);

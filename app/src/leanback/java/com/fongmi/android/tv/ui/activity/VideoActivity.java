@@ -90,6 +90,7 @@ import com.fongmi.android.tv.ui.dialog.SpeedSettingDialog;
 import com.fongmi.android.tv.ui.dialog.StarDialog;
 import com.fongmi.android.tv.ui.dialog.StarWorksDialog;
 import com.fongmi.android.tv.ui.dialog.TrackDialog;
+import com.fongmi.android.tv.utils.AiJudge;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.FileChooser;
@@ -128,6 +129,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private CustomKeyDownVod mKeyDown;
     private StarStrip mStarStrip;
     private Vod mDetail;   // 当前这部的详情，大模型补到演员后要回写进去
+    private String mAskFor; // 正在找大模型补资料的是哪一部（换剧了就别把上一部的信息贴上来）
     private Clock mClock;
     private View mFocus1;
     private View mFocus2;
@@ -789,6 +791,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void renderDescription(String desc) {
+        if (TextUtils.isEmpty(desc) && mBinding.content.getTag() != null) return; // 播放器没给简介时别把大模型补来的那份冲掉
         mBinding.content.setTag(desc);
     }
 
@@ -917,6 +920,41 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mBinding.director.setOnClickListener(view -> showStarDialog(item.getDirector()));
         if (mStarStrip != null) mStarStrip.set(item.getActor(), item.getDirector(), item.getName(), item.getTypeName(), item.getYear()); // 演员+导演（有的源写的是工作室/创作团队）；都没给就让大模型按片名+年份去查
         setR2Callback(); // 演员区有了牌之后重排一次焦点上下关系
+        askProfile(item); // 网盘那类源连简介带演员全是空的：让大模型按片名补一份，补到什么填什么
+    }
+
+    /**
+     * 详情页缺什么就补什么（马先生 2026-11-03：网盘源没简介没演员，看着就剩个片名）。
+     * 只在**简介空**、或**演员和导演都空**时才问，站源给全了的剧一个字都不外发；
+     * 问不到（开关没开、没配模型、它不认识这部）就照旧空着，不提示不报错。
+     * TV 上简介是点「简介」那个按钮弹框看的，补到就塞进它的 tag，点开就有内容。
+     */
+    private void askProfile(Vod item) {
+        if (item == null || item.getName().isEmpty()) return;
+        boolean needPlot = item.getContent().isEmpty();
+        boolean needCast = item.getActor().isEmpty() && item.getDirector().isEmpty();
+        if (!needPlot && !needCast) return;
+        mAskFor = item.getName();
+        String site = getSite() == null ? "" : getSite().getName();
+        AiJudge.Cast cached = AiJudge.peekActors(mAskFor, item.getTypeName(), item.getYear());
+        if (cached != null) {
+            applyProfile(cached, mAskFor);
+            return;
+        }
+        AiJudge.actors(mAskFor, item.getTypeName(), site, item.getYear(), cast -> applyProfile(cast, mAskFor));
+    }
+
+    private void applyProfile(AiJudge.Cast cast, String name) {
+        if (cast == null || mDetail == null || !name.equals(mAskFor)) return; // 页面已经换剧了就别贴
+        if (!cast.plot.isEmpty() && mDetail.getContent().isEmpty()) {
+            mDetail.setContent(cast.plot);
+            mBinding.content.setTag(cast.plot); // 简介按钮点开就有内容了
+        }
+        if (!cast.studio.isEmpty() && mDetail.getDirector().isEmpty()) {
+            mDetail.setDirector(cast.studio);
+            setText(mBinding.director, R.string.detail_director, cast.studio);
+            setR2Callback();
+        }
     }
 
     private void setText(TextView view, int resId, String text) {

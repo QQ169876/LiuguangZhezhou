@@ -193,6 +193,26 @@ public class Star implements Diffable<Star> {
     }
 
     /**
+     * 一个名字都拆不出来时的垫底串：站点那栏原样给的那几个字（马先生 2026-11-03：
+     * 漫剧的导演栏里写的是「XX漫剧工作室」，上面那行看得见，下面那块不该空着）。
+     *
+     * 先把 JSON 壳剥掉再 Trim，剥完还是带着括号引号的（说明这栏本来就是脏数据）就不要了——
+     * 宁可空着，也不把 `{"id":"xx"}` 这种碎片挂到牌子上。占位词（未知/暂无）同样不算。
+     * 一栏里写了好几个的话只取第一个，别把整串糊在一张牌上。
+     */
+    public static String raw(String actor) {
+        if (actor == null) return "";
+        String text = unwrap(actor).replaceAll("(?i)^\\s*(主演|演员|cast|导演|工作室)\\s*[:：]?\\s*", "").trim();
+        text = text.replaceAll("[,，、/／|｜;；]+$", "").trim(); // 尾部可能剩下个逗号
+        if (text.isEmpty() || dirty(text) || placeholder(text)) return "";
+        for (String part : text.split("[,，、/／|｜;；]+")) { // 真的有好几个：取第一个，别糊成一串
+            String one = fix(part);
+            if (!one.isEmpty() && !dirty(one) && !placeholder(one)) return one;
+        }
+        return "";
+    }
+
+    /**
      * 拆出来的名单可不可信（2026-10-20 马先生定的规矩）：拆不开、或中英文名混搭的，
      * 别把那串东西硬铺成牌子，交给大模型按片名+年份去查，查回来用它报的名单。
      * 两种情况算不可信：
