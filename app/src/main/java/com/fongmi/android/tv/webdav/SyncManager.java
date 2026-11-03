@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +64,8 @@ public class SyncManager {
 
     private static final int PLAY_PERIOD = 30;
     private static final long PLAY_IDLE = 60 * 1000L;
+    /** 等用户对「批量删除确认」弹窗表态的最长时间（秒）：超时按误删处理，删除不生效 */
+    private static final long ANSWER_TIMEOUT = 60;
 
     private static final AtomicBoolean busy = new AtomicBoolean(false);
     private static final AtomicBoolean dirty = new AtomicBoolean(false);
@@ -816,9 +819,9 @@ public class SyncManager {
      * 防的是「App 里误删 → 一同步网盘上的也没了」这一步（见 SyncGuard）。
      *
      * 判据：上次同步时本机有、这一趟本机没有了的那些（别的同步标识的、换了点播源的不算）。
-     * 数量偏大就先在同步的时候弹一句：
-     *   · 说「是我删的」→ 再跑一趟（again），这回真删；
-     *   · 没界面弹 / 说「不是」→ 一条都不删，还把那批补回这次上传的结果里 ——
+     * 数量偏大就在同步的时候问一句，**问的时候这一趟先停下等答案**：
+     *   · 说「是我删的」→ 这一轮就按删除走，云端和本机一起删掉；
+     *   · 没界面弹 / 不表态 / 超时 / 说「不是」→ 一条都不删，那批救回这一轮的结果里 ——
      *     网盘原样留着，本机刚删的那批也跟着回来了，等于把误删救回来。
      */
     private static void guardLocalLoss(WebDavData merged, WebDavData local, WebDavData base, JSONObject bookRecord, JSONObject bookFavorite, Runnable again) {
@@ -828,8 +831,37 @@ public class SyncManager {
         if (lost == 0) return;
         int total = local.getData().getHistory().size() + local.getData().getKeep().size() + lost;
         if (SyncGuard.allow(lost, total)) return;
-        SyncGuard.ask(lostHistory.size(), lostKeep.size(), again); // 真要删就再跑一趟（已批准，这回不再问）
-        restore(merged, lostHistory, lostKeep);
+        // 数量大就真等用户答完再往下走：确认 → 这一轮就让删除生效（云端和本机一起删）；
+        // 拒绝 / 没界面 / 超时 → 按误删救回。
+        // 改动前是「先无条件救回、同步照跑」，本机库当场被填回去，用户再点「仍然删除」重跑一趟
+        // 时本机已经是满的、一条不缺 —— 删除永远落不了地，删多少回来多少（2026-11-03 马先生的坑）
+        if (!waitAnswer(lostHistory.size(), lostKeep.size(), again)) restore(merged, lostHistory, lostKeep);
+    }
+
+    /**
+     * 在后台同步线程上等用户对弹窗表态。等到的答案：
+     *   true  = 确认删，调用方按删除继续走；
+     *   false = 拒了 / 没弹出来 / 超时没答，按误删处理。
+     * 超时后弹窗若还留在屏幕上，用户迟些点「仍然删除」时会补跑一整轮（again），删除不白点。
+     * busy 闸保证同一时刻只有一趟 WebDAV 同步，这里阻塞不会跟别的同步打架。
+     */
+    private static boolean waitAnswer(int historyDel, int keepDel, Runnable again) {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean approved = new AtomicBoolean(false);
+        AtomicBoolean finished = new AtomicBoolean(false);
+        SyncGuard.ask(historyDel, keepDel, () -> {
+            approved.set(true);
+            latch.countDown();
+            if (finished.get()) again.run(); // 这趟已经按「不删」收尾了，迟到的确认补跑一轮
+        }, latch::countDown);
+        try {
+            return latch.await(ANSWER_TIMEOUT, TimeUnit.SECONDS) && approved.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } finally {
+            finished.set(true);
+        }
     }
 
     /** 上次同步时本机有、现在本机没有了的观看记录 */

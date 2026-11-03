@@ -67,12 +67,24 @@ public final class SyncGuard {
      * @param action 真正的删除动作，只在用户同意后才跑
      */
     public static void ask(int historyDel, int keepDel, Runnable action) {
+        ask(historyDel, keepDel, action, null);
+    }
+
+    /**
+     * 同上，多一个 onPass：用户拒绝 / 没界面可弹 / 30 分钟内拒过 —— 这几种「不删」的情况都回调它。
+     * WebDAV 的守卫要靠它落闸：调用方在后台线程上等这个答案，拿到「不删」才知道要把那批救回来。
+     */
+    public static void ask(int historyDel, int keepDel, Runnable action, Runnable onPass) {
         String sign = String.valueOf(historyDel + keepDel);
         // 刚才已经为同样的规模拒过一次，别每次同步都来烦人；过了 TTL 再问，真想删还有机会点
-        if (sign.equals(declined) && System.currentTimeMillis() - declinedAt < DECLINE_TTL) return;
+        if (sign.equals(declined) && System.currentTimeMillis() - declinedAt < DECLINE_TTL) {
+            if (onPass != null) onPass.run();
+            return;
+        }
         App.post(() -> {
             Activity activity = App.activity();
             if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                if (onPass != null) onPass.run();
                 skipped(historyDel, keepDel);
                 return;
             }
@@ -83,6 +95,7 @@ public final class SyncGuard {
                         .setNegativeButton(R.string.sync_guard_keep, (dialog, which) -> {
                             declined = sign;
                             declinedAt = System.currentTimeMillis();
+                            if (onPass != null) onPass.run();
                             skipped(historyDel, keepDel);
                         })
                         .setPositiveButton(R.string.sync_guard_delete, (dialog, which) -> {
@@ -93,6 +106,7 @@ public final class SyncGuard {
                         })
                         .show();
             } catch (Exception e) {
+                if (onPass != null) onPass.run();
                 skipped(historyDel, keepDel); // 页面正在重建之类，这次就不弹了，数据保持不动
             }
         });
