@@ -24,7 +24,9 @@ public class VodHistoryPolicy {
         history = history == null ? create(key, item) : history;
         if (!TextUtils.isEmpty(mark)) history.setVodRemarks(mark);
         if (Setting.isIncognito()) history.delete();
-        history.setVodName(item.getName());
+        // 坏名字（空/一个字/纯集数号）不许覆盖片名：一旦把「终极名单」写成「3」，
+        // 以后每次自动换源都拿「3」去全站搜，换回来的永远是那部叫《3》的电影（马先生 2026-11-04）
+        if (VodFallbackPolicy.credibleName(item.getName())) history.setVodName(item.getName());
         return history;
     }
 

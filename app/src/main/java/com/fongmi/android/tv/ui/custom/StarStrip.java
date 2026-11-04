@@ -36,7 +36,7 @@ public class StarStrip {
     private final ViewStarStripBinding binding;
     private final Action action;
     private String askingFor = ""; // 正在问大模型的是哪一部（页面切走了就别把上一部的人名贴上来）
-    private List<String> fallback; // 拆不开的原始名单：模型查不到时垫底铺它，好歹比空白强
+    private List<String> fallback; // 预留：模型回话为空时垫底铺的名单（2026-11-04 起有内容就不再问模型，正常流程它一直是 null）
 
     public interface Action {
 
@@ -66,10 +66,8 @@ public class StarStrip {
      *
      * 站点压根没给（短剧站常有的事）时，拿剧名去问一句大模型，
      * 它想得起来就补上——牌的用法一模一样，能关注、能长按看作品。
-     * 站点给了但拆不开、或中英文名混成一串（2026-10-20 马先生点名）：也走大模型，
-     * 按片名+年份去查（年份必须带上：同名剧、翻拍版靠它区分），查回来用它报的名单，
-     * 原来那串乱的垫底——模型不认识这部剧时再回头铺它，好歹比空白强。
-     * 问不到（关了开关、断网、模型不认识）就空着，区域还在。
+     * 马先生 2026-11-04：**这一栏有内容（拆开的名单、拆不开垫牌的原样串都算）就不再走大模型**，
+     * 只有两栏一无所有时才问——有内容还问，既烧积分，模型答不上来时这块反而被清空。
      * 漫剧/动画这类没有真人演员，传上类型让 AiJudge 直接拦掉，别让模型顺着关注名单瞎认领。
      */
     public void set(String actor, String director, String vodName, String typeName, String year) {
@@ -80,12 +78,15 @@ public class StarStrip {
         if (names.isEmpty()) names = joinRaw(actor, director);
         DebugLog.d("StarStrip", "「" + vodName + "」演员=" + actor + " 导演=" + director + " → " + names);
         binding.getRoot().setVisibility(View.VISIBLE); // 区域和标题一直在，没内容就空着
-        if (!names.isEmpty()) for (String name : names) binding.starList.addView(chip(name)); // 站点给的先铺上，模型查到更好的再换
-        if (!names.isEmpty() && !Star.messy(names)) {
+        if (!names.isEmpty()) {
+            // 马先生 2026-11-04 定的规矩：这一栏站点给了内容（拆开的名单、垫牌的原样串都算）就到此为止，
+            // 不再让大模型过一遍——省积分，也免得模型答不上来反而把这块清空。
             fallback = null;
+            for (String name : names) binding.starList.addView(chip(name));
             return;
         }
-        fallback = names.isEmpty() ? null : names; // 拆不开的那串先存着，模型查不到就留着它
+        fallback = null;
+        // 两栏真的一无所有（网盘那类源）才去问大模型：它想得起来就补上，问不到就空着，区域还在
         askingFor = vodName == null ? "" : vodName;
         if (askingFor.isEmpty()) return;
         AiJudge.Cast cached = AiJudge.peekActors(askingFor, typeName, year);

@@ -683,7 +683,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     public void renderDetail(Vod item, History history) {
         mHistory = history;
         mBinding.progressLayout.showContent();
-        mBinding.name.setText(item.getName());
+        if (!item.getName().isEmpty()) mBinding.name.setText(item.getName()); // 片名永不许被空值刷掉（马先生 2026-11-04：偶尔片名变空白）；详情没给名字时 checkName 已拿页面现名补过
         mBinding.video.requestFocus();
         switching = false;
         App.removeCallbacks(mR4);
@@ -928,6 +928,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
      * 只在**简介空**、或**演员和导演都空**时才问，站源给全了的剧一个字都不外发；
      * 问不到（开关没开、没配模型、它不认识这部）就照旧空着，不提示不报错。
      * TV 上简介是点「简介」那个按钮弹框看的，补到就塞进它的 tag，点开就有内容。
+     * 铁律（马先生 2026-11-04）：模型回写**永远不碰片名**，也只在空位上补——
+     * 有内容的位置一个字都不许动；网盘只有片名的剧，片名照旧，缺的演员/简介才补。
      */
     private void askProfile(Vod item) {
         if (item == null || item.getName().isEmpty()) return;

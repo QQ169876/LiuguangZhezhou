@@ -117,6 +117,7 @@ public class Star implements Diffable<Star> {
     private static volatile Pattern shell;
     private static volatile Pattern json;
     private static volatile Pattern loose;
+    private static volatile Pattern tag;
     private static volatile boolean broken; // 有一台机器的引擎认不了就认不了，别反复试
 
     private static Pattern shell() {
@@ -150,6 +151,24 @@ public class Star implements Diffable<Star> {
         if (broken) return null;
         try {
             return (loose = Pattern.compile("\"?(?:name|actor|star)\"?\\s*[:=]\\s*\"?([^\"\\{\\},]+)"));
+        } catch (Throwable e) {
+            broken = true;
+            return null;
+        }
+    }
+
+    /**
+     * [a=cr:...][/a] 这类方括号标记（B 站源爱用，点击跳转用的）。开头的壳里是 JSON，尾巴还有个 [/a]。
+     * 壳里的 JSON 再嵌一层花括号（"id":"19639292/{pg}"）时，上面的剥壳正则就啃不动了，
+     * 整串全被当成脏数据扔掉——导演明明给了「菜鸟漫画酱」，演员区却空着（2026-11-03 日志实锤）。
+     * 这里按「标记」整体拿掉：先试着从壳里抠 name，抠不出就换成逗号；两个标记之间留下的可读文字（真名字）原样保留。
+     */
+    private static Pattern tag() {
+        Pattern p = tag;
+        if (p != null) return p;
+        if (broken) return null;
+        try {
+            return (tag = Pattern.compile("\\[/?[a-zA-Z][^\\[\\]]*\\]"));
         } catch (Throwable e) {
             broken = true;
             return null;
@@ -318,14 +337,41 @@ public class Star implements Diffable<Star> {
             "n/a", "na", "none", "null", "unknown", "unknown actor"
     };
 
-    /** 把 [a=cr:{"id":"..","name":".."}]（以及光秃秃的 {"id":..,"name":..}）还原成名字，认不出的整块抹掉 */
+    /** 把 [a=cr:{...}/]菜鸟漫画酱[/a]（以及光秃秃的 {"id":..,"name":..}）还原成名字，认不出的整块抹掉 */
     private static String unwrap(String actor) {
         String text = actor;
         Pattern shell = shell();
         if (shell != null) text = replace(text, shell);
         Pattern json = json();
         if (json != null) text = replace(text, json);
-        return text;
+        return stripTags(text);
+    }
+
+    /** 上面的正则啃不动的方括号标记（JSON 里又套了花括号的那种），在这里兜底拆掉 */
+    private static String stripTags(String text) {
+        if (text == null || text.indexOf('[') < 0) return text;
+        Pattern pattern = tag();
+        if (pattern == null) return text;
+        Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) return text;
+        StringBuffer buffer = new StringBuffer();
+        matcher.reset();
+        while (matcher.find()) {
+            String inner = pickLoose(matcher.group());
+            // 壳里抠得出 name 就用它（顺带补个逗号，两段挨着不粘连）；抠不出就当这里只是个标记，换成逗号
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(inner.isEmpty() ? "," : inner + ","));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    /** 从一小段壳文本里按文本抠 name/actor/star，规整不规整都行，抠不出给空 */
+    private static String pickLoose(String block) {
+        if (block == null) return "";
+        Pattern pattern = loose();
+        if (pattern == null) return "";
+        Matcher matcher = pattern.matcher(block);
+        return matcher.find() ? fix(matcher.group(1)) : "";
     }
 
     private static String replace(String text, Pattern pattern) {

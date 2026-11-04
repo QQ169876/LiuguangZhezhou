@@ -104,7 +104,7 @@ public class VodPlaybackController {
         String pic = item.getPic();
         String name = item.getName();
         boolean hasPic = !pic.isEmpty();
-        boolean hasName = !name.isEmpty();
+        boolean hasName = VodFallbackPolicy.credibleName(name); // 坏名字不许写进观看记录，理由同 findOrCreate
         if (hasPic) history.setVodPic(pic);
         if (hasName) history.setVodName(name);
         if (hasName || hasPic) historyPolicy.saveCurrent(history);
@@ -496,10 +496,36 @@ public class VodPlaybackController {
     }
 
     private void detailLoaded(Vod item) {
+        if (autoFallbackMismatch(item)) {
+            // 自动换源取回来的详情名字对不上搜索词：这个源串台了（搜《终极名单》回来的详情却是《3》这种）。
+            // 当它失败接着换下一个，绝不让它上屏、更不许它把观看记录的片名覆盖掉——覆盖一次以后每次换源都拿坏名字去搜。
+            // 串台的 id 必须记进失败名单：不记的话，源挑完后重新搜索它又回来，reject→重搜→再回来，无限循环。
+            state.addFailedId(host.getVodId());
+            DebugLog.d("Vod", "换源详情名字对不上：" + (item.getName() == null ? "" : item.getName()) + " ≠「" + state.getSearchKeyword() + "」，弃用换下一个");
+            fallbackPolicy.emptyDetail();
+            return;
+        }
         VodPlayRequest activeRequest = state.getActiveRequest();
         History history = applyDetail(item);
         if (state.hasFlags()) restoreDetail(activeRequest, history);
         else fallbackPolicy.emptyFlag();
+    }
+
+    /**
+     * 自动换源的详情跟搜索词是不是同一部片：两边名字谁也不包含谁才算串台。
+     * 「终极名单 第一季」对「终极名单」这种省写法的放行；搜《终极名单》回来详情却叫《3》的拦下。
+     * 详情没给名字的不拦（checkName 会拿页面现名补上）；手动换源、没关键词可比的也不拦。
+     */
+    private boolean autoFallbackMismatch(Vod item) {
+        if (!state.isAutoFallback()) return false;
+        String keyword = state.getSearchKeyword();
+        String name = item == null ? "" : item.getName().trim();
+        if (name.isEmpty()) return false; // 详情没给名字：checkName 会拿页面现名补上
+        if (!VodFallbackPolicy.credibleName(name)) return true; // 名字只剩「3」这种集数号：串台，拦
+        if (!VodFallbackPolicy.credibleName(keyword)) return false; // 关键词本身就不可信：搜索那关已经拦了
+        String flatName = VodFallbackPolicy.flat(name);
+        String flatKey = VodFallbackPolicy.flat(keyword);
+        return !flatName.contains(flatKey) && !flatKey.contains(flatName);
     }
 
     private History applyDetail(Vod item) {
