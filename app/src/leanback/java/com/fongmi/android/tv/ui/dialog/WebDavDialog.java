@@ -31,6 +31,7 @@ public class WebDavDialog extends BaseAlertDialog {
     private DialogWebdavBinding binding;
     private static final String KNOWN = "webdav_remote_known";
     private boolean asked;
+    private boolean authUiBusy; // 代码回显登录方式时别让监听器又反过来写一遍
     private String snapshot; // 打开对话框那一刻的设置：关掉时比对，改过就该问一句以哪边为准
 
     public static WebDavDialog create() {
@@ -62,13 +63,14 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.enable.setChecked(WebDavSetting.isEnabled());
         binding.auto.setChecked(WebDavSetting.isAuto());
         binding.cookie.setChecked(WebDavSetting.isCookie());
+        setAuthUi(WebDavSetting.getAuthMode());
         if (snapshot == null) snapshot = snap(); // 只记第一次：扫码导入配置也走这里，别把改动记没了
         setLastText();
     }
 
-    /** 当前设置的指纹：地址/账号/密码/同步标识 + 三个开关 */
+    /** 当前设置的指纹：地址/账号/密码/同步标识/登录方式 + 三个开关 */
     private String snap() {
-        return WebDavSetting.getUrl() + "|" + WebDavSetting.getUser() + "|" + WebDavSetting.getPass() + "|" + WebDavSetting.getFolder() + "|" + WebDavSetting.isEnabled() + "|" + WebDavSetting.isAuto() + "|" + WebDavSetting.isCookie();
+        return WebDavSetting.getUrl() + "|" + WebDavSetting.getUser() + "|" + WebDavSetting.getPass() + "|" + WebDavSetting.getFolder() + "|" + WebDavSetting.getAuthMode() + "|" + WebDavSetting.isEnabled() + "|" + WebDavSetting.isAuto() + "|" + WebDavSetting.isCookie();
     }
 
     private boolean changed() {
@@ -94,7 +96,48 @@ public class WebDavDialog extends BaseAlertDialog {
         binding.enable.setOnCheckedChangeListener((view, checked) -> save());
         binding.auto.setOnCheckedChangeListener((view, checked) -> save());
         binding.cookie.setOnCheckedChangeListener((view, checked) -> save());
+        binding.auth.setOnCheckedChangeListener((group, checkedId) -> onAuthChanged(checkedId));
         watch(binding.url, binding.user, binding.pass, binding.folder);
+    }
+
+    /** 登录方式：密钥 / 用户名密码 / 无需登录。改了就立刻落盘，并跟着换提示文案和输入框 */
+    private void onAuthChanged(int checkedId) {
+        if (authUiBusy) return;
+        int mode = modeOf(checkedId);
+        WebDavSetting.putAuthMode(mode);
+        updateAuthUi(mode);
+    }
+
+    private int modeOf(int checkedId) {
+        if (checkedId == R.id.auth_password) return WebDavSetting.AUTH_PASSWORD;
+        if (checkedId == R.id.auth_none) return WebDavSetting.AUTH_NONE;
+        return WebDavSetting.AUTH_KEY;
+    }
+
+    private int currentAuthMode() {
+        int id = binding.auth.getCheckedRadioButtonId();
+        return id < 0 ? WebDavSetting.getAuthMode() : modeOf(id);
+    }
+
+    private void setAuthUi(int mode) {
+        authUiBusy = true;
+        binding.auth.check(mode == WebDavSetting.AUTH_PASSWORD ? R.id.auth_password : mode == WebDavSetting.AUTH_NONE ? R.id.auth_none : R.id.auth_key);
+        authUiBusy = false;
+        updateAuthUi(mode);
+    }
+
+    private void updateAuthUi(int mode) {
+        boolean none = mode == WebDavSetting.AUTH_NONE;
+        binding.userLayout.setVisibility(none ? View.GONE : View.VISIBLE);
+        binding.passLayout.setVisibility(none ? View.GONE : View.VISIBLE);
+        if (none) {
+            binding.authTip.setText(R.string.webdav_auth_tip_none);
+            return;
+        }
+        boolean key = mode == WebDavSetting.AUTH_KEY;
+        binding.userLayout.setHint(App.get().getString(key ? R.string.webdav_user_key : R.string.webdav_user_password));
+        binding.passLayout.setHint(App.get().getString(key ? R.string.webdav_pass_key : R.string.webdav_pass_password));
+        binding.authTip.setText(key ? R.string.webdav_auth_tip_key : R.string.webdav_auth_tip_password);
     }
 
     /** 输入框失焦就存一次，不用非得点按钮 */
@@ -199,6 +242,7 @@ public class WebDavDialog extends BaseAlertDialog {
         WebDavSetting.putUser(binding.user.getText().toString());
         WebDavSetting.putPass(binding.pass.getText().toString());
         WebDavSetting.putFolder(binding.folder.getText().toString());
+        WebDavSetting.putAuthMode(currentAuthMode());
         WebDavSetting.putEnabled(binding.enable.isChecked());
         WebDavSetting.putAuto(binding.auto.isChecked());
         WebDavSetting.putCookie(binding.cookie.isChecked());
@@ -216,10 +260,11 @@ public class WebDavDialog extends BaseAlertDialog {
         save();
         Notify.progress(this);
         Task.execute(() -> {
-            boolean ok = WebDav.test();
+            String error = WebDav.testError();
             App.post(() -> {
                 Notify.dismiss();
-                Notify.show(ok ? R.string.webdav_test_ok : R.string.webdav_test_fail);
+                if (error == null) Notify.show(R.string.webdav_test_ok);
+                else Notify.show(App.get().getString(R.string.webdav_test_fail) + "：" + error);
             });
         });
     }

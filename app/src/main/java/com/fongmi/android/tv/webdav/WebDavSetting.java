@@ -10,6 +10,26 @@ public class WebDavSetting {
 
     public static final String FILE = "sync.json";
 
+    /** 密钥登录：坚果云这类，账号填邮箱、密码填「应用密钥」（不是登录密码） */
+    public static final int AUTH_KEY = 0;
+    /** 用户名密码登录：自建 WebDAV（CloudDrive2 / AList / 群晖 / Apache 等） */
+    public static final int AUTH_PASSWORD = 1;
+    /** 无需登录：服务没开鉴权，请求不带 Authorization */
+    public static final int AUTH_NONE = 2;
+
+    /**
+     * 登录方式。老版本没有这个键，默认按「密钥登录」处理——升级上来的人
+     * 用户名和密码都还在，行为跟以前一模一样，不会突然连不上。
+     */
+    public static int getAuthMode() {
+        int mode = Prefers.getInt("webdav_auth_mode", AUTH_KEY);
+        return mode == AUTH_PASSWORD || mode == AUTH_NONE ? mode : AUTH_KEY;
+    }
+
+    public static void putAuthMode(int mode) {
+        Prefers.put("webdav_auth_mode", mode == AUTH_PASSWORD || mode == AUTH_NONE ? mode : AUTH_KEY);
+    }
+
     public static String getUrl() {
         return Prefers.getString("webdav_url").trim();
     }
@@ -93,6 +113,7 @@ public class WebDavSetting {
             object.put("user", getUser());
             object.put("pass", getPass());
             object.put("folder", getFolder());
+            object.put("authMode", getAuthMode());
         } catch (Exception ignored) {
         }
         return object.toString();
@@ -102,8 +123,13 @@ public class WebDavSetting {
         return !getUrl().isEmpty();
     }
 
-    /** 有没有填账号密码；没填的服务就当它不需要鉴权 */
+    /**
+     * 要不要带认证头。选了「无需登录」就一律不带；其余两种都走 Basic，
+     * 服务器若要 Digest，由 WebDav 里的 Authenticator 收到挑战后自动补上。
+     * 账号密码都没填时也当作不需要鉴权，免得给匿名服务发个空 Basic 头被拒。
+     */
     public static boolean hasAuth() {
+        if (getAuthMode() == AUTH_NONE) return false;
         return !getUser().isEmpty() || !getPass().isEmpty();
     }
 
@@ -130,9 +156,15 @@ public class WebDavSetting {
         return getFolderUrl().concat(FILE);
     }
 
-    /** 同步目标 = 同步文件地址 + 账号；换地址、换目录或换账号都算换了一份数据源 */
+    /**
+     * 同步目标 = 同步文件地址 + 账号（+ 非默认的登录方式）。
+     * 换登录方式多半意味着换了服务器/换了账号，得重新问一次以哪边为准，别闷头把两边数据混了；
+     * 但默认的「密钥登录」不加后缀——老版本存的就是这个格式，升级上来的人不该莫名被问一次。
+     */
     public static String getScope() {
-        return getFileUrl().concat("|").concat(getUser());
+        String scope = getFileUrl().concat("|").concat(getUser());
+        int mode = getAuthMode();
+        return mode == AUTH_KEY ? scope : scope.concat("|").concat(String.valueOf(mode));
     }
 
     private static String getConfirm() {

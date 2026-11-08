@@ -10,7 +10,9 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.os.SystemClock;
 import android.text.TextUtils;
+import android.view.KeyEvent;
 import android.text.style.ClickableSpan;
 import android.view.MotionEvent;
 import android.view.View;
@@ -154,6 +156,11 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private Runnable mR5;
     private boolean switching;
     private boolean sourceExhausted;
+    private long pageReadyAt;  // 本次 onResume 时刻：用来识别媒体会话刚建立时补发的 STOP
+    private long lastBackDownAt; // 最近一次真实返回键按下的时刻
+    private static final long STOP_GUARD_MS = 5000; // 进页面 5 秒内的会话 STOP 视为系统补发
+    private static final long ENTER_GUARD_MS = 5000; // 进页面 5 秒内的退出请求只认真实返回键（实测误退出在 1.8~3.4 秒）
+    private boolean explicitExit;   // 用户/业务明确发起的退出：不再走「刚进页面误退出」保护
     private History mHistory;
     private CastMedia mCast;
     private Episode mEpisode;
@@ -304,6 +311,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         saveHistory(true);
         mVod.reset();
         setIntent(intent);
+        ensureTitle();
         updateNavigationKey();
         checkControl();
         setOrient();
@@ -313,6 +321,10 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
+        // 详情区标题一进页面就用真片名刷上，不等详情接口。723 之后无资源也露出正文，
+        // 以前只在 renderDetail/renderFallbackName 才 setText，详情不回来 name 就空着，
+        // 备注「完结」顶到标题位，看着像剧名丢了。
+        ensureTitle();
         ViewCompat.setOnApplyWindowInsetsListener(mBinding.getRoot(), (v, insets) -> setStatusBar(insets));
         mKeyDown = CustomKeyDown.create(this, mBinding.player);
         mFrameParams = mBinding.video.getLayoutParams();
@@ -659,6 +671,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mBinding.swipeLayout.setRefreshing(false);
         mBinding.progressLayout.showContent();
         if (!item.getName().isEmpty()) mBinding.name.setText(item.getName()); // 片名永不许被空值刷掉（马先生 2026-11-04：偶尔片名变空白）；详情没给名字时 checkName 已拿页面现名补过
+        ensureTitle(); // 站点详情没给名字时，用 Intent/历史里的真片名兜住标题位
         switching = false;
         sourceExhausted = false;
         App.removeCallbacks(mR4);
@@ -679,6 +692,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         if (name.isEmpty() && pic.isEmpty()) return;
         if (!name.isEmpty()) mBinding.name.setText(name);
         if (!pic.isEmpty()) setArtwork();
+        ensureTitle();
         updateKeep();
     }
 
@@ -689,7 +703,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void renderFallbackName(String name) {
-        mBinding.name.setText(name);
+        if (!TextUtils.isEmpty(name)) mBinding.name.setText(name); // 空值不许刷掉已有剧名
+        ensureTitle();
     }
 
     @Override
@@ -745,6 +760,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     public void renderHistory(History history) {
         mHistory = history;
+        ensureTitle(); // Intent 没带片名时，拿观看记录里的真名兜住标题位
         mBinding.control.action.opening.setText(history.getOpening() <= 0 ? getString(R.string.play_op) : Util.timeMs(history.getOpening()));
         mBinding.control.action.ending.setText(history.getEnding() <= 0 ? getString(R.string.play_ed) : Util.timeMs(history.getEnding()));
         player().setSpeed(SpeedSetting.getPlayback());
@@ -796,6 +812,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     @Override
     protected void onResume() {
         super.onResume();
+        pageReadyAt = SystemClock.elapsedRealtime();
         if (service() != null) setControlTitle(player().getMetadata());
     }
 
@@ -832,6 +849,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         DebugLog.d("Vod", "这一批源全空");
         switching = false;
         sourceExhausted = true;
+        revealDetailPage(""); // 源全空也别留着转圈：露出播放页，下面手动搜索照样能用
         App.removeCallbacks(mR4);
         // 同一批搜索是逐站点返回的，空站点会反复走到这。
         // 延迟 4 秒再提示：期间任何站点出了结果都会把它取消，只有真全部失败才弹。
@@ -878,7 +896,20 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     @Override
     public void finishVod() {
+        DebugLog.d("Vod", "finishVod：请求退出播放页");
+        explicitExit = true;
         finish();
+    }
+
+    /** 所有关闭播放页的路径最终都走 finish()，在这里统一拦「刚进页面误退出」并打调用栈 */
+    @Override
+    public void finish() {
+        if (explicitExit) { super.finish(); return; } // 用户/业务明确要退：5 秒保护不许挡
+        if (guardEarlyExit("finish")) {
+            DebugLog.d("Vod", "finish() 被拦截，调用栈：" + android.util.Log.getStackTraceString(new Throwable()));
+            return;
+        }
+        super.finish();
     }
 
     private void checkId() {
@@ -890,16 +921,51 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private void showEmpty() {
+        // 马先生 2026-11-08：收藏/历史因点播源变了取不到详情时，页面只剩背景和一个转圈。
+        // 现在不管有没有匹配到资源，都把播放页正文露出来——播放器播不了，下面还能手动搜索/换源。
+        revealDetailPage(switching ? "" : getString(R.string.error_detail));
+    }
+
+    /** 详情/资源没匹配上：露出播放页，画面上留一行提示，但不盖住手动搜索和换源 */
+    private void revealDetailPage(String tip) {
         mBinding.swipeLayout.setEnabled(true);
-        // 还在自动换源：开头那行提示已经给过了，别切全屏空态盖住画面和手动换源
-        if (switching) return;
-        showError(getString(R.string.error_detail));
-        mBinding.progressLayout.showEmpty();
+        mBinding.progressLayout.showContent();
+        ensureTitle(); // 723 强制露出正文：这一刻最容易只剩备注，先把片名补上
+        if (tip == null || tip.isEmpty()) hideProgress();
+        else showError(tip); // 内含 hideProgress：转圈收掉
     }
 
     /** 换源有结果／要开播了：把可能残留的全屏空态收掉 */
     private void dismissEmpty() {
         if (mBinding.progressLayout.isEmpty()) mBinding.progressLayout.showContent();
+    }
+
+    /**
+     * 详情区标题位始终有片名（马先生 2026-11-09）：
+     * 只在控件为空时补一次 Intent 里的真片名（没有再退到历史记录），绝不读控件文字去覆盖，
+     * 也绝不动 getVodName()——控件本来就空时它本来就回退到 getName()，补上的正是同一个值，
+     * 「按片名搜其他源」的取词结果完全一致。
+     */
+    private void ensureTitle() {
+        if (!TextUtils.isEmpty(mBinding.name.getText())) return;
+        String name = getName();
+        if (TextUtils.isEmpty(name) && mHistory != null) name = mHistory.getVodName();
+        if (TextUtils.isEmpty(name)) return;
+        mBinding.name.setText(name);
+        DebugLog.d("Vod", "详情区标题补回片名：" + name);
+    }
+
+    /**
+     * 刚进播放页的误退出保护（马先生 2026-11-09）：
+     * 触摸/确认事件的 UP 穿透到新页面被当成一次返回时会 finish()，表现为「刚出来就闪退」。
+     * 3 秒窗口内只放行真实 KEYCODE_BACK；窗口外一律放行。
+     */
+    private boolean guardEarlyExit(String from) {
+        long since = SystemClock.elapsedRealtime() - pageReadyAt;
+        if (pageReadyAt == 0 || since >= ENTER_GUARD_MS) return false;
+        if (SystemClock.elapsedRealtime() - lastBackDownAt < 800) return false;
+        DebugLog.d("Vod", "忽略刚进页面就来的一次退出请求（来源=" + from + "，距进页 " + since + "ms，无真实返回键），保留播放页");
+        return true;
     }
 
     private void setText(Vod item) {
@@ -1119,7 +1185,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void onBack() {
         if (isFullscreen()) exitFullscreen();
-        else finish();
+        else super.finish(); // 控制栏返回按钮是用户主动点，绕过「刚进页面误退出」保护
     }
 
     /** 长按 = 菜单：广播（开关）、广播选项。默认的短按走 DLNA 推送 */
@@ -1560,6 +1626,20 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
         @Override
         public void onStop() {
+            onStop("action");
+        }
+
+        @Override
+        public void onStop(String source) {
+            // 媒体会话建立、媒体按钮会话切换时系统会补发一次 COMMAND_STOP（source=session），
+            // 那不是用户要退出。以前无条件 finish()，播放页刚起来就被关掉，看起来像闪退。
+            // 刚进页面这段窗口内的会话 STOP 一律忽略；用户主动停止（action）照常退出。
+            if ("session".equals(source) && SystemClock.elapsedRealtime() - pageReadyAt < STOP_GUARD_MS) {
+                DebugLog.d("Vod", "忽略媒体会话刚建立时补发的 STOP（来源=" + source + "），保留播放页");
+                return;
+            }
+            DebugLog.d("Vod", "停止播放，来源=" + source + "，退出播放页");
+            explicitExit = true; // 网页/遥控器点的停止是用户主动，别让 5 秒保护吞掉
             finish();
         }
 
@@ -1944,7 +2024,15 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_DOWN) lastBackDownAt = SystemClock.elapsedRealtime();
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
     protected void onBackInvoked() {
+        explicitExit = true; // 系统派发的返回就是用户主动（含手势返回），5 秒保护不许挡
+        DebugLog.d("Vod", "onBackInvoked：真实返回，走正常退出流程");
         if (isVisible(mBinding.control.getRoot())) {
             hideControl();
         } else if (isFullscreen() && !isLock()) {

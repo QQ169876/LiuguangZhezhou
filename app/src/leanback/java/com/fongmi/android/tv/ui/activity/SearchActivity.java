@@ -341,8 +341,9 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     /** 点了智能搜索给出的某一候选：拿准片名走正常的全站搜索 */
     @Override
     public void onItemClick(TmdbWork item) {
-        setKeyword(item.getName());
-        onSearch();
+        // 跟 onDirect 一样直接进结果页：这个名字已经定下来了，别再走一遍 onSearch 又去问模型
+        setKeyword(item.getSearchName());
+        go(item.getSearchName());
     }
 
     @Override

@@ -42,7 +42,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:ellipsize="end"
-            android:singleLine="true"
+            android:maxLines="3"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="12sp"
             tools:text="2027 · 评分 8.1 · 电影" />

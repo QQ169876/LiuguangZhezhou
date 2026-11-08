@@ -248,7 +248,11 @@ public class SearchFragment extends BaseFragment implements MenuProvider, WordAd
     private void showAi(String question) {
         AiSearchDialog.create(question, text -> {
             setKeyword(text);
-            search();
+            App.post(() -> mRecordAdapter.add(text), 250);
+            Util.hideKeyboard(mBinding.keyword);
+            // 名字已经定下来了，直接搜：别再走 search() 里的 smart()，否则带「第2季」的
+            // 站内真名又会被当成大白话再问一次模型（白等、白烧一次调用）
+            collect(text);
         }).show(requireActivity());
     }
 

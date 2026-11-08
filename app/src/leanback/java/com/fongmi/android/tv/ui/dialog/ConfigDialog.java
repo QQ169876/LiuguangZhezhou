@@ -164,7 +164,7 @@ public class ConfigDialog extends BaseAlertDialog {
         if (type == 1 || !Shortcut.isCode(raw)) return;
         FragmentActivity activity = requireActivity();
         if (activity == null || activity.isFinishing()) return;
-        ((ConfigListener) activity).setConfig(Config.find(Shortcut.DIRECT, 1));
+        ((ConfigListener) activity).setConfig(Config.find(Shortcut.live(raw), 1)); // 直播源按远程配置走，不再写死 DIRECT
     }
 
     private void onNegative(View view) {

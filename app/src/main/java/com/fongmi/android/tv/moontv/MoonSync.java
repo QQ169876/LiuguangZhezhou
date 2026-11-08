@@ -371,7 +371,12 @@ public class MoonSync {
     /* ---------- 拉取：站点 -> 本机 ---------- */
 
     /**
-     * 拉取 = 「仅使用站点数据」：本机观看记录与收藏先清空，再用站点数据整体覆盖。
+     * 拉取 = 以账号为基准整份换过来（马先生 2026-11-08 定）：
+     * 本机观看记录、播放进度、收藏（**所有点播源底下的**）先全部清空，再把站点数据整份填进来，最后刷新。
+     * 以前只清当前 cid、还按保存时间/片名跟本机旧记录比、又让本机墓碑拦掉站点条目 ——
+     * 结果就是「站点数据拉下来合并到本机数据上」，换账号之后两套数据混在一起。
+     * 选了「以云端为准」，站点上有什么就是什么：不再按 old/时间合并，墓碑也不在这条路上生效。
+     * 影视站这条通道只管观看记录、收藏和大模型配置，本机设置数据不在它的同步范围里，不动。
      */
     private static String doPullOverwrite() throws Exception {
         check();
@@ -379,19 +384,20 @@ public class MoonSync {
         int cid = VodConfig.getCid();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
-        MoonTomb.pullIn(favorites); // 先把别台设备删过的墓碑合进来：本机还留着的对应条目跟着删，下面的拉取才不会又拉回来
         DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         JSONObject ownerRecord = ownerRecord();
         JSONObject ownerFavorite = ownerFavorite();
-        pruneTomb();
-        dropAlive();
-        applyTomb(records, favorites);
-        Map<String, long[]> skip = skipSnapshot();
-        AppDatabase.get().getHistoryDao().delete(cid);
-        AppDatabase.get().getKeepDao().delete(cid); // 只清当前源的收藏，别的源不受影响
-        int[] gotRecords = pullRecords(records, cid, skip, ownerRecord);
-        int[] gotFavorites = pullFavorites(favorites, cid, ownerFavorite);
-        DebugLog.d("Sync", "影视站本地库写入完成");
+        // 整库清空：所有点播源下的观看记录、播放进度一条不留
+        AppDatabase.get().getHistoryDao().delete();
+        AppDatabase.get().getTrackDao().delete();
+        // 收藏只清点播（type=0）：直播收藏不参与影视站同步，站点那份里根本没有它，清了就真丢了
+        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+            if (item.getType() != 0) continue;
+            AppDatabase.get().getKeepDao().delete(item.getCid(), item.getKey());
+        }
+        int[] gotRecords = pullRecords(records, cid, null, ownerRecord, true);
+        int[] gotFavorites = pullFavorites(favorites, cid, ownerFavorite, true);
+        DebugLog.d("Sync", "影视站本地库写入完成（整库替换：新增记录 " + gotRecords[0] + " 收藏 " + gotFavorites[0] + "）");
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 拉下来的都归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         saveBase(records, favorites, null, null);
@@ -404,25 +410,29 @@ public class MoonSync {
     }
 
     /**
-     * 上传 = 「用本机数据覆盖站点」：站点上有、本机没有的条目会在站点侧删掉。
+     * 上传 = 以账号为基准，用本机这份**整份覆盖**站点（马先生 2026-11-08 定）：
+     * 站点上所有记录/收藏都参与比对，本机没有的一律在站点侧删掉，再把本机全量推上去；
+     * 不再只删「本机当前源碰过的那些站点」而把云端剩下的留着合并。
+     * 保留键（大模型配置 liuguang+ai、删除墓碑 liuguang+tomb）不是收藏，不参与删除。
+     * 「以本机为准」就别再拿站点墓碑改本机数据了，所以这条路上不 pullIn / applyTomb。
+     * 影视站这条通道只管观看记录、收藏和大模型配置，本机设置数据不在它的同步范围里。
      */
     private static String doPushOverwrite() throws Exception {
         check();
         Owner.touch();
         JSONObject records = MoonApi.playRecords();
         JSONObject favorites = MoonApi.favorites();
-        MoonTomb.pullIn(favorites); // 先合墓碑：站点上已被别的设备删掉的，本机跟着删，上传才不会把它推回去
         DebugLog.d("Sync", "影视站数据已下载 rec=" + records.length() + " fav=" + favorites.length());
         dedupe();
-        dropAlive();
-        applyTomb(records, favorites);
+        Set<String> remoteRecords = syncKeys(records);
+        Set<String> remoteFavorites = syncKeys(favorites);
         Set<String> localRecords = localRecordKeys();
         Set<String> localFavorites = localKeepKeys();
-        Set<String> delRecords = diff(scopedRemote(records, localRecords), localRecords);
-        Set<String> delFavorites = diff(scopedRemote(favorites, localFavorites), localFavorites);
+        Set<String> delRecords = diff(remoteRecords, localRecords);
+        Set<String> delFavorites = diff(remoteFavorites, localFavorites);
         // 站点上要删的这批同样先过确认：数量偏大说明对端可能压根不是同一个库（见 SyncGuard）
         int delCount = 0;
-        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), records.length() + favorites.length())) {
+        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), remoteRecords.size() + remoteFavorites.size())) {
             delCount = deleteRemote(delRecords, false) + deleteRemote(delFavorites, true);
         } else {
             DebugLog.d("Sync", "站点批量删除待确认：观看记录 " + delRecords.size() + " 条、收藏 " + delFavorites.size() + " 条");
@@ -470,14 +480,19 @@ public class MoonSync {
     }
 
     private static int[] pullRecords(JSONObject remote, int cid, JSONObject owner) {
-        return pullRecords(remote, cid, null, owner);
+        return pullRecords(remote, cid, null, owner, false);
+    }
+
+    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip, JSONObject owner) {
+        return pullRecords(remote, cid, skip, owner, false);
     }
 
     /**
      * @param skip 本机清空历史前抄下来的片头片尾（source+id → {片头, 片尾}），站点没存时用本机这份兜底
      * @param owner 拉下来的条目登记归属：这条数据是从当前账号来的
+     * @param fresh true = 整库替换（以云端为准）：库已清空，纯插入，不按时间/片名跟旧记录合并，墓碑也不拦
      */
-    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip, JSONObject owner) {
+    private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip, JSONObject owner, boolean fresh) {
         int add = 0, update = 0;
         List<Entry> items = sort(remote);
         JSONObject tomb = loadTomb(tombRecord());
@@ -486,7 +501,7 @@ public class MoonSync {
             JSONObject item = entry.item;
             String name = entry.source.concat("+").concat(entry.id);
             // 记录跟着账号走：不管站点在不在当前点播源里都拉，换源之后照样看得到
-            if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            if (!fresh && dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来（整库替换时不看墓碑）
             mark(owner, name);
             long saveTime = visible(entry.time(), i);
             long duration = Math.round(item.optDouble("total_time", 0) * 1000);
@@ -515,6 +530,11 @@ public class MoonSync {
             target.setCreateTime(saveTime);
             if (opening > 0) target.setOpening(opening);
             if (ending > 0) target.setEnding(ending);
+            if (fresh) { // 整库替换：站点这条直接落库，不跟本机旧记录比时间、也不按片名找旧记录改写
+                AppDatabase.get().getHistoryDao().insertOrUpdate(target);
+                ++add;
+                continue;
+            }
             History old = AppDatabase.get().getHistoryDao().find(cid, target.getKey());
             if (old == null) old = latest(AppDatabase.get().getHistoryDao().findByName(cid, target.getVodName()));
             if (old == null) {
@@ -540,6 +560,13 @@ public class MoonSync {
     }
 
     private static int[] pullFavorites(JSONObject remote, int cid, JSONObject owner) {
+        return pullFavorites(remote, cid, owner, false);
+    }
+
+    /**
+     * @param fresh true = 整库替换（以云端为准）：库已清空，纯插入，墓碑不拦站点数据
+     */
+    private static int[] pullFavorites(JSONObject remote, int cid, JSONObject owner, boolean fresh) {
         int add = 0, update = 0;
         JSONObject tomb = loadTomb(tombFavorite());
         for (Entry entry : sort(remote)) {
@@ -550,13 +577,14 @@ public class MoonSync {
                 MoonAi.apply(entry.item);
                 continue;
             }
-            // 保留键：这条不是收藏，是塞在收藏通道里的删除墓碑（MoonTomb），取出来就走
+            // 保留键：这条不是收藏，是塞在收藏通道里的删除墓碑（MoonTomb）。
+            // 整库替换以站点为准，墓碑不在这条路上生效；只有双向合并时才合进来防「删了又被拉回」。
             if (MoonTomb.is(entry.source, entry.id)) {
-                MoonTomb.apply(entry.item);
+                if (!fresh) MoonTomb.apply(entry.item);
                 continue;
             }
             // 收藏跟着账号走：站点在不在当前源里都落本地，换源之后照样看得到
-            if (dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
+            if (!fresh && dead(tomb, name, entry.time())) continue; // 本机删过且站点没更新，别再拉回来
             mark(owner, name);
             long saveTime = entry.time();
             Keep target = new Keep();
@@ -567,6 +595,11 @@ public class MoonSync {
             target.setCreateTime(saveTime);
             target.setType(0);
             String key = target.getKey().concat(AppDatabase.SYMBOL) + cid;
+            if (fresh) { // 整库替换：站点这条直接落库，不跟本机旧收藏比时间、也不按片名找旧记录改写
+                target.save(cid);
+                ++add;
+                continue;
+            }
             Keep old = AppDatabase.get().getKeepDao().find(cid, key);
             if (old == null) old = latest(AppDatabase.get().getKeepDao().findByVodName(target.getVodName()));
             if (old == null) {
@@ -1022,20 +1055,15 @@ public class MoonSync {
     }
 
     /**
-     * 站点上「属于本次同步范围」的条目：只看本机当前源里出现过的那些站点 key。
-     * 别的源 / 别的账号留下的记录不在这个范围里，同步不碰它们，免得被当成多余数据删掉。
+     * 站点这份里真正参与「整份覆盖」的条目键：所有站点 key 都算，不再只看本机碰过的那些
+     * （以前 scopedRemote 只留本机当前源出现过的站点，云端剩下的原样留着 = 合并）。
+     * 大模型配置（liuguang+ai）、删除墓碑（liuguang+tomb）是借通道放的配置，不是收藏，不能当多余数据删掉。
      */
-    private static Set<String> scopedRemote(JSONObject remote, Set<String> local) {
-        Set<String> sources = new HashSet<>();
-        for (String key : local) {
-            String[] pair = split(key);
-            if (pair != null) sources.add(pair[0]);
-        }
+    private static Set<String> syncKeys(JSONObject remote) {
         Set<String> set = new HashSet<>();
         for (String key : keysOf(remote)) {
-            String[] pair = split(key);
-            if (pair == null) continue;
-            if (!sources.contains(pair[0])) continue;
+            if (MoonAi.is(key) || MoonTomb.KEY.equals(key)) continue;
+            if (split(key) == null) continue;
             set.add(key);
         }
         return set;

@@ -11,7 +11,9 @@ import com.fongmi.android.tv.setting.AiSetting;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -224,7 +226,8 @@ public class AiSearchRunner {
                 actor(plan, view);
                 break;
             case AiSearch.Plan.SIMILAR:
-                view.onSummary(plan.summary);
+                // 列表上方那行改成「这批片子的共同点」；模型没给就退回原来那句理解摘要
+                view.onSummary(plan.reason.isEmpty() ? plan.summary : plan.reason);
                 similar(plan, true, question, view);
                 break;
             case AiSearch.Plan.DISCOVER:
@@ -248,40 +251,59 @@ public class AiSearchRunner {
     }
 
     /**
-     * 「类似《X》这种」：
-     * ① 站里有没有这部参照作品 → 有就按它的分类直取同类（这一类条条能播）；
-     * ② 模型提名的片名逐个回站里验货，站里搜不到的不上屏；
-     * ③ 题材词垫在最后，好歹还能拿去站里撞一撞。
-     * 前两步一条都没有 = 这一问的结果很差，顺手把缓存清掉，别让它占一天。
+     * 「类似《X》这种」2026-11-08 改：以大模型给的「剧名 + 推荐理由」为主结果。
+     * 以前是拿参照作品所在分类直取 12 条（分类页前 12 部，跟题材八竿子打不着），
+     * 再把模型提名的片名逐个验货、站里搜不到就丢掉——用户看到的是一堆不相干的片名加几个题材词，
+     * 一句「为什么推这部」都没有。现在：
+     *   ① 模型提名的每部作品都上屏，剧名下面直接铺它写的推荐理由；
+     *   ② 站内验货只用来补真名、海报、「站里有片源」标记和排序，不再决定上不上屏
+     *      （点剧名本来就是想拿这个名字去搜，站里有没有让他点了自己看）；
+     *   ③ 提名太少（不到 3 部）才用站内同类和题材词垫底，且同类最多 6 条。
      */
     private static void similar(AiSearch.Plan plan, boolean withTags, String question, View view) {
+        String ref = plan.similar.isEmpty() ? "" : plan.similar.get(0);
+        List<TmdbWork> picks = recommend(plan, ref);
         List<TmdbWork> tags = new ArrayList<>();
         if (withTags) for (String tag : plan.tags) {
             tags.add(new TmdbWork(tag, "", ResUtil.getString(R.string.ai_pick_tag), TmdbWork.TYPE_WORD));
         }
-        String ref = plan.similar.isEmpty() ? "" : plan.similar.get(0);
-        if (ref.isEmpty() && plan.titles.isEmpty() && tags.isEmpty()) {
+        if (picks.isEmpty() && tags.isEmpty() && ref.isEmpty()) {
             view.onTip(R.string.ai_search_empty);
             return;
         }
-        List<String> titles = new ArrayList<>(plan.titles);
         Task.execute(() -> {
-            List<TmdbWork> same = sameType(ref);
-            List<TmdbWork> verified = verified(titles, ref);
-            List<TmdbWork> rows = new ArrayList<>(same);
-            rows.addAll(verified);
-            rows.addAll(tags);
-            if (same.isEmpty() && verified.isEmpty() && question != null && !question.isEmpty()) {
-                AiSearch.drop(question); // 一条能播的都没验出来：这个答案别再记着了
-            }
-            App.post(() -> {
-                if (rows.isEmpty()) {
-                    view.onTip(R.string.ai_search_empty);
-                } else {
-                    view.onRows(rows);
+            List<TmdbWork> rows = verifyPicks(picks);
+            Set<String> names = new HashSet<>();
+            for (TmdbWork row : rows) names.add(AiSiteProbe.plain(row.getName()));
+            if (picks.size() < 3) {
+                int room = 6;
+                for (TmdbWork work : sameType(ref)) {
+                    if (room-- <= 0) break;
+                    if (!names.add(AiSiteProbe.plain(work.getName()))) continue;
+                    rows.add(work);
                 }
+            }
+            if (rows.isEmpty()) rows.addAll(tags);
+            if (rows.isEmpty() && question != null && !question.isEmpty()) AiSearch.drop(question);
+            App.post(() -> {
+                if (rows.isEmpty()) view.onTip(R.string.ai_search_empty);
+                else view.onRows(rows);
             });
         });
+    }
+
+    /** 模型给什么就列什么：片名 + 它那句推荐理由；参照作品本身和空名剔掉 */
+    private static List<TmdbWork> recommend(AiSearch.Plan plan, String ref) {
+        List<TmdbWork> rows = new ArrayList<>();
+        String refName = AiSiteProbe.plain(ref);
+        for (int i = 0; i < plan.titles.size(); i++) {
+            String title = plan.titles.get(i);
+            if (title.trim().isEmpty()) continue;
+            if (!refName.isEmpty() && AiSiteProbe.plain(title).equals(refName)) continue;
+            String note = i < plan.notes.size() ? plan.notes.get(i) : "";
+            rows.add(new TmdbWork(title, "", "", TmdbWork.TYPE_WORD).withNote(note));
+        }
+        return rows;
     }
 
     /**
@@ -337,18 +359,22 @@ public class AiSearchRunner {
         return "";
     }
 
-    /** 模型提名的片名逐个回站里验货：站里有才上屏，站里那条的真名和海报一并带回来 */
-    private static List<TmdbWork> verified(List<String> titles, String ref) {
-        List<TmdbWork> rows = new ArrayList<>();
-        if (titles.isEmpty()) return rows;
-        Vod[] found = new Vod[titles.size()]; // 各验各的，下标不冲突，数组就够了
-        CountDownLatch latch = new CountDownLatch(titles.size());
-        for (int i = 0; i < titles.size(); i++) {
+    /**
+     * 逐部回站里验货：验到的换上站内真名和海报，标一句「站里有片源」，排到前面；
+     * 验不到的原样留着（片名 + 理由照样能点、能搜），只是排后面。
+     * 显示名始终用模型给的那个，点下去搜的名字才用站内真名，命中率更高。
+     */
+    private static List<TmdbWork> verifyPicks(List<TmdbWork> picks) {
+        List<TmdbWork> found = new ArrayList<>();
+        List<TmdbWork> rest = new ArrayList<>();
+        if (picks.isEmpty()) return found;
+        Vod[] hits = new Vod[picks.size()];
+        CountDownLatch latch = new CountDownLatch(picks.size());
+        for (int i = 0; i < picks.size(); i++) {
             int index = i;
-            String title = titles.get(i);
             Task.submitLarge(() -> {
                 try {
-                    found[index] = AiSiteProbe.best(title);
+                    hits[index] = AiSiteProbe.best(picks.get(index).getName());
                 } catch (Throwable ignored) {
                 } finally {
                     latch.countDown();
@@ -360,15 +386,19 @@ public class AiSearchRunner {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        String refName = AiSiteProbe.plain(ref);
-        for (Vod vod : found) {
-            if (vod == null) continue; // 站里没有：这条提名丢掉
-            if (vod.getName() == null || vod.getName().trim().isEmpty()) continue;
-            if (!refName.isEmpty() && AiSiteProbe.plain(vod.getName()).equals(refName)) continue; // 就是参照作品本身
-            TmdbWork work = new TmdbWork(vod.getName().trim(), "", ResUtil.getString(R.string.ai_pick_verified), TmdbWork.TYPE_WORD);
-            rows.add(work.withPic(vod.getPic()));
+        for (int i = 0; i < picks.size(); i++) {
+            TmdbWork item = picks.get(i);
+            Vod vod = hits[i];
+            if (vod == null || vod.getName() == null || vod.getName().trim().isEmpty()) {
+                rest.add(item);
+                continue;
+            }
+            TmdbWork work = new TmdbWork(item.getName(), "", ResUtil.getString(R.string.ai_pick_verified), TmdbWork.TYPE_WORD)
+                    .withNote(item.getNote()).withPic(vod.getPic()).withSearchName(vod.getName().trim());
+            found.add(work);
         }
-        return rows;
+        found.addAll(rest);
+        return found;
     }
 
     /** 「今年新出的/评分高的」：TMDB 按条件筛真实片单；筛不出来再退到模型提名的片名（照样先验货） */

@@ -1,17 +1,28 @@
 package com.fongmi.android.tv.webdav;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.github.catvod.net.interceptor.FailoverInterceptor;
+
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Authenticator;
 import okhttp3.Credentials;
 import okhttp3.MediaType;
-import com.github.catvod.net.interceptor.FailoverInterceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.Route;
 
 public class WebDav {
 
@@ -24,6 +35,7 @@ public class WebDav {
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
             .addInterceptor(new FailoverInterceptor()) // 域名连不上时静默换备用域名再试一次
+            .authenticator(new DigestAuth()) // 自建 WebDAV 常用 Digest 验证，收到 401 挑战后自动补上
             .build();
 
     private static String auth() {
@@ -32,7 +44,7 @@ public class WebDav {
 
     private static Request.Builder prepare(String url) {
         Request.Builder builder = new Request.Builder().url(url).addHeader("Accept", "*/*");
-        // 有些 WebDAV 根本不要账号密码，这时候空账号也要带上 Authorization 反而会被拒，干脆不带
+        // 「无需登录」或压根没填账号密码的服务，空账号也带 Authorization 反而会被拒，干脆不带
         if (WebDavSetting.hasAuth()) builder.addHeader("Authorization", auth());
         return builder;
     }
@@ -113,11 +125,28 @@ public class WebDav {
     }
 
     public static boolean test() {
+        return testError() == null;
+    }
+
+    /**
+     * 连接测试：成功返回 null，失败返回能看懂的原因。
+     * 自建 WebDAV（CloudDrive2 等）配置错的时候，光弹一句「连接失败」根本没法排查，
+     * 到底是账号密码不对、地址不对还是目录建不出来，得分清楚。
+     */
+    @Nullable
+    public static String testError() {
         try {
             createFolders();
-            return true;
+            return null;
         } catch (Exception e) {
-            return false;
+            Throwable cause = root(e);
+            String msg = cause.getMessage();
+            if (msg == null || msg.isEmpty()) msg = cause.getClass().getSimpleName();
+            if (msg.startsWith("Auth failed")) return "账号或密码不对（" + msg.replaceAll("[^0-9]", "") + "）";
+            if (msg.startsWith("Address is empty")) return "服务地址为空";
+            if (msg.startsWith("PROPFIND failed")) return "目录检查失败：" + msg;
+            if (msg.startsWith("MKCOL failed")) return "创建目录失败：" + msg;
+            return msg;
         }
     }
 
@@ -125,5 +154,143 @@ public class WebDav {
         Throwable cause = e;
         while (cause.getCause() != null && cause.getMessage() == null) cause = cause.getCause();
         return cause;
+    }
+
+    /**
+     * Digest 验证：坚果云这类用「邮箱 + 应用密钥」的 Basic 就能过，
+     * 但不少自建 WebDAV（CloudDrive2、群晖、Apache mod_auth_digest）只认 Digest。
+     * 逻辑很克制：只有服务器明确回了 401 + WWW-Authenticate: Digest 才补一次，
+     * 补过还失败就不再试，绝不会在密码错的时候反复重连。
+     */
+    private static final class DigestAuth implements Authenticator {
+
+        @Nullable
+        @Override
+        public Request authenticate(@Nullable Route route, @NonNull Response response) {
+            if (response.code() != 401) return null;
+            if (!WebDavSetting.hasAuth()) return null;
+            // 已经带 Digest 试过一次还没过，别再重试；密码错也不要循环
+            String sent = response.request().header("Authorization");
+            if (sent != null && sent.regionMatches(true, 0, "Digest ", 0, 7)) return null;
+            if (count(response) > 2) return null;
+            String challenge = challenge(response.headers().values("WWW-Authenticate"));
+            if (challenge == null) return null;
+            String header = digest(response.request(), parse(challenge));
+            if (header == null) return null;
+            return response.request().newBuilder().header("Authorization", header).build();
+        }
+
+        /** 顺着 401 链数一下重试了几次，最多只补一次 Digest */
+        private int count(Response response) {
+            int result = 1;
+            while ((response = response.priorResponse()) != null) result++;
+            return result;
+        }
+
+        /** 一组 WWW-Authenticate 里挑出 Digest 那条（Basic 和 Digest 可能同时出现） */
+        @Nullable
+        private String challenge(List<String> values) {
+            for (String value : values) {
+                if (value == null) continue;
+                String text = value.trim();
+                if (text.regionMatches(true, 0, "Digest ", 0, 7)) return text.substring(7).trim();
+            }
+            return null;
+        }
+
+        /** 拆 challenge 参数：qop="auth,auth-int" 这种带引号的逗号不能当分隔符 */
+        private Map<String, String> parse(String body) {
+            Map<String, String> map = new HashMap<>();
+            List<String> parts = new ArrayList<>();
+            StringBuilder part = new StringBuilder();
+            boolean quote = false;
+            for (char c : body.toCharArray()) {
+                if (c == '"') quote = !quote;
+                if (c == ',' && !quote) {
+                    parts.add(part.toString());
+                    part.setLength(0);
+                } else {
+                    part.append(c);
+                }
+            }
+            parts.add(part.toString());
+            for (String item : parts) {
+                int eq = item.indexOf('=');
+                if (eq < 0) continue;
+                String key = item.substring(0, eq).trim().toLowerCase(Locale.US);
+                String value = item.substring(eq + 1).trim();
+                if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) value = value.substring(1, value.length() - 1);
+                map.put(key, value);
+            }
+            return map;
+        }
+
+        @Nullable
+        private String digest(Request request, Map<String, String> map) {
+            String realm = map.get("realm");
+            String nonce = map.get("nonce");
+            if (realm == null || nonce == null) return null;
+            String algorithm = map.containsKey("algorithm") ? map.get("algorithm") : "MD5";
+            boolean sess = algorithm.toLowerCase(Locale.US).endsWith("-sess");
+            String algo = algorithm.toLowerCase(Locale.US).startsWith("sha-256") ? "SHA-256" : "MD5";
+            String qop = "";
+            String offered = map.get("qop");
+            if (offered != null) {
+                for (String item : offered.split(",")) {
+                    if ("auth".equalsIgnoreCase(item.trim())) {
+                        qop = "auth";
+                        break;
+                    }
+                }
+                // 只给 auth-int 的服务不支持（那要把请求体一起算进去），别硬算一个错的
+                if (qop.isEmpty()) return null;
+            }
+            String user = WebDavSetting.getUser();
+            String pass = WebDavSetting.getPass();
+            String cnonce = hash(algo, System.nanoTime() + ":" + Thread.currentThread().getId() + ":" + request.url());
+            if (cnonce == null) return null;
+            String ha1 = hash(algo, user + ":" + realm + ":" + pass);
+            if (ha1 == null) return null;
+            if (sess) ha1 = hash(algo, ha1 + ":" + nonce + ":" + cnonce);
+            String uri = request.url().encodedPath();
+            if (request.url().encodedQuery() != null) uri = uri + "?" + request.url().encodedQuery();
+            String ha2 = hash(algo, request.method() + ":" + uri);
+            if (ha1 == null || ha2 == null) return null;
+            String nc = "00000001";
+            String answer;
+            if (qop.isEmpty()) answer = hash(algo, ha1 + ":" + nonce + ":" + ha2);
+            else answer = hash(algo, ha1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + ha2);
+            if (answer == null) return null;
+            StringBuilder header = new StringBuilder("Digest ");
+            header.append("username=\"").append(escape(user)).append("\"");
+            header.append(", realm=\"").append(escape(realm)).append("\"");
+            header.append(", nonce=\"").append(escape(nonce)).append("\"");
+            header.append(", uri=\"").append(escape(uri)).append("\"");
+            header.append(", response=\"").append(answer).append("\"");
+            header.append(", algorithm=").append(sess ? algo + "-sess" : algo);
+            if (!qop.isEmpty()) header.append(", qop=").append(qop).append(", nc=").append(nc).append(", cnonce=\"").append(cnonce).append("\"");
+            if (map.containsKey("opaque")) header.append(", opaque=\"").append(escape(map.get("opaque"))).append("\"");
+            return header.toString();
+        }
+
+        private String escape(String value) {
+            return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+        }
+
+        @Nullable
+        private String hash(String algo, String text) {
+            try {
+                MessageDigest digest = MessageDigest.getInstance(algo);
+                byte[] bytes = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+                StringBuilder result = new StringBuilder(bytes.length * 2);
+                for (byte b : bytes) {
+                    result.append(Character.forDigit((b >> 4) & 0xf, 16));
+                    result.append(Character.forDigit(b & 0xf, 16));
+                }
+                return result.toString();
+            } catch (Exception e) {
+                return null;
+            }
+        }
     }
 }

@@ -357,25 +357,6 @@ public class SyncManager {
         }
     }
 
-    /** 本机里属于别的同步标识的那些，同步时不碰（既不上传也不删除） */
-    private static List<History> foreignHistory(JSONObject book) {
-        List<History> result = new ArrayList<>();
-        for (History item : AppDatabase.get().getHistoryDao().findAll()) {
-            String name = Owner.key(item.getKey(), Owner.RECORD);
-            if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
-        }
-        return result;
-    }
-
-    private static List<Keep> foreignKeep(JSONObject book) {
-        List<Keep> result = new ArrayList<>();
-        for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
-            String name = Owner.key(item.getKey(), Owner.FAVORITE);
-            if (name != null && Owner.foreign(Owner.DAV, book, name)) result.add(item);
-        }
-        return result;
-    }
-
     private static String doSync() throws Exception {
         check();
         Owner.touch();
@@ -404,12 +385,17 @@ public class SyncManager {
         Owner.touch();
         JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
-        // 手动「上传」= 明确要求把本机这份搬到当前同步标识下，所以不看原来归属，搬完统一改归属
+        // 手动「上传」= 以账号为基准，把本机这份**整份覆盖**到云端（马先生 2026-11-08）：
+        // participate(true) 不看原来归属，本机参与同步的设置/记录/收藏全带；save() 是整份写文件，
+        // 云端原来那套（含别的账号留下的）会被整个换掉，不是把本机数据并进去。
+        // 三项源照旧不上传（participate 里 withoutSources），本机正在用的源不受影响。
         WebDavData localData = participate(true, bookRecord, bookFavorite);
-        // 本机覆盖云端：本机少的那些会从云端抹掉，批量时同样先问一句（同 guardLocalLoss）
+        // 唯一例外：本机比上次基线少了大批记录时先问一句「是不是你删的」，防误删把云端清空；
+        // 用户确认（或数量不大）就照常整份覆盖，这条不是合并，是安全确认。
         guardLocalLoss(localData, localData, readBaseline(), bookRecord, bookFavorite, () -> push(null));
         absorb(localData, bookRecord, bookFavorite);
         localData.setTime(System.currentTimeMillis());
+        DebugLog.d("Sync", "本机覆盖云端：整份写回，设置 " + localData.getPrefers().size() + " 项、记录 " + localData.getData().getHistory().size() + " 条、收藏 " + localData.getData().getKeep().size() + " 条");
         save(WebDavSetting.getFileUrl(), localData);
         Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
         Owner.save(Owner.DAV, Owner.FAVORITE, bookFavorite);
@@ -417,8 +403,10 @@ public class SyncManager {
     }
 
     /**
-     * 用云端覆盖本机：只覆盖属于当前同步标识的那部分，
-     * 别的同步标识留在本机的数据原样放着（删了它们等于替别人清库，也会在下一次被推回去）。
+     * 用云端覆盖本机 = 以账号为基准整份换一套（马先生 2026-11-08 定）：
+     * 先把本机参与同步的设置、观看记录、收藏、关注的演员、Cookie 等**全部清空**，
+     * 再把云端那份整份填进来，最后刷新。本机（含别的账号留下）的旧数据一条都不留着合并。
+     * 点播源 / 直播源 / 壁纸三项及其偏好键永远不参与：清空前后都原样留在本机。
      */
     private static String doPull() throws Exception {
         check();
@@ -431,21 +419,14 @@ public class SyncManager {
         remoteData.getData().setKeep(accountKeep(remoteData.getData().getKeep()));
         JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
-        WebDavData mine = participate(false, bookRecord, bookFavorite);
-        // 云端覆盖本机 = 换到那份账号的数据，整体替换本来就该这样，不问（SyncGuard 只管「本机删→云端删」）
-        deleteHistoryKeep(mine.getData().getHistory(), mine.getData().getKeep());
-        List<Config> sources = localSources(); // 源地址不参与覆盖：先抄下来，insertAll 跳过源，完事原样放回去
-        replaceLocal();
-        List<History> leftHistory = keepKeys(foreignHistory(bookRecord), remoteData.getData().getHistory());
-        List<Keep> leftKeep = keepKeys(foreignKeep(bookFavorite), remoteData.getData().getKeep());
-        insertAll(remoteData);
+        List<Config> sources = localSources(); // 三项源：全清之前抄下来，完事原样放回
+        clearLocal();                          // 以账号为基准：本机可同步数据整库清空
+        insertAll(remoteData);                 // 云端这份整份填进来
         AppDatabase.get().getConfigDao().insertOrUpdate(sources);
+        Star.merge(remoteData.getData().getStar()); // 演员表已清空，这里就是整份替换（不是并集）
         // 云端这份里可能还留着旧版本上传的源数据，写回去时顺手清掉，别让它在云端反复来回传
         remoteData.getData().setConfig(Backup.withoutSources(remoteData.getData().getConfig()));
         remoteData.setPrefers(remoteData.getPrefers());
-        Star.merge(remoteData.getData().getStar()); // 关注的演员：按「最后操作为准」合并，多设备共用一份
-        if (!leftHistory.isEmpty()) AppDatabase.get().getHistoryDao().insertOrUpdate(leftHistory);
-        if (!leftKeep.isEmpty()) AppDatabase.get().getKeepDao().insertOrUpdate(leftKeep);
         // ConfigCache 不从云端落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
         absorb(remoteData, bookRecord, bookFavorite); // 云端这份就是当前同步标识的
         Owner.save(Owner.DAV, Owner.RECORD, bookRecord);
@@ -455,6 +436,7 @@ public class SyncManager {
         save(url, remoteData);
         notifyDataChanged();
         reload();
+        DebugLog.d("Sync", "云端覆盖本机：整库清空再填入，设置 " + remoteData.getPrefers().size() + " 项、记录 " + remoteData.getData().getHistory().size() + " 条、收藏 " + remoteData.getData().getKeep().size() + " 条");
         return getSummary(remoteData);
     }
 
@@ -466,30 +448,32 @@ public class SyncManager {
     }
 
     /**
-     * 重建配置 / 站点 / 直播。
-     * 观看记录和收藏不在这儿删 —— 它们走 dropHistoryKeep，批量删除要先问过用户。
+     * 以账号为基准整库清空（doPull 专用）：本机所有「参与同步」的数据一条不留，等云端那份填进来。
+     * 不碰的只有三类：
+     *   ① 点播源 / 直播源 / 壁纸三项（Config type 0/1/2 由调用方抄出来放回，config_ 偏好键跳过）；
+     *   ② 本机独有键（webdav_/moontv_/owner_/debug_ 等：同步账号、凭据、调试标记，清了就把自己清掉了）；
+     *   ③ 点播源 jar 的登录态（SpiderVault，跟本机当前源绑定，属于①的范畴）。
+     * 以前这里只删 config/site/live，记录只删「当前账号」那部分、别的账号的原样留着，
+     * 演员用 merge、设置键只增不删 —— 结果拉完还是两套房混在一起（马先生 2026-11-08）。
      */
-    private static void replaceLocal() {
-        AppDatabase.get().getConfigDao().delete();
-        AppDatabase.get().getSiteDao().delete();
-        AppDatabase.get().getLiveDao().delete();
+    private static void clearLocal() {
+        AppDatabase db = AppDatabase.get();
+        db.getHistoryDao().delete();
+        db.getTrackDao().delete();
+        db.getKeepDao().delete();
+        db.getSiteDao().delete();
+        db.getLiveDao().delete();
+        db.getConfigDao().delete();
+        Star.deleteAll();
+        // 偏好项：本机独有的和三项源的留下，其余全抹掉（不抹就是「云端没这项、本机还留着」的合并）
+        for (String key : new ArrayList<>(Prefers.getPrefers().getAll().keySet())) {
+            if (WebDavData.localOnly(key) || WebDavData.isSourcePref(key)) continue;
+            Prefers.remove(key);
+        }
+        if (WebDavSetting.isCookie()) CookieStore.clear();
         ConfigCache.clear(0);
         ConfigCache.clear(1);
-    }
-
-    /** 留下来不删的那些里，云端也有的就算了（主键相同会互盖），只保留云端没有的 */
-    private static <T> List<T> keepKeys(List<T> left, List<?> remote) {
-        Set<String> remoteKeys = new HashSet<>();
-        for (Object item : remote) {
-            if (item instanceof History) remoteKeys.add(baseKey(((History) item).getKey()));
-            else if (item instanceof Keep) remoteKeys.add(baseKey(((Keep) item).getKey()));
-        }
-        List<T> result = new ArrayList<>();
-        for (T item : left) {
-            String key = item instanceof History ? ((History) item).getKey() : baseKey(((Keep) item).getKey());
-            if (!remoteKeys.contains(key)) result.add(item);
-        }
-        return result;
+        DebugLog.d("Sync", "云端覆盖本机：本机可同步数据已整库清空（三项源与本机独有键保留）");
     }
 
     private static void check() throws Exception {
@@ -1053,8 +1037,9 @@ public class SyncManager {
             Prefers.put(entry.getKey(), entry.getValue());
         }
         CookieStore.apply(backup.getCookies());
-        SpiderVault.apply(backup.getSpider());
-        // ConfigCache 不从云端落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
+        // 点播源 jar 的登录态（SpiderVault）不从云端落盘：它跟本机当前点播源绑定，属于「三项不参与同步」，
+        // 整份替换时也保持本机原样，不推来不收回（马先生 2026-11-08）
+        // ConfigCache 同理：源缓存跟本机当前源绑定，别台的缓存对本机无用
     }
 
     private static <T> Set<String> keys(List<T> items, Function<T, String> key) {
@@ -1084,6 +1069,7 @@ public class SyncManager {
         App.post(() -> {
             RefreshEvent.history();
             RefreshEvent.keep();
+            RefreshEvent.star(); // 整份替换时演员表也被清过重建，关注页跟着重查
         });
     }
 

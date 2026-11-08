@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.style.ClickableSpan;
 import android.view.KeyEvent;
@@ -139,6 +140,11 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     private Runnable mR4;
     private Runnable mR5;
     private boolean switching;
+    private long pageReadyAt;  // 本次 onResume 时刻：用来识别媒体会话刚建立时补发的 STOP
+    private long lastBackDownAt; // 最近一次真实返回键按下的时刻
+    private static final long STOP_GUARD_MS = 5000; // 进页面 5 秒内的会话 STOP 视为系统补发
+    private static final long ENTER_GUARD_MS = 5000; // 进页面 5 秒内的退出请求只认真实返回键（实测误退出在 1.8~3.4 秒）
+    private boolean explicitExit;   // 用户/业务明确发起的退出：不再走「刚进页面误退出」保护
     private History mHistory;
     private CastMedia mCast;
     private Episode mEpisode;
@@ -283,6 +289,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         saveHistory(true);
         mVod.reset();
         setIntent(intent);
+        ensureTitle();
         updateNavigationKey();
         checkId();
     }
@@ -290,6 +297,10 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     protected void initView(Bundle savedInstanceState) {
         super.initView(savedInstanceState);
+        // 详情区标题一进页面就用真片名刷上，不等详情接口。723 之后无资源也露出正文，
+        // 以前只在 renderDetail/renderFallbackName 才 setText，详情不回来 name 就空着，
+        // 备注「完结」顶到标题位，看着像剧名丢了。
+        ensureTitle();
         mFrameParams = mBinding.video.getLayoutParams();
         mClock = Clock.create(); // 角落时间的内容由「屏幕显示」决定，交给 PlaybackActivity 统一写
         setScreenOsd(mBinding.widget.osd); // 画面上所有能开关的信息都在这一层里
@@ -311,6 +322,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     protected void onResume() {
         super.onResume();
+        pageReadyAt = SystemClock.elapsedRealtime();
         updateScreenOsd();
     }
 
@@ -684,6 +696,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         mHistory = history;
         mBinding.progressLayout.showContent();
         if (!item.getName().isEmpty()) mBinding.name.setText(item.getName()); // 片名永不许被空值刷掉（马先生 2026-11-04：偶尔片名变空白）；详情没给名字时 checkName 已拿页面现名补过
+        ensureTitle(); // 站点详情没给名字时，用 Intent/历史里的真片名兜住标题位
         mBinding.video.requestFocus();
         switching = false;
         App.removeCallbacks(mR4);
@@ -705,6 +718,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
         if (!name.isEmpty()) mBinding.name.setText(name);
         if (!name.isEmpty()) setPartAdapter();
         if (!pic.isEmpty()) setArtwork();
+        ensureTitle();
         updateKeep();
     }
 
@@ -715,7 +729,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void renderFallbackName(String name) {
-        mBinding.name.setText(name);
+        if (!TextUtils.isEmpty(name)) mBinding.name.setText(name); // 空值不许刷掉已有剧名
+        ensureTitle();
     }
 
     @Override
@@ -771,6 +786,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     @Override
     public void renderHistory(History history) {
         mHistory = history;
+        ensureTitle(); // Intent 没带片名时，拿观看记录里的真名兜住标题位
         mBinding.control.action.opening.setText(history.getOpening() <= 0 ? getString(R.string.play_op) : Util.timeMs(history.getOpening()));
         mBinding.control.action.ending.setText(history.getEnding() <= 0 ? getString(R.string.play_ed) : Util.timeMs(history.getEnding()));
         player().setSpeed(SpeedSetting.getPlayback());
@@ -834,6 +850,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     public void onSourceExhausted() {
         DebugLog.d("Vod", "这一批源全空");
         switching = false;
+        revealDetailPage(""); // 源全空也别留着转圈：露出播放页，下面手动搜索照样能用
         App.removeCallbacks(mR4);
         // 同一批搜索是逐站点返回的，空站点会反复走到这。
         // 延迟 4 秒再提示：期间任何站点出了结果（onSearchResult/onDetailFallbackScheduled/startPlayback）
@@ -881,7 +898,24 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public void finishVod() {
+        DebugLog.d("Vod", "finishVod：请求退出播放页");
+        explicitExit = true;
         finish();
+    }
+
+    /**
+     * 所有关闭播放页的路径最终都走 finish()（马先生 2026-11-09）：
+     * 之前只拦 onBackInvoked/finishVod，实测退出来自别的入口（日志里一条拦截都没有）。
+     * 在这里统一做「刚进页面误退出」保护，并把调用栈打出来，一次定位是谁要关页面。
+     */
+    @Override
+    public void finish() {
+        if (explicitExit) { super.finish(); return; } // 用户/业务明确要退：5 秒保护不许挡
+        if (guardEarlyExit("finish")) {
+            DebugLog.d("Vod", "finish() 被拦截，调用栈：" + android.util.Log.getStackTraceString(new Throwable()));
+            return;
+        }
+        super.finish();
     }
 
     private void checkCast() {
@@ -894,15 +928,53 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
     }
 
     private void showEmpty() {
-        // 还在自动换源：开头那行提示已经给过了。这里一旦切全屏空态，
-        // 内容和播放器会一起被盖住——换源成功后声音出来了页面还挡在前面，手动换源也没法点。
-        if (switching) return;
-        mBinding.progressLayout.showEmpty();
+        // 马先生 2026-11-08：收藏/历史因点播源变了取不到详情时，页面只剩背景和一个转圈。
+        // 现在不管有没有匹配到资源，都把播放页正文露出来——播放器播不了，下面还能手动搜索/换源。
+        revealDetailPage(switching ? "" : getString(R.string.error_detail));
+    }
+
+    /** 详情/资源没匹配上：露出播放页，画面上留一行提示，但不盖住手动搜索和换源 */
+    private void revealDetailPage(String tip) {
+        mBinding.progressLayout.showContent();
+        ensureTitle(); // 723 强制露出正文：这一刻最容易只剩备注，先把片名补上
+        if (tip == null || tip.isEmpty()) hideProgress();
+        else showError(tip); // 内含 hideProgress：转圈收掉
     }
 
     /** 换源有结果／要开播了：把可能残留的全屏空态收掉 */
     private void dismissEmpty() {
         if (mBinding.progressLayout.isEmpty()) mBinding.progressLayout.showContent();
+    }
+
+    /**
+     * 详情区标题位始终有片名（马先生 2026-11-09）。
+     * 723 之后无资源也露出正文，详情没回来时 name 从没人刷过，备注「完结/HD中字」就顶到标题位，
+     * 看着像剧名丢了。这里只在控件为空时补一次 Intent 里的真片名（没有再退到历史记录），
+     * 绝不读控件文字去覆盖，也绝不动 getVodName()——播放页「按片名搜其他源」的取词链保持原样：
+     * 控件本来就空时 getVodName() 也是回退到 getName()，补上的正是同一个值，取词结果完全一致。
+     */
+    private void ensureTitle() {
+        if (!TextUtils.isEmpty(mBinding.name.getText())) return;
+        String name = getName();
+        if (TextUtils.isEmpty(name) && mHistory != null) name = mHistory.getVodName();
+        if (TextUtils.isEmpty(name)) return;
+        mBinding.name.setText(name);
+        DebugLog.d("Vod", "详情区标题补回片名：" + name);
+    }
+
+    /**
+     * 刚进播放页的误退出保护（马先生 2026-11-09）：
+     * 从历史/外部点进来时，触摸或遥控器确认事件的 UP 会穿透到新页面被当成一次返回，
+     * onBackInvoked() 直接 finish()，表现为「播放页刚出来就闪退」，系统日志是
+     * Duplicate finish request + remove task，设备日志没有 crash 也没有 escape。
+     * 3 秒窗口内只放行真实 KEYCODE_BACK 的 ACTION_DOWN；窗口外一律放行，不影响正常使用。
+     */
+    private boolean guardEarlyExit(String from) {
+        long since = SystemClock.elapsedRealtime() - pageReadyAt;
+        if (pageReadyAt == 0 || since >= ENTER_GUARD_MS) return false;
+        if (SystemClock.elapsedRealtime() - lastBackDownAt < 800) return false; // 用户真按了返回键
+        DebugLog.d("Vod", "忽略刚进页面就来的一次退出请求（来源=" + from + "，距进页 " + since + "ms，无真实返回键），保留播放页");
+        return true;
     }
 
     private void setText(Vod item) {
@@ -1398,6 +1470,20 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
         @Override
         public void onStop() {
+            onStop("action");
+        }
+
+        @Override
+        public void onStop(String source) {
+            // 媒体会话建立、媒体按钮会话切换时系统会补发一次 COMMAND_STOP（source=session），
+            // 那不是用户要退出。以前无条件 finish()，播放页刚起来就被关掉，看起来像闪退。
+            // 刚进页面这段窗口内的会话 STOP 一律忽略；用户主动停止（action）照常退出。
+            if ("session".equals(source) && SystemClock.elapsedRealtime() - pageReadyAt < STOP_GUARD_MS) {
+                DebugLog.d("Vod", "忽略媒体会话刚建立时补发的 STOP（来源=" + source + "），保留播放页");
+                return;
+            }
+            DebugLog.d("Vod", "停止播放，来源=" + source + "，退出播放页");
+            explicitExit = true; // 网页/遥控器点的停止是用户主动，别让 5 秒保护吞掉
             finish();
         }
 
@@ -1561,6 +1647,7 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_DOWN) lastBackDownAt = SystemClock.elapsedRealtime();
         if (isFullscreen() && KeyUtil.isMenuKey(event)) onToggle();
         if (isVisible(mBinding.control.getRoot())) setR1Callback();
         if (isVisible(mBinding.control.getRoot())) mFocus2 = getCurrentFocus();
@@ -1654,6 +1741,8 @@ public class VideoActivity extends PlaybackActivity implements VodPlaybackHost, 
 
     @Override
     protected void onBackInvoked() {
+        explicitExit = true; // 系统派发的返回就是用户主动（含手势返回），5 秒保护不许挡
+        DebugLog.d("Vod", "onBackInvoked：真实返回，走正常退出流程");
         if (isVisible(mBinding.control.getRoot())) {
             hideControl();
         } else if (isVisible(mBinding.widget.center)) {

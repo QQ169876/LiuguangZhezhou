@@ -116,6 +116,6 @@ public final class AiSearchDialog extends BaseBottomSheetDialog implements AiPic
 
     @Override
     public void onItemClick(TmdbWork item) {
-        pick(item.getName());
+        pick(item.getSearchName()); // 站内验到真名的用真名搜，没验到就用显示出来的剧名
     }
 }

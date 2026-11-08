@@ -86,7 +86,11 @@ public class AiJudge {
             + "3. 不要给当前这部本身、它的续作或前作，也不要给「已看过」名单里的；"
             + "4. 最像的排在最前，最多 5 个。判不出同形态同地区的宁可少给，绝不编造不存在的剧。"
             + "另外给 2~3 个这类剧的题材词（每个 2~8 字，用来在站里搜同类，题材词也要是同一形态的）。"
-            + "只输出 JSON，不要任何解释：{\"titles\":[\"剧名1\",\"剧名2\"],\"tags\":[\"题材词\"]}";
+            + "先用 reason 写一句判断依据（这部是什么形态题材、据此该接哪类剧），40字以内，想清楚再给名字；"
+            + "再用 picks 逐项给剧名，每项 title 填剧名、note 填一句「为什么接这部」（20字以内），片名和理由放在同一个对象里，别串位。"
+            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就都留空数组。"
+            + "只输出 JSON，不要任何解释：{\"reason\":\"判断依据\",\"picks\":[{\"title\":\"剧名\",\"note\":\"为什么接这部\"}],"
+            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"]}";
 
     /**
      * 系列剧「下一季」：站源写法五花八门（第3季 / 第三季 / 剧名3 / S3 / 之某某），
@@ -97,7 +101,11 @@ public class AiJudge {
             + "有可能就把这个系列**下一季**在影视站里可能出现的名称写法都列出来，每种都要："
             + "中文季号（第X季）、阿拉伯季号（第X季）、连写（剧名X）、英文（Season X / SX）、以及续作另起的名字（如「XX之YYY」）。"
             + "只要下一季，最多 4 个；确定没有下一季就返回空数组。"
-            + "只输出 JSON，不要任何解释：{\"titles\":[\"名称1\"],\"tags\":[],\"has_next\":true}";
+            + "先用 reason 写一句判断依据：这个系列官方一共到第几季、有没有完结、刚看完的是第几季、下一季该是第几季——先把季号想清楚再给写法，别凭印象乱报；"
+            + "再用 picks 逐项给写法，每项 title 填一种名称写法、note 说明这是哪种写法（中文季号/阿拉伯季号/连写/英文/另起的名字），别串位。"
+            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就都留空数组。"
+            + "只输出 JSON，不要任何解释：{\"reason\":\"判断依据\",\"picks\":[{\"title\":\"名称写法\",\"note\":\"哪种写法\"}],"
+            + "\"titles\":[],\"notes\":[],\"tags\":[],\"has_next\":true}";
 
     /**
      * 「这个系列/这部已经没有下一季了，那接着看什么」：拿口味去问（马先生 2026-11-01）。
@@ -114,7 +122,11 @@ public class AiJudge {
             + "4. 不要给电影、综艺、解说、混剪、盘点、番外，也不要给当前这部、它的前作续作和「已看过」名单里的；"
             + "5. 最像的排在最前，最多 6 个。宁可少给，绝不编造不存在的剧。"
             + "另外给 2~3 个这类剧的题材词（每个 2~8 字，用来在站里搜同类，也要是同一形态的）。"
-            + "只输出 JSON，不要任何解释：{\"titles\":[\"剧名1\",\"剧名2\"],\"tags\":[\"题材词\"],\"has_next\":false}";
+            + "先用 reason 写一句判断依据（照上面的口味，为什么挑这几部），40字以内；"
+            + "再用 picks 逐项给剧名，每项 title 填剧名、note 填一句「为什么符合这个口味」（20字以内），片名和理由放在同一个对象里，别串位。"
+            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就都留空数组。"
+            + "只输出 JSON，不要任何解释：{\"reason\":\"判断依据\",\"picks\":[{\"title\":\"剧名\",\"note\":\"为什么符合口味\"}],"
+            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":false}";
 
     private static final ConcurrentHashMap<String, Boolean> MEMO = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> ASKING = new ConcurrentHashMap<>();
@@ -155,6 +167,10 @@ public class AiJudge {
 
         public final List<String> titles;
         public final List<String> tags;
+        /** 与 titles 一一对应的「为什么接这部」，片名和理由绑在一起，绝不串位（参照智能搜索） */
+        public final List<String> notes;
+        /** 模型先给的一句判断依据：是什么形态/系列、有没有下一季、据此该接什么（写进日志，便于排查接得准不准） */
+        public final String reason;
         /** 模型说的「这个系列还有没有下一季」：TRUE 有、FALSE 已经完结、null 没说清。普通（非系列）推荐永远是 null */
         public final Boolean hasNext;
 
@@ -163,9 +179,16 @@ public class AiJudge {
         }
 
         Next(List<String> titles, List<String> tags, Boolean hasNext) {
+            this(titles, tags, hasNext, null, "");
+        }
+
+        Next(List<String> titles, List<String> tags, Boolean hasNext, List<String> notes, String reason) {
             this.titles = titles == null ? new ArrayList<>() : titles;
             this.tags = tags == null ? new ArrayList<>() : tags;
             this.hasNext = hasNext;
+            this.notes = notes == null ? new ArrayList<>() : new ArrayList<>(notes);
+            while (this.notes.size() < this.titles.size()) this.notes.add(""); // 老缓存/老格式没有理由：补齐空串，别让下标对不上
+            this.reason = reason == null ? "" : reason;
         }
 
         boolean isEmpty() {
@@ -451,7 +474,8 @@ public class AiJudge {
      */
     private static String nextKey(String name, String kindWord, String region, int mode) {
         String head = mode == MODE_MOVIE ? "movie·" : mode == MODE_SERIAL ? "serial·" : mode == MODE_TASTE ? "taste·" : "";
-        return head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
+        // 2026-11-08 提示词升级成「reason + 结构化 picks」，旧缓存里平铺 titles 的旧答案不再复用，让新判断真正生效
+        return "v2·" + head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
     }
 
     /**
@@ -465,7 +489,11 @@ public class AiJudge {
             + "确定没有了（或已经是最后一部）就 has_next 给 false。"
             + "第二步：不管有没有续作，再推荐 2~3 部**同类型**的真实作品（题材、地区要跟它接近，站里能搜到的），"
             + "给全称，不要给解说、混剪、盘点、番外、综艺，也不要给已经看过的。"
-            + "只输出 JSON，不要任何解释：{\"titles\":[\"名称1\"],\"tags\":[\"题材词\"],\"has_next\":true}";
+            + "先用 reason 写一句判断依据：这部是什么、是不是系列、有没有续作、凭什么这么判断，40字以内；"
+            + "再用 picks 逐项给名称，每项 title 填续作写法或同类作品全称、note 说明「为什么是它」（20字以内），别串位。"
+            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就都留空数组。"
+            + "只输出 JSON，不要任何解释：{\"reason\":\"判断依据\",\"picks\":[{\"title\":\"名称\",\"note\":\"为什么是它\"}],"
+            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":true}";
 
     /** 问「下一部」的四种口径：同类剧 / 系列下一季 / 单部作品（续作优先，没有再给同类）/ 没下一季了按口味推荐 */
     private static final int MODE_GENERIC = 0;
@@ -618,16 +646,30 @@ public class AiJudge {
         try {
             JSONObject json = new JSONObject(text.substring(start, end + 1));
             List<String> titles = new ArrayList<>();
-            JSONArray array = json.optJSONArray("titles");
-            if (array != null) {
-                for (int i = 0; i < array.length() && titles.size() < 6; i++) {
-                    String title = array.optString(i, "").trim();
-                    title = title.replaceAll("^[\\d]+[.、)．]\\s*", "").trim(); // 模型偶尔带个「1. 」序号
-                    title = title.replaceAll("[《》]", "").trim(); // 模型爱给书名号
-                    if (title.length() < 2 || title.length() > 24) continue;
-                    if (title.equals(current)) continue; // 就是当前这部，等于没说
-                    if (AiGuard.blocked(title)) continue;
-                    if (!titles.contains(title)) titles.add(title);
+            List<String> notes = new ArrayList<>();
+            // 结构化 picks 优先：片名和「为什么接这部」绑在同一个对象里，绝不串位（参照智能搜索）
+            JSONArray picks = json.optJSONArray("picks");
+            if (picks != null) {
+                for (int i = 0; i < picks.length() && titles.size() < 6; i++) {
+                    JSONObject item = picks.optJSONObject(i);
+                    if (item == null) continue;
+                    String title = cleanNextTitle(item.optString("title", ""), current, titles);
+                    if (title.isEmpty()) continue;
+                    titles.add(title);
+                    notes.add(cleanText(item.optString("note", ""), 60));
+                }
+            }
+            if (titles.isEmpty()) {
+                // 老格式 / 老缓存：titles + notes 两个数组按位配对，被闸掉的那条留空串占位，保证下标一一对齐
+                JSONArray array = json.optJSONArray("titles");
+                JSONArray noteArray = json.optJSONArray("notes");
+                if (array != null) {
+                    for (int i = 0; i < array.length() && titles.size() < 6; i++) {
+                        String title = cleanNextTitle(array.optString(i, ""), current, titles);
+                        if (title.isEmpty()) continue;
+                        titles.add(title);
+                        notes.add(noteArray == null ? "" : cleanText(noteArray.optString(i, ""), 60));
+                    }
                 }
             }
             List<String> tags = new ArrayList<>();
@@ -642,11 +684,34 @@ public class AiJudge {
             }
             // 「有没有下一季」是后面要不要接着搜的判断依据，模型没写就当没说（null），不当「没有」
             Boolean hasNext = json.has("has_next") && !json.isNull("has_next") ? json.optBoolean("has_next") : null;
-            DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags + " 还有下一季=" + hasNext);
-            return new Next(titles, tags, hasNext);
+            String reason = cleanText(json.optString("reason", ""), 60);
+            DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags + " 还有下一季=" + hasNext + " 依据=" + reason);
+            return new Next(titles, tags, hasNext, notes, reason);
         } catch (Exception e) {
             return null; // 模型说了听不懂的话，就当没问
         }
+    }
+
+    /** 剧名洗一遍：去序号、去书名号、限长、排除当前这部和重复的、剔占位，再过脱敏闸；不合格返回空串 */
+    private static String cleanNextTitle(String raw, String current, List<String> picked) {
+        String title = raw == null ? "" : raw.trim();
+        title = title.replaceAll("^[\\d]+[.、)．]\\s*", "").trim(); // 模型偶尔带个「1. 」序号
+        title = title.replaceAll("[《》]", "").trim(); // 模型爱给书名号
+        if (title.length() < 2 || title.length() > 24) return "";
+        if (current != null && title.equals(current)) return ""; // 就是当前这部，等于没说
+        if (picked.contains(title)) return "";
+        // 提示词模板里的示例占位，模型偶尔会照抄
+        if (title.equals("剧名") || title.equals("名称") || title.equals("名称写法") || title.equals("作品名")
+                || title.contains("兼容字段") || title.contains("用了picks")) return "";
+        return AiGuard.blocked(title) ? "" : title;
+    }
+
+    /** 理由/判断依据：压空白、限长、过脱敏闸，模型文本一个字都不许漏过这道闸 */
+    private static String cleanText(String text, int max) {
+        if (text == null) return "";
+        String value = text.trim().replaceAll("\\s+", " ");
+        if (value.length() > max) value = value.substring(0, max);
+        return AiGuard.blocked(value) ? "" : value;
     }
 
     /**
@@ -663,6 +728,7 @@ public class AiJudge {
                 if (name == null || name.trim().isEmpty()) continue;
                 name = name.trim();
                 if (name.equals(exclude) || names.contains(name)) continue;
+                if (AiGuard.blocked(name)) continue; // 铁律：命中关键字的历史片名一律不发大模型
                 names.add(name);
                 if (names.size() >= 30) break;
             }
@@ -685,13 +751,20 @@ public class AiJudge {
                         JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
                         for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
                             String key = it.next();
+                            if (!key.startsWith("v2·")) continue; // 提示词升级前的旧答案不复用，也别让它在缓存文件里常驻
                             JSONObject item = json.optJSONObject(key);
                             if (item == null) continue;
                             List<String> titles = new ArrayList<>();
+                            List<String> notes = new ArrayList<>();
+                            // titles 会跳过敏感项，notes 必须在同一个循环里按原下标一起取，否则理由会串到别的片名下
                             JSONArray array = item.optJSONArray("titles");
+                            JSONArray noteArray = item.optJSONArray("notes");
                             if (array != null) for (int i = 0; i < array.length(); i++) {
                                 String title = array.optString(i, "");
-                                if (!title.isEmpty() && !AiGuard.blocked(title)) titles.add(title);
+                                if (title.isEmpty() || AiGuard.blocked(title)) continue;
+                                titles.add(title);
+                                String note = noteArray == null ? "" : noteArray.optString(i, "");
+                                notes.add(note.isEmpty() || AiGuard.blocked(note) ? "" : note);
                             }
                             List<String> tags = new ArrayList<>();
                             JSONArray tagArray = item.optJSONArray("tags");
@@ -699,8 +772,10 @@ public class AiJudge {
                                 String tag = tagArray.optString(i, "");
                                 if (!tag.isEmpty() && !AiGuard.blocked(tag)) tags.add(tag);
                             }
+                            String reason = item.optString("reason", "");
+                            if (AiGuard.blocked(reason)) reason = "";
                             Boolean hasNext = item.has("has_next") && !item.isNull("has_next") ? item.optBoolean("has_next") : null;
-                            NEXT.put(key, new Next(titles, tags, hasNext)); // 空的也放进去＝「问过没结果」
+                            NEXT.put(key, new Next(titles, tags, hasNext, notes, reason)); // 空的也放进去＝「问过没结果」
                         }
                     }
                 }
@@ -717,6 +792,8 @@ public class AiJudge {
                 JSONObject item = new JSONObject();
                 item.put("titles", new JSONArray(entry.getValue().titles));
                 item.put("tags", new JSONArray(entry.getValue().tags));
+                item.put("notes", new JSONArray(entry.getValue().notes));
+                item.put("reason", entry.getValue().reason);
                 if (entry.getValue().hasNext != null) item.put("has_next", entry.getValue().hasNext.booleanValue());
                 json.put(entry.getKey(), item);
             }

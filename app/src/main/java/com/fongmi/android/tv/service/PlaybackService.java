@@ -37,6 +37,7 @@ import com.fongmi.android.tv.event.ConfigEvent;
 import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Task;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
@@ -145,7 +146,7 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
         else if (ActionEvent.PAUSE.equals(action)) player.pause();
         else if (ActionEvent.PREV.equals(action)) dispatchPrev();
         else if (ActionEvent.NEXT.equals(action)) dispatchNext();
-        else if (ActionEvent.STOP.equals(action)) dispatchStop();
+        else if (ActionEvent.STOP.equals(action)) dispatchStop("action");
         else if (ActionEvent.AUDIO.equals(action)) dispatchAudio();
         else if (ActionEvent.REPEAT.equals(action)) dispatchRepeat();
         else if (ActionEvent.REPLAY.equals(action)) dispatchReplay();
@@ -341,8 +342,21 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
     }
 
     public void dispatchStop() {
-        if (player.getPlaybackState() == Player.STATE_IDLE) return;
-        if (hasNavigationCallback() && isNavigationOwner()) dispatch(NavigationCallback::onStop);
+        dispatchStop("action"); // 网页/遥控器的「停止」是用户主动，不能标成来路不明被当成会话补发吞掉
+    }
+
+    /**
+     * 停止命令按来源分开（马先生 2026-11-08）：
+     * action = 通知/广播里用户明确点的「停止」；session = media3 媒体会话的 COMMAND_STOP。
+     * 媒体会话建立、媒体按钮会话切换时系统会补发一次 session STOP，那不是用户要退出，
+     * 以前一视同仁地 finish() 会把刚打开的播放页直接关掉，看起来像闪退（Duplicate finish request）。
+     */
+    private void dispatchStop(String source) {
+        int state = player.getPlaybackState();
+        boolean owner = hasNavigationCallback() && isNavigationOwner();
+        DebugLog.d("Playback", "STOP 来源=" + source + " state=" + state + " owner=" + owner);
+        if (state == Player.STATE_IDLE) return;
+        if (owner) dispatch(cb -> cb.onStop(source));
         else {
             saveProgress();
             stopAndClear();
@@ -455,7 +469,7 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
 
             @Override
             public void stop() {
-                dispatchStop();
+                dispatchStop("session");
             }
 
             @NonNull
@@ -634,6 +648,11 @@ public class PlaybackService extends MediaLibraryService implements MediaLibrary
         }
 
         default void onStop() {
+        }
+
+        /** 带来源的停止：默认转给老方法，其它播放页行为不变 */
+        default void onStop(String source) {
+            onStop();
         }
 
         default void onReplay() {

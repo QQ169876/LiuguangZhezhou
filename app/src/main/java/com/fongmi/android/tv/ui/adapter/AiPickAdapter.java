@@ -81,8 +81,14 @@ public class AiPickAdapter extends RecyclerView.Adapter<AiPickAdapter.ViewHolder
         holder.binding.getRoot().setOnClickListener(v -> listener.onItemClick(item));
     }
 
-    /** 副标题：年份 · 评分 · 电影/剧集 · 演的角色，有啥拼啥；题材词行显示模型给的标签 */
+    /**
+     * 副标题：有大模型给的推荐理由就优先整句铺出来（这才是用户要看的「为什么推这部」）；
+     * 没有理由的行才退回年份 · 评分 · 类型 · 角色那套老拼法。
+     */
     private String sub(TmdbWork item) {
+        if (!item.getNote().isEmpty()) {
+            return item.getRole().isEmpty() ? item.getNote() : item.getNote() + " · " + item.getRole();
+        }
         List<String> parts = new ArrayList<>();
         if (!item.getYear().isEmpty()) parts.add(item.getYear());
         if (!item.getRating().isEmpty()) parts.add(ResUtil.getString(R.string.ai_pick_rating, item.getRating()));

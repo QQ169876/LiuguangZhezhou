@@ -22,6 +22,8 @@ public class TmdbWork {
     private String poster = "";  // TMDB 海报路径（/xxxx.jpg），没有就空串
     private String rating = "";  // 评分（"7.8"），没有就空串
     private String pic = "";     // 站点自己的海报（完整地址），有就优先用它：站里真有的片子，用站里的图最准
+    private String note = "";    // 智能搜索里大模型给的一句话推荐理由，显示在片名下面
+    private String searchName = ""; // 点下去实际拿去搜的名字：站内验到真名就用真名，没有就用显示的片名
 
     public TmdbWork(String name, String year, String role, int type) {
         this.name = name == null ? "" : name.trim();
@@ -43,6 +45,18 @@ public class TmdbWork {
         return this;
     }
 
+    /** 大模型写的推荐理由：直接铺在片名下面，让用户知道为什么推这部 */
+    public TmdbWork withNote(String text) {
+        this.note = text == null ? "" : text.trim();
+        return this;
+    }
+
+    /** 站内验到的真名：点下去用它搜，比模型写的名字命中率高 */
+    public TmdbWork withSearchName(String text) {
+        this.searchName = text == null ? "" : text.trim();
+        return this;
+    }
+
     /** 海报完整地址；image.tmdb.org 国内时通时断，加载不出来就显示占位图，名字年份照样能用 */
     public String getPoster() {
         if (!pic.isEmpty()) return pic;
@@ -55,6 +69,14 @@ public class TmdbWork {
 
     public String getName() {
         return name;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public String getSearchName() {
+        return searchName.isEmpty() ? name : searchName;
     }
 
     /** 年份（"2024"），没有就空串 */

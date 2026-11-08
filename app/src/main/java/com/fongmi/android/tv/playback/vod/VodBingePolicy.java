@@ -445,6 +445,10 @@ class VodBingePolicy {
             if (added.size() >= max) break;
             if (title.length() < 2 || keywords.contains(title)) continue;
             if (title.equals(host.getVodName()) || tried.contains(title)) continue;
+            // 已播放过的剧一律不接（马先生 2026-11-08）：模型偶尔会顺着「已看过」名单还是报出来，
+            // 光靠搜索结果那道 watched() 挡不够 —— 名字进了搜索词就白跑一趟，降级分支还可能绕过。
+            // 系列剧的「下一季写法」是「剧名 第X季」这类，跟历史里的完整名对不上，不会误挡。
+            if (watched(title)) continue;
             // 降级推荐时别再报「本系列的下一季」：本地那几种写法刚刚全都搜空了才走到这一步，
             // 再拿同样的名字搜一遍纯属浪费（日志 13:23 那轮又搜了一遍「持械入宋：第十一季」等四个）
             if ((similarFallback || genreFallback || tasteFallback) && laterPart(title)) continue;
@@ -458,7 +462,7 @@ class VodBingePolicy {
             if (tag.length() < 2 || keywords.contains(tag)) continue;
             keywords.add(tag);
         }
-        DebugLog.d("Binge", "大模型给下一部 " + added + "，题材词 " + next.tags);
+        DebugLog.d("Binge", "大模型给下一部 " + added + "，题材词 " + next.tags + "，依据=" + next.reason);
         return !added.isEmpty();
     }
 

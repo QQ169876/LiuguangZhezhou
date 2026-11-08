@@ -37,6 +37,6 @@ public class VodOvalHolder extends BaseVodHolder {
 
     @Override
     public void unbind() {
-        Glide.with(binding.image).clear(binding.image);
+        Glide.with(binding.image.getContext().getApplicationContext()).clear(binding.image); // 见 HistoryPresenter：用 application 级，避免 Activity 已销毁时崩
     }
 }

@@ -147,6 +147,9 @@ public class Push {
         body.add("user", WebDavSetting.getUser());
         body.add("pass", WebDavSetting.getPass());
         body.add("folder", WebDavSetting.getFolder());
+        // 登录方式也得一起推：对面是老包会忽略这个参数；是新包就能原样还原
+        // 「密钥 / 用户名密码 / 无需登录」，否则推过去还按密钥登录处理。
+        body.add("authMode", String.valueOf(WebDavSetting.getAuthMode()));
         post(host, "webdav", body.build());
         return true;
     }

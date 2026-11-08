@@ -24,7 +24,7 @@ function setting() {
 }
 
 function webdav() {
-    doAction('webdav', { url: $('#webdav_url').val(), user: $('#webdav_user').val(), pass: $('#webdav_pass').val(), folder: $('#webdav_folder').val() });
+    doAction('webdav', { url: $('#webdav_url').val(), authMode: $('#webdav_auth').val(), user: $('#webdav_user').val(), pass: $('#webdav_pass').val(), folder: $('#webdav_folder').val() });
     warnToast('已提交，請查看設備提示');
 }
 
@@ -316,6 +316,7 @@ function loadWebDav() {
             return;
         }
         $('#webdav_url').val(info.url || '');
+        $('#webdav_auth').val(info.authMode == null ? '0' : String(info.authMode));
         $('#webdav_user').val(info.user || '');
         $('#webdav_pass').val(info.pass || '');
         $('#webdav_folder').val(info.folder || '');

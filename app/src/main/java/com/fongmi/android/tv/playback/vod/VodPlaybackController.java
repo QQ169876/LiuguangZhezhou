@@ -474,13 +474,12 @@ public class VodPlaybackController {
      * 详情取空了（站点不在当前点播源里、源挂了、这条 id 失效…都走这儿）。
      * 马先生 2026-11-03：从别台设备同步过来的历史记录，站点 key 属于另一个点播源，
      * 当前源里压根没这个站点 —— 以前一取空就退出（提示「什么也找不到」），
-     * 现在是**按片名在当前源里搜一遍，搜到就接着播**（换站源自动续上），
-     * 只有推送直链（没法按名字搜）和连片名都没有的才退出。
+     * 现在是**按片名在当前源里搜一遍，搜到就接着播**（换站源自动续上）。
+     * 马先生 2026-11-08：不管有没有匹配到资源都要载入播放页（推送直链也不再直接退出），
+     * 播放器播不了时，页面下面还能手动搜索/换源。
      */
     private void detailEmpty(boolean shouldFinish) {
-        // 推送直链没有片名可搜，换不了源，只能退
-        if (SiteApi.PUSH.equals(host.getVodKey())) host.finishVod();
-        else showDetailFallback();
+        showDetailFallback();
     }
 
     private void showDetailFallback() {

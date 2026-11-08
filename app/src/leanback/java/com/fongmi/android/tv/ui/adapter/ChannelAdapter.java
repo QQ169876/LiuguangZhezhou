@@ -75,7 +75,7 @@ public class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.ViewHold
 
     @Override
     public void onViewRecycled(@NonNull ViewHolder holder) {
-        Glide.with(holder.binding.logo).clear(holder.binding.logo);
+        Glide.with(holder.binding.logo.getContext().getApplicationContext()).clear(holder.binding.logo); // 见 HistoryPresenter：用 application 级，避免 Activity 已销毁时崩
     }
 
     public interface OnClickListener {

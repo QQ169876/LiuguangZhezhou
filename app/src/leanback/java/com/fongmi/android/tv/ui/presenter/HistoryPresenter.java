@@ -84,7 +84,11 @@ public class HistoryPresenter extends Presenter {
     @Override
     public void onUnbindViewHolder(@NonNull Presenter.ViewHolder viewHolder) {
         ViewHolder holder = (ViewHolder) viewHolder;
-        Glide.with(holder.binding.image).clear(holder.binding.image);
+        // 马先生 2026-11-09：Activity 正在销毁时列表 unbind 也会走到这里，
+        // Glide.with(View/Activity) 会向上找 Activity，已 destroyed 就抛
+        // IllegalArgumentException: You cannot start a load for a destroyed activity，主线程直接崩。
+        // 换 application 级 RequestManager 清理：它不绑 Activity 生命周期，任何时序都安全。
+        Glide.with(holder.binding.image.getContext().getApplicationContext()).clear(holder.binding.image);
     }
 
     public static class ViewHolder extends Presenter.ViewHolder {

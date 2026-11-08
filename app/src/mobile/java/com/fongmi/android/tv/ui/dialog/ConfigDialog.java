@@ -157,7 +157,7 @@ public class ConfigDialog extends BaseAlertDialog {
         if (type == 1 || !Shortcut.isCode(raw)) return;
         Fragment parent = getParentFragment();
         if (!(parent instanceof ConfigListener) || !parent.isAdded()) return;
-        ((ConfigListener) parent).setConfig(Config.find(Shortcut.DIRECT, 1));
+        ((ConfigListener) parent).setConfig(Config.find(Shortcut.live(raw), 1)); // 直播源按远程配置走，不再写死 DIRECT
     }
 
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {

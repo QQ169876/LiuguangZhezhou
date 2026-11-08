@@ -48,7 +48,9 @@ public class AiSearch {
             + "只输出 JSON，不要任何解释：\n"
             + "{\"type\":\"keyword|actor|similar|discover|refused\",\"summary\":\"一句话复述理解到的需求，16字以内\","
             + "\"keywords\":[\"直接可搜的关键词\"],\"actor\":\"演员或导演姓名\",\"similar\":[\"用户提到的参照作品名\"],"
-            + "\"tags\":[\"同类题材关键词\"],\"titles\":[\"你提名的具体作品名\"],\"form\":\"漫剧|动态漫|动画|真人剧|电影|未知\","
+            + "\"tags\":[\"同类题材关键词\"],\"picks\":[{\"title\":\"片名\",\"note\":\"推荐理由\"}],"
+            + "\"titles\":[],\"notes\":[],"
+            + "\"reason\":\"一句话说明这批推荐的共同点，40字以内\",\"form\":\"漫剧|动态漫|动画|真人剧|电影|未知\","
             + "\"genre\":\"类型\","
             + "\"year_min\":0,\"min_rating\":0,\"media\":\"movie|tv|both\"}\n"
             + "规则：\n"
@@ -61,8 +63,14 @@ public class AiSearch {
             + "3. 「类似/像《X》这种」→ similar：similar 填参照作品名；"
             + "form 填它的形态（AI漫剧/动态漫/沙雕漫填「漫剧」，动漫/动画/卡通填「动画」，真人出演的剧填「真人剧」，"
             + "电影填「电影」，拿不准填「未知」）；tags 填 3~5 个同类题材词（形态词要保留）；"
-            + "titles 提名 3~6 部**跟它同一种形态、同一类题材**的作品名——参照是 AI 漫剧就只提 AI 漫剧，"
-            + "不许跨形态推真人剧，也不许把电影、综艺、解说混进来；没把握就给空数组，绝不编造不存在的作品。\n"
+            + "picks 是唯一的推荐清单，给 3~6 部**跟它同一种形态、同一类题材**的作品，每项一个对象："
+            + "title 填片名，note 填 20~45 字中文推荐理由，说清这部为什么符合用户那句话"
+            + "（形态、题材、爽点、跟参照作品的共同点），不要复述片名、不要写序号或「推荐」二字、不要编造具体剧情细节；"
+            + "参照是 AI 漫剧就只推 AI 漫剧，不许跨形态推真人剧，也不许把电影、综艺、解说混进来；"
+            + "没把握的作品不要列，绝不编造不存在的作品。**每部都必须写 note**，片名和理由放进同一个对象里。\n"
+            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就一律留空数组，不要重复填；"
+            + "只有完全给不出 picks 时才改用这两个数组，且必须一一对应、条数相同。\n"
+            + "reason 用一句话概括这批片子的共同特征（如「现代装备穿越古代、冷热兵器碰撞、群像争霸」），不要写成推荐语或客套话。\n"
             + "4. **没有点名具体作品**的泛筛选（「今年新出的」「评分高的」「推荐几部」）→ discover：genre 填类型"
             + "（动作/喜剧/爱情/科幻/奇幻/悬疑/恐怖/惊悚/动画/犯罪/战争/历史/家庭/古装/剧情等），"
             + "year_min 按今天日期折算（今年就填今年的年份，近几年就往前推），有评分要求就填 min_rating（比如「评分高」填 7），"
@@ -107,6 +115,10 @@ public class AiSearch {
         public List<String> similar = new ArrayList<>();
         public List<String> tags = new ArrayList<>();
         public List<String> titles = new ArrayList<>();
+        /** 与 titles 一一对应的推荐理由，片名下面那行小字（马先生 2026-11-08：要能看出为什么推这部） */
+        public List<String> notes = new ArrayList<>();
+        /** 这批推荐的共同点，显示在列表上方 */
+        public String reason = "";
         /** 作品的形态（漫剧/动画/真人剧/电影/未知），similar 用它卡提名，不许跨形态乱推 */
         public String form = "";
         public String genre = "";
@@ -256,7 +268,8 @@ public class AiSearch {
             plan.actor = clean(json.optString("actor"), 24);
             plan.similar = cleanList(json.optJSONArray("similar"), 4, 30);
             plan.tags = cleanList(json.optJSONArray("tags"), 5, 12);
-            plan.titles = cleanList(json.optJSONArray("titles"), 6, 30);
+            parsePicks(json, plan);
+            plan.reason = clean(json.optString("reason"), 60);
             plan.form = clean(json.optString("form"), 8);
             plan.genre = clean(json.optString("genre"), 8);
             int year = json.optInt("year_min", 0);
@@ -272,6 +285,44 @@ public class AiSearch {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 推荐清单优先读 picks 对象数组：片名和它那句理由绑在同一个对象里，绝不会串位。
+     * 模型偶尔按老格式给 titles + notes 两个数组（或读老缓存）时走兼容分支，
+     * 被闸掉的那条留空串占位，保证下标仍然一一对齐。
+     */
+    private static void parsePicks(JSONObject json, Plan plan) {
+        JSONArray picks = json.optJSONArray("picks");
+        if (picks != null) {
+            for (int i = 0; i < picks.length() && plan.titles.size() < 6; i++) {
+                JSONObject item = picks.optJSONObject(i);
+                if (item == null) continue;
+                String title = clean(item.optString("title"), 30);
+                if (!validTitle(title, plan.titles)) continue;
+                plan.titles.add(title);
+                plan.notes.add(clean(item.optString("note"), 60));
+            }
+        }
+        if (!plan.titles.isEmpty()) return;
+        // 旧格式：titles / notes 两个数组按位配对。必须逐项一起读，
+        // 不能先 cleanList 过滤 titles 再按下标读 notes —— 被闸掉的那条会把后面的理由串到别的片名下。
+        JSONArray titles = json.optJSONArray("titles");
+        JSONArray notes = json.optJSONArray("notes");
+        if (titles == null) return;
+        for (int i = 0; i < titles.length() && plan.titles.size() < 6; i++) {
+            String title = clean(titles.optString(i, ""), 30);
+            if (!validTitle(title, plan.titles)) continue;
+            plan.titles.add(title);
+            plan.notes.add(notes == null ? "" : clean(notes.optString(i, ""), 60));
+        }
+    }
+
+    /** 片名够长、不重复、也不是提示词里的示例占位（模型偶尔会照抄模板里的「片名」二字） */
+    private static boolean validTitle(String title, List<String> picked) {
+        if (title.length() < 2 || picked.contains(title)) return false;
+        return !title.equals("片名") && !title.equals("作品名") && !title.equals("剧名")
+                && !title.contains("兼容字段") && !title.contains("用了picks");
     }
 
     private static String clean(String text, int max) {
@@ -352,6 +403,9 @@ public class AiSearch {
                 item.put("similar", new JSONArray(plan.similar));
                 item.put("tags", new JSONArray(plan.tags));
                 item.put("titles", new JSONArray(plan.titles));
+                item.put("notes", new JSONArray(plan.notes));
+                item.put("reason", plan.reason);
+                item.put("form", plan.form);
                 item.put("genre", plan.genre);
                 item.put("year_min", plan.yearMin);
                 item.put("min_rating", plan.minRating);

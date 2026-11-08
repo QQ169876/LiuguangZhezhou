@@ -34,18 +34,39 @@ public class CrashGuard {
 
     private static final List<WeakReference<ClassLoader>> LOADERS = new ArrayList<>();
     private static volatile Thread.UncaughtExceptionHandler backup;
+    private static int swallowed;       // 本轮已吞掉的主线程异常次数
+    private static long firstSwallowAt; // 本轮计数起点（SystemClock 时基）
     private static final Thread.UncaughtExceptionHandler HANDLER = new Thread.UncaughtExceptionHandler() {
         @Override
         public void uncaughtException(Thread thread, Throwable e) {
             boolean main = thread == Looper.getMainLooper().getThread();
-            if (!thirdParty(e)) {
-                escape(thread, e, "no-foreign-frame");
+            boolean foreign = thirdParty(e);
+            // 马先生 2026-11-09：主线程上的 Java 异常一律兜住，自家代码也算。
+            // 以前只兜第三方 spider jar，自家异常直接 escape 交给系统 → 整 App 倒；
+            // 现在一律记日志 + 当场上传 + 补个消息循环接着跑，不让 App 整体崩。
+            // 加次数上限：10 秒内连着崩 5 次以上说明状态已经坏了，别空转，交回系统兜底。
+            if (main && allowSwallow()) {
+                report(foreign ? "main" : "main-app", e);
+                loop();
                 return;
             }
-            report(main ? "main" : "thread", e);
-            if (main) loop(); // 主线程不能没人转消息，补一个循环接着干
+            if (!foreign) {
+                escape(thread, e, main ? "swallow-limit" : "no-foreign-frame");
+                return;
+            }
+            report("thread", e);
         }
     };
+
+    /** 主线程崩溃能不能接着兜：10 秒内最多 5 次，防止某个持续报错的回调无限刷日志、把主线程拖成 ANR */
+    private static synchronized boolean allowSwallow() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (firstSwallowAt == 0 || now - firstSwallowAt > 10000) {
+            firstSwallowAt = now;
+            swallowed = 0;
+        }
+        return ++swallowed <= 5;
+    }
 
     public static synchronized void watch(ClassLoader loader) {
         if (loader == null) return;
@@ -77,11 +98,11 @@ public class CrashGuard {
                 Looper.loop();
                 return; // 队列收了就正常退出，别空转
             } catch (Throwable e) {
-                if (!thirdParty(e)) {
-                    escape(Thread.currentThread(), e, "no-foreign-frame");
+                if (!allowSwallow()) {
+                    escape(Thread.currentThread(), e, "swallow-limit");
                     return;
                 }
-                report("main", e);
+                report(thirdParty(e) ? "main" : "main-app", e);
             }
         }
     }

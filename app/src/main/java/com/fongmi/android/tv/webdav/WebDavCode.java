@@ -17,6 +17,7 @@ public class WebDavCode {
             object.put("user", WebDavSetting.getUser());
             object.put("pass", Base64.encodeToString(WebDavSetting.getPass().getBytes(), Base64.NO_WRAP));
             object.put("folder", WebDavSetting.getFolder());
+            object.put("authMode", WebDavSetting.getAuthMode());
             return object.toString();
         } catch (Exception e) {
             return "";
@@ -37,6 +38,8 @@ public class WebDavCode {
             WebDavSetting.putUser(object.optString("user"));
             WebDavSetting.putPass(decodePass(object.optString("pass")));
             WebDavSetting.putFolder(object.optString("folder", WebDavSetting.getFolder()));
+            // 老二维码没有这个字段，按「密钥登录」处理，跟升级前的表现一致
+            WebDavSetting.putAuthMode(object.optInt("authMode", WebDavSetting.AUTH_KEY));
             WebDavSetting.putEnabled(true);
             return WebDavSetting.isValid();
         } catch (Exception e) {

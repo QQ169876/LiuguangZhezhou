@@ -17,6 +17,7 @@ import com.fongmi.android.tv.utils.CrashReporter;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PlayWatchdog;
+import com.fongmi.android.tv.utils.ShortcutConfig;
 import com.fongmi.android.tv.utils.SyncStatus;
 import com.fongmi.hook.Hook;
 import com.fongmi.android.tv.exception.CrashGuard;
@@ -102,6 +103,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         AliveBeat.start(); // 存活心跳：进程无声消失时，日志里最后一行就是死亡时刻
         SyncManager.boot();
         MoonSync.boot();
+        ShortcutConfig.boot(); // 服务器上的快捷码配置：后台拉一次，取到就覆盖内置默认值（不用发版）
     }
 
     /**

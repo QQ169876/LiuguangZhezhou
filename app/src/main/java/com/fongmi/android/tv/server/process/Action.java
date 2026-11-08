@@ -118,6 +118,14 @@ public class Action implements Process {
         WebDavSetting.putUser(params.get("user"));
         WebDavSetting.putPass(params.get("pass"));
         WebDavSetting.putFolder(params.get("folder"));
+        // 网页传了登录方式才改；老页面没这个字段时保留本机原来的设置
+        String authMode = params.get("authMode");
+        if (authMode != null && !authMode.trim().isEmpty()) {
+            try {
+                WebDavSetting.putAuthMode(Integer.parseInt(authMode.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
         WebDavSetting.putEnabled(false);
         SyncManager.resetBase();
         App.post(() -> Notify.show(R.string.webdav_lan_saved));
