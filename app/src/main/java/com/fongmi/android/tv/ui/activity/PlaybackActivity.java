@@ -190,7 +190,10 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
                 // 播放器还没起来（服务没绑上、刚切了源），这一秒跳过就是了
             }
         }
-        setOsdText(view.name, osdNameHidden ? "" : ScreenSetting.title(metadata()));
+        // 马先生 2026-11-09：这一层原先也叫 @+id/name，跟播放页详情区的剧名控件撞名，
+        // ViewBinding 按布局顺序先绑到画面这层，详情区那个就再也拿不到片名（只显示备注「全集/HD中字」）。
+        // OSD 改用 osdName，两边各归各的。
+        setOsdText(view.osdName, osdNameHidden ? "" : ScreenSetting.title(metadata()));
         setOsdText(view.size, ScreenSetting.isShowSize() && playing ? sizeText() : "");
         setOsdText(view.date, ScreenSetting.isShowDate() ? java.time.LocalDate.now().format(dateFormat()) : "");
         setOsdText(view.clock, ScreenSetting.isShowClock() ? java.time.LocalTime.now().format(clockFormat()) : "");
