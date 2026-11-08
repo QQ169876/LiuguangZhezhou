@@ -30,13 +30,15 @@ public class BufferDialog extends BaseAlertDialog {
 
     @Override
     protected void initView() {
-        SliderUtil.setValue(binding.slider, PlayerSetting.getBuffer());
+        SliderUtil.setValue(binding.slider, PlayerSetting.getBufferRaw());
     }
 
     @Override
     protected void initEvent() {
         binding.slider.addOnChangeListener((slider, value, fromUser) -> {
-            if (fromUser) ((BufferListener) requireActivity()).setBuffer(Math.round(SliderUtil.snap(slider, value)));
+            int times = Math.round(SliderUtil.snap(slider, value));
+            updateTitle(times);
+            if (fromUser) ((BufferListener) requireActivity()).setBuffer(times);
         });
         binding.slider.setOnKeyListener((view, keyCode, event) -> {
             boolean enter = KeyUtil.isEnterKey(event);
@@ -49,5 +51,13 @@ public class BufferDialog extends BaseAlertDialog {
     public void onStart() {
         super.onStart();
         getDialog().getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        updateTitle(Math.round(binding.slider.getValue()));
+    }
+
+    /** 0 = 自动：卡顿两次后仅当前视频临时加大缓冲，用户设的值不动 */
+    private void updateTitle(int times) {
+        if (getDialog() == null) return;
+        String value = times == 0 ? getString(com.fongmi.android.tv.R.string.player_buffer_auto) : String.valueOf(times);
+        getDialog().setTitle(getString(com.fongmi.android.tv.R.string.player_buffer) + "：" + value);
     }
 }

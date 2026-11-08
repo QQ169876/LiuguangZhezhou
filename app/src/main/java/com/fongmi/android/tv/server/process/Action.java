@@ -194,6 +194,7 @@ public class Action implements Process {
             Map<String, String> data = App.gson().fromJson(json, new TypeToken<LinkedHashMap<String, String>>() {
             }.getType());
             SpiderVault.apply(data);
+            SyncManager.reloadInPlace(); // 马先生 2026-11-09：写进来就原地重载，不再提示「重启 App 后生效」
             App.post(() -> Notify.show(data == null || data.isEmpty() ? R.string.push_cookie_done : R.string.push_cookie_restart));
         });
     }

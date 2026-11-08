@@ -1070,7 +1070,18 @@ public class SyncManager {
             RefreshEvent.history();
             RefreshEvent.keep();
             RefreshEvent.star(); // 整份替换时演员表也被清过重建，关注页跟着重查
+            // 马先生 2026-11-09：下拉同步/推送完成后整份数据都换了，开着的页面一律原地重读，
+            // 首页、分类页、设置显示都不留旧数据，不再靠重启 App 生效。
+            RefreshEvent.home();     // 首页重新拉分类 + 重设标题
+            RefreshEvent.category(); // 分类页原地重读
+            // history() 已让首页重建最近观看，home() 已重拉分类，不必再发 size() 重复请求一遍
         });
+    }
+
+    /** 局域网推送刚把登录态/配置写进来：原地重载配置与各页面，不重启进程 */
+    public static void reloadInPlace() {
+        reload();
+        notifyDataChanged();
     }
 
     /**

@@ -58,7 +58,7 @@ public class ExoUtil {
     }
 
     static LoadControl buildLoadControl(int maxPreloadBufferBytes) {
-        int buffer = PlayerSetting.getBuffer();
+        int buffer = PlayerSetting.effectiveBuffer(); // 自动模式会带上本视频卡顿攒出来的临时增益
         return new DefaultLoadControl.Builder().setBufferDurationsMs(DefaultLoadControl.DEFAULT_MIN_BUFFER_MS * buffer, DefaultLoadControl.DEFAULT_MAX_BUFFER_MS * buffer, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS, DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS).setPlayerTargetBufferBytes(PlayerId.PRELOAD.name, maxPreloadBufferBytes).build();
     }
 

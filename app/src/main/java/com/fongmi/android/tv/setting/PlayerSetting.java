@@ -14,6 +14,8 @@ public class PlayerSetting {
     private static final int MAX_SIZE = 3;
     private static final int MIN_BUFFER = 1;
     private static final int MAX_BUFFER = 10;
+    private static final int AUTO_BASE = 2; // 自动模式的基础倍率，卡顿后再往上临时加
+    private static final String KEY_BUFFER_AUTO = "buffer_auto";
     private static final int MIN_BACKGROUND = 0;
     private static final int MAX_BACKGROUND = 2;
 
@@ -132,11 +134,32 @@ public class PlayerSetting {
         return getBackground() == 2;
     }
 
+    /** 缓冲档位：0 = 自动，1~10 = 手动倍率。老用户没设过仍是原来的 1 倍，不会被悄悄改成自动 */
+    public static int getBufferRaw() {
+        return isBufferAuto() ? 0 : getBuffer();
+    }
+
     public static int getBuffer() {
         return Math.clamp(Prefers.getInt("buffer"), MIN_BUFFER, MAX_BUFFER);
     }
 
+    public static boolean isBufferAuto() {
+        return Prefers.getBoolean(KEY_BUFFER_AUTO);
+    }
+
+    /** 实际生效倍率：手动档原样用；自动档 = 基础 + 本视频卡顿攒出来的临时增益，绝不写回设置 */
+    public static int effectiveBuffer() {
+        int base = isBufferAuto() ? AUTO_BASE : getBuffer();
+        return Math.clamp(base + BufferBoost.bonus(), 1, MAX_BUFFER);
+    }
+
+    /** 0 = 选自动：只记开关，原来手动设的倍率留着，切回手动还是原来那一档 */
     public static void putBuffer(int buffer) {
-        Prefers.put("buffer", Math.clamp(buffer, MIN_BUFFER, MAX_BUFFER));
+        if (buffer == 0) {
+            Prefers.put(KEY_BUFFER_AUTO, true);
+        } else {
+            Prefers.put(KEY_BUFFER_AUTO, false);
+            Prefers.put("buffer", Math.clamp(buffer, MIN_BUFFER, MAX_BUFFER));
+        }
     }
 }

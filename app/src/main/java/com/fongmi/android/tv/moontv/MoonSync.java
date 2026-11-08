@@ -1347,6 +1347,10 @@ public class MoonSync {
             RefreshEvent.history();
             DebugLog.d("Sync", "刷新事件 执行 keep");
             RefreshEvent.keep();
+            // 马先生 2026-11-09：影视站同步整份换库后，首页/分类页也原地重读，别让用户重启 App
+            RefreshEvent.star();
+            RefreshEvent.home();
+            RefreshEvent.category();
             DebugLog.d("Sync", "刷新事件 执行完毕");
         });
     }

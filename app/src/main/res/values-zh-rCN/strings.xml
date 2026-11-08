@@ -416,7 +416,7 @@
     <string name="push_item_webdav">WebDAV 同步设置</string>
     <string name="push_item_cookie">网盘登录状态（Cookie）</string>
     <string name="push_cookie_done">已收到网盘登录状态</string>
-    <string name="push_cookie_restart">已收到网盘登录状态，重启 App 后生效</string>
+    <string name="push_cookie_restart">已收到网盘登录状态，已即时生效</string>
     <string name="music_title">音乐</string>
     <string name="music_sync">同步</string>
     <string name="music_empty">还没有歌，点右上角同步把歌单拉下来</string>
@@ -541,6 +541,7 @@
     <string name="player_adblock">智能去广</string>
     <string name="player_tunnel">隧道模式</string>
     <string name="player_buffer">缓冲时间</string>
+    <string name="player_buffer_auto">自动</string>
     <string name="player_decode_setting">解码设置</string>
     <string name="player_preload_setting">预载设置</string>
     <string name="player_preload">预载</string>

@@ -417,7 +417,7 @@
     <string name="push_item_webdav">WebDAV sync settings</string>
     <string name="push_item_cookie">Netdisk login (cookie)</string>
     <string name="push_cookie_done">Login state received</string>
-    <string name="push_cookie_restart">Login state received, restart the app to apply</string>
+    <string name="push_cookie_restart">Login state received, applied without restart</string>
     <string name="music_title">Music</string>
     <string name="music_sync">Sync</string>
     <string name="music_empty">No songs yet, tap sync to pull your playlists</string>
@@ -542,6 +542,7 @@
     <string name="player_adblock">Remove ads</string>
     <string name="player_tunnel">Tunnel mode</string>
     <string name="player_buffer">Buffer time</string>
+    <string name="player_buffer_auto">Auto</string>
     <string name="player_decode_setting">Decode setting</string>
     <string name="player_preload_setting">Preload setting</string>
     <string name="player_preload">Preload</string>

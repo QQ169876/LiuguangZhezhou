@@ -43,7 +43,7 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         setPlaybackModeText();
         mBinding.engine.requestFocus();
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
-        mBinding.bufferText.setText(String.valueOf(PlayerSetting.getBuffer()));
+        mBinding.bufferText.setText(bufferText(PlayerSetting.getBufferRaw()));
         mBinding.mpvVulkanText.setText(Setting.getSwitch(PlayerSetting.isMpvVulkan()));
         mBinding.mpvGpuNextText.setText(Setting.getSwitch(PlayerSetting.isMpvGpuNext()));
         mBinding.backgroundText.setText(Setting.getSwitch(PlayerSetting.isBackgroundOn()));
@@ -124,8 +124,12 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
 
     @Override
     public void setBuffer(int times) {
-        mBinding.bufferText.setText(String.valueOf(times));
+        mBinding.bufferText.setText(bufferText(times));
         PlayerSetting.putBuffer(times);
+    }
+
+    private String bufferText(int times) {
+        return times == 0 ? getString(com.fongmi.android.tv.R.string.player_buffer_auto) : String.valueOf(times);
     }
 
     private void onBackground(View view) {

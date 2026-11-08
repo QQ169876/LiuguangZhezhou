@@ -33,7 +33,21 @@ public class BufferDialog extends BaseAlertDialog {
 
     @Override
     protected void initView() {
-        SliderUtil.setValue(binding.slider, value = PlayerSetting.getBuffer());
+        SliderUtil.setValue(binding.slider, value = PlayerSetting.getBufferRaw());
+        binding.slider.addOnChangeListener((slider, v, fromUser) -> updateTitle(Math.round(SliderUtil.snap(slider, v))));
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateTitle(Math.round(binding.slider.getValue()));
+    }
+
+    /** 0 = 自动：卡顿两次后仅当前视频临时加大缓冲，用户设的值不动 */
+    private void updateTitle(int times) {
+        if (getDialog() == null) return;
+        String text = times == 0 ? getString(R.string.player_buffer_auto) : String.valueOf(times);
+        getDialog().setTitle(getString(R.string.player_buffer) + "：" + text);
     }
 
     private void onPositive(DialogInterface dialog, int which) {

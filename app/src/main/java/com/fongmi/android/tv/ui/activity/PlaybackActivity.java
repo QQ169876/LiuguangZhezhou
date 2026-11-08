@@ -42,6 +42,7 @@ import com.fongmi.android.tv.player.PlayerManager;
 import com.fongmi.android.tv.player.ui.PlayerRotate;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.service.PlaybackService;
+import com.fongmi.android.tv.setting.BufferBoost;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.ScreenSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
@@ -742,6 +743,8 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_AVAILABLE_COMMANDS_CHANGED)) updateKeyIncrement();
     }
 
+    private int lastPlaybackState = Player.STATE_IDLE; // 自动缓冲：READY → BUFFERING 才算一次真卡顿
+
     @Override
     public void onIsPlayingChanged(boolean isPlaying) {
         if (!isOwner()) return;
@@ -755,7 +758,16 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     @Override
     public void onPlaybackStateChanged(int state) {
         DebugLog.d("Play", "状态 " + stateName(state));
-        if (isOwner()) onStateChanged(state);
+        if (isOwner()) {
+            onStateChanged(state);
+            // 自动缓冲：播着播着又进缓冲才算卡顿（起播/换集的第一次缓冲不算）；
+            // 累计 2 次就用更大缓冲重建当前播放会话，用户设的缓冲时间保持不变。
+            if (state == Player.STATE_BUFFERING && lastPlaybackState == Player.STATE_READY && BufferBoost.onStall()) {
+                PlayerManager pm = mService == null ? null : player();
+                if (pm != null) pm.rebuildForBuffer();
+            }
+        }
+        lastPlaybackState = state;
     }
 
     private static String stateName(int state) {
@@ -828,6 +840,7 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
         clearObservers();
         detachPlayerView();
         PlayWatchdog.stop(); // 正常离开播放页：撤掉看门狗标记，别把自己记成崩溃
+        BufferBoost.reset(); // 自动缓冲的临时增益只属于这部片子，退了就清掉
         super.onDestroy();
         releasePlaybackService();
     }

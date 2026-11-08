@@ -307,6 +307,25 @@ public class PlayerManager implements ParseCallback {
         snapshot.restore(player);
     }
 
+    /**
+     * 自动缓冲：卡顿达标后只针对当前视频提升缓冲（马先生 2026-11-09）。
+     * LoadControl 在播放器构建时就固定了，运行中改不了，所以照 setEngine 那条成熟路径
+     * 用新的缓冲倍率重建一次播放会话，再从原位置续播；用户设置里的值一个字都不动。
+     */
+    public void rebuildForBuffer() {
+        if (spec == null || engine == null || player == null) return;
+        long position = getPosition();
+        boolean playing = player.getPlayWhenReady();
+        PlayerEngine old = engine;
+        player.removeListener(listener);
+        engine = PlayerEngineFactory.create(decode, spec, listener);
+        setPlayer(engine.getPlayer());
+        if (old != null) old.release();
+        startCurrent(position);
+        if (!playing && player != null) player.pause();
+        DebugLog.d("Player", "自动缓冲：已用更大缓冲重建播放会话，续播 " + position + "ms");
+    }
+
     public String getPositionTime(long delta) {
         return Util.timeMs(Math.clamp(getPosition() + delta, 0, Math.max(0, getDuration())));
     }
@@ -629,6 +648,7 @@ public class PlayerManager implements ParseCallback {
 
     public void start(PlaySpec spec, long timeout, long startPositionMs) {
         this.spec = spec;
+        com.fongmi.android.tv.setting.BufferBoost.begin(spec == null ? null : spec.getUrl()); // 换了视频才清零；同一视频重建不清
         setMediaItem(timeout, startPositionMs);
     }
 

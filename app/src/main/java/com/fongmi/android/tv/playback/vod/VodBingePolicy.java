@@ -136,6 +136,8 @@ class VodBingePolicy {
     private int epoch; // 每次作废重来（interrupt/reset/forceNext）都 +1，迟到的异步回调据此自行作废
     private boolean probing; // 有一批正在后台验货
     private final List<Vod> probeBatch = new ArrayList<>(); // 这一批按分数排好的候选（新→旧按分数降序）
+    /** 验货那趟已经从站内取回的完整详情（含播放列表/URL 参数），切过去时直接落地，不再二次问站 */
+    private final java.util.Map<String, Result> probedDetails = new java.util.concurrent.ConcurrentHashMap<>();
     private final List<Vod> probingItems = new ArrayList<>(); // 这一批里还在等详情的
     private final List<Vod> probePassed = new ArrayList<>(); // 这一批里已经验过的
     private boolean gracePosted; // 「再给排前面的半秒机会」那个定时任务排了没
@@ -494,8 +496,18 @@ class VodBingePolicy {
         String second = "部".equals(first) ? "季" : "部";
         int next = Math.max(seriesIndex, 1) + 1;
         keys.add(seriesMain); // 主标题：把整个系列都搜出来，靠 filter 挑部/季号
-        keys.add(seriesMain + " 第" + next + first); // 「杀死比尔 第2部」
-        keys.add(seriesMain + " 第" + BingeTags.cnNumber(next) + first); // 「杀死比尔 第二部」
+        // 马先生 2026-11-09：先搜「和当前片名同一种季号写法」的那一个。
+        // 看《持械入宋》第10季，站里第11季多半也写成阿拉伯数字；中文「第十季」的站则先给「第十一季」，
+        // 别让另一种写法排在前面白跑一轮、最后报「无资源」。
+        String current = host.getVodName();
+        boolean cnStyle = current != null && current.matches(".*第[零〇一二三四五六七八九十百两]+[部季].*");
+        if (cnStyle) {
+            keys.add(seriesMain + " 第" + BingeTags.cnNumber(next) + first);
+            keys.add(seriesMain + " 第" + next + first);
+        } else {
+            keys.add(seriesMain + " 第" + next + first);
+            keys.add(seriesMain + " 第" + BingeTags.cnNumber(next) + first);
+        }
         keys.add(seriesMain + " 第" + next + second); // 站源叫法换一套的也要搜到：「庆余年 第2部」
         keys.add(seriesMain + next); // 站源偷懒写成「杀死比尔2」的，连着写才搜得到
         return keys;
@@ -1149,6 +1161,7 @@ class VodBingePolicy {
         if (items == null || items.isEmpty()) return;
         probing = true;
         probeBatch.clear();
+        probedDetails.clear(); // 上一批残留的详情不留，旧 epoch 的结果本来也会被丢掉
         probeBatch.addAll(items);
         probingItems.clear();
         probingItems.addAll(items);
@@ -1168,7 +1181,13 @@ class VodBingePolicy {
                 boolean ok = false;
                 try {
                     Result result = SiteApi.detailContent(item.getSiteKey(), item.getId());
-                    ok = playable(result == null ? null : result.getVod(), item);
+                    Vod detail = result == null ? null : result.getVod();
+                    String key = keyOf(item);
+                    ok = playable(detail, item);
+                    if (ok) {
+                        applyProbeDetail(item, detail); // 验货时已问到站内详情，把播放列表/URL 参数带回搜索结果
+                        probedDetails.put(key, result);
+                    }
                 } catch (Throwable ignored) {
                     ok = false; // 拿不到详情的一律当播不了，换一部比跳过去强
                 }
@@ -1281,7 +1300,15 @@ class VodBingePolicy {
         waitingDetail = true;
         active = false;
         App.removeCallbacks(timeoutTask);
-        controller.selectSource(item);
+        Result detail = probedDetails.remove(keyOf(item));
+        if (detail != null && !detail.getList().isEmpty()) {
+            DebugLog.d("Binge", "接下一部（复用验货详情，免二次问站）：" + item.getName());
+            controller.selectSource(item, detail);
+        } else controller.selectSource(item);
+    }
+
+    private static String keyOf(Vod item) {
+        return item.getSiteKey() + "|" + item.getId();
     }
 
     /** 记下刚挑中的这部属于哪个题材族：连着同一族就打散，别让用户连吃三部一模一样的 */
@@ -1305,6 +1332,17 @@ class VodBingePolicy {
     }
 
     /** 详情到手：集数够不够一部接一部刷；只有一集的话，得是整部压成合集那种才算数 */
+    /**
+     * 验货那趟 detailContent 已经把这一部在站里的完整详情（含播放列表和视频源参数）取回来了。
+     * 回填给搜索结果后再切过去，避免只带着列表里的 id 二次问站点、拿不到 URL 参数而一直报「无资源」
+     * （马先生 2026-11-09：《持械入宋》第 10 季接第 11 季，全站搜得到却播不了）。
+     */
+    private static void applyProbeDetail(Vod item, Vod detail) {
+        if (item == null || detail == null) return;
+        if (detail.getFlags() != null && !detail.getFlags().isEmpty()) item.setFlags(detail.getFlags());
+        // 不改 id：列表里的 id 本来就是 detailContent 用的那个，换了反而可能让切过去后的二次请求对不上
+    }
+
     private boolean playable(Vod detail, Vod item) {
         if (detail == null || item == null) return false;
         String name = item.getName();

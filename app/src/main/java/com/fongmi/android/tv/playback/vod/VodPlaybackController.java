@@ -285,6 +285,25 @@ public class VodPlaybackController {
         switchSource(item, false);
     }
 
+    /**
+     * 刷剧/换季：验货那趟已经把站内完整详情（播放列表 + 视频源 URL 参数）取回来了，
+     * 直接落地起播，不再二次请求详情 —— 二次请求拿不到参数时就会一直报「无资源」
+     * （马先生 2026-11-09：《持械入宋》第 10 季接第 11 季，全站搜得到却播不了）。
+     */
+    public void selectSource(Vod item, Result detailResult) {
+        state.setAutoFallback(false);
+        saveCurrentHistory();
+        clearPreload();
+        state.clearPlayRequest();
+        host.prepareSource(item);
+        if (detailResult == null || detailResult.getList().isEmpty()) {
+            requestDetail();
+            return;
+        }
+        state.setDetailRequest(host.getVodKey(), host.getVodId());
+        onDetailResult(new VodDetailResult(host.getVodKey(), host.getVodId(), detailResult));
+    }
+
     void fallbackSource(Vod item) {
         switchSource(item, true);
     }
