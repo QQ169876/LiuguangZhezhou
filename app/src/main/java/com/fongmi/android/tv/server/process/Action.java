@@ -76,6 +76,7 @@ public class Action implements Process {
             case "moontv" -> onMoonTV(params);
             case "music" -> onMusic(params);
             case "ai" -> onAi(params);
+            case "aimodels" -> onAiModels(params);
             case "random" -> onRandom();
             case "socks" -> onSocks(params);
             case "merge" -> onMerge(params);
@@ -395,5 +396,20 @@ public class Action implements Process {
         item.setModel(model.trim());
         AiSetting.save(item);
         App.post(() -> Notify.show(R.string.ai_model_saved));
+    }
+
+    /**
+     * 局域网推送的大模型配置（马先生 2026-11-09）：自建模型列表按条合进本机——
+     * 增、改、删都带 utime，谁改得晚听谁的，删除靠墓碑标记传过去；总开关一并同步。
+     * 内部标记（快捷码自己人）不走推送：内置通道只认本机自己录出来的那份，
+     * 推给谁的设备也不能把内置豆包/千问白送出去。
+     */
+    private void onAiModels(Map<String, String> params) {
+        String data = params.get("data");
+        if (TextUtils.isEmpty(data)) return;
+        Task.execute(() -> {
+            SyncManager.applyAiPush(data);
+            App.post(() -> Notify.show(R.string.push_merged));
+        });
     }
 }

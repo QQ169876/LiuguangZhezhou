@@ -513,7 +513,9 @@ public class SyncManager {
         boolean configChanged = false;
         Map<String, History> localHistory = map(local.getHistory(), SyncManager::key);
         Map<String, Keep> localKeep = map(local.getKeep(), SyncManager::key);
-        Map<String, Config> localConfig = map(local.getConfig(), SyncManager::key);
+        // 本机配置全量查（含点播/直播源）：推送的源要在已有的那行上原地更新，
+        // 不能当新行插入去撞 (url,type) 唯一索引（马先生 2026-11-09）。
+        Map<String, Config> localConfig = map(AppDatabase.get().getConfigDao().findAll(), SyncManager::key);
         Star.merge(data.getStar());
         // 记录/收藏跟着账号走：对方推过来的先按「站点key+视频id」收成一条，挂到当前源名下
         List<History> history = accountHistory(data.getHistory());
@@ -545,10 +547,16 @@ public class SyncManager {
             }
         }
         if (!data.getConfig().isEmpty()) {
-            for (Config item : Backup.withoutSources(data.getConfig())) {
+            // 局域网推送收下对方勾选推来的点播源(0)/直播源(1)：推送是明确动作，不受「三项不参与同步」限制；
+            // 壁纸(2)不在推送可选项里，照旧不收。多机同步路径仍然走 withoutSources，一个源都不走云端。
+            for (Config item : Backup.pushable(data.getConfig())) {
                 Config old = localConfig.get(key(item));
                 if (old != null && same(old, item)) continue;
-                if (old != null && item.getId() == 0) item.setId(old.getId());
+                if (old != null) {
+                    if (item.getId() == 0) item.setId(old.getId());
+                    // 推送包超限时发送端会把 json 剥空：本机已有的源内容缓存别被清掉，选中时才按需重拉
+                    if (item.getJson() == null || item.getJson().isEmpty()) item.setJson(old.getJson());
+                }
                 AppDatabase.get().getConfigDao().insertOrUpdate(item);
                 configChanged = true;
             }
@@ -558,6 +566,20 @@ public class SyncManager {
         SpiderVault.apply(data.getSpider());
         if (configChanged) reload();
         notifyDataChanged();
+    }
+
+    /**
+     * 局域网推送来的大模型配置（马先生 2026-11-09）：自建模型列表按条合进本机
+     * （增、改、删都带 utime，谁改得晚听谁的；删除靠墓碑标记传过去，不会「删不掉」），
+     * 总开关跟着走；内部标记（快捷码自己人）不推——内置通道只认本机自己的标记。
+     */
+    public static void applyAiPush(String json) {
+        try {
+            JSONObject object = new JSONObject(json);
+            AiSetting.applyRemote(object.optString(AiSetting.KEY_MODELS, ""));
+            if (object.has("ai_judge")) AiSetting.putEnabled(object.optBoolean("ai_judge"));
+        } catch (Exception ignored) {
+        }
     }
 
     /* ---------- baseline ---------- */
@@ -1053,6 +1075,11 @@ public class SyncManager {
             String name = entry.getKey();
             if (WebDavData.localOnly(name)) continue;
             if (WebDavData.isSourcePref(name)) continue;
+            // 老版本发送端的「系统设置」里还带着 ai_models 整串：按条合并，别整块覆盖掉本机的增删改
+            if (AiSetting.KEY_MODELS.equals(name)) {
+                AiSetting.applyRemote(entry.getValue() == null ? null : entry.getValue().toString());
+                continue;
+            }
             if (Objects.equals(current.get(name), entry.getValue())) continue;
             values.put(name, entry.getValue());
         }

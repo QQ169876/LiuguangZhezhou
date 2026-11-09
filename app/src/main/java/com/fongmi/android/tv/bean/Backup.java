@@ -123,11 +123,24 @@ public class Backup {
     /**
      * 滤掉源地址类配置（点播源 / 直播源 / 壁纸）：这类不参与多机同步，见 {@link Config#isSource()}。
      * 既不往上推，也不从云端拉回来覆盖本机 —— 每台设备配自己的源是本分。
+     * 局域网推送是另一回事：那是对方特意勾选推过来的，点播/直播源照收，见 {@link #pushable(List)}。
      */
     public static List<Config> withoutSources(List<Config> items) {
         List<Config> result = new ArrayList<>();
         if (items == null) return result;
         for (Config item : items) if (item != null && !item.isSource()) result.add(item);
+        return result;
+    }
+
+    /**
+     * 局域网推送收包用：点播源(0) / 直播源(1) 是对方勾选了才推过来的，跟普通配置一起收下；
+     * 壁纸(2) 不在推送可选项里，照旧不收。多机同步依旧走 {@link #withoutSources(List)}，源一律不参与。
+     * （马先生 2026-11-09：「三项不参与同步」说的是同步，局域网推送不受这条限制。）
+     */
+    public static List<Config> pushable(List<Config> items) {
+        List<Config> result = new ArrayList<>();
+        if (items == null) return result;
+        for (Config item : items) if (item != null && (item.getType() == 0 || item.getType() == 1 || !item.isSource())) result.add(item);
         return result;
     }
 

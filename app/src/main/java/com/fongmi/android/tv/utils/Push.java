@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Config;
 import com.fongmi.android.tv.bean.Star;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.moontv.MoonSetting;
+import com.fongmi.android.tv.setting.AiSetting;
 import com.fongmi.android.tv.webdav.WebDavSetting;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Prefers;
@@ -38,6 +39,7 @@ public class Push {
     public static final String VOD = "vod";
     public static final String LIVE = "live";
     public static final String PREF = "pref";
+    public static final String AI = "ai";
     public static final String WEBDAV = "webdav";
     public static final String COOKIE = "cookie";
     public static final String HISTORY = "history";
@@ -76,6 +78,7 @@ public class Push {
         items.add(VOD);
         items.add(LIVE);
         items.add(PREF);
+        items.add(AI);
         items.add(WEBDAV);
         items.add(COOKIE);
         items.add(HISTORY);
@@ -89,6 +92,7 @@ public class Push {
         return switch (key) {
             case VOD -> R.string.push_item_vod;
             case LIVE -> R.string.push_item_live;
+            case AI -> R.string.push_item_ai;
             case PREF -> R.string.push_item_setting;
             case WEBDAV -> R.string.push_item_webdav;
             case COOKIE -> R.string.push_item_cookie;
@@ -106,6 +110,13 @@ public class Push {
         List<String> data = new ArrayList<>();
         Throwable error = null;
         int count = 0;
+        if (keys.contains(AI)) {
+            try {
+                if (ai(host)) count++;
+            } catch (Throwable e) {
+                error = e;
+            }
+        }
         if (keys.contains(WEBDAV)) {
             try {
                 if (webdav(host)) count++;
@@ -185,6 +196,19 @@ public class Push {
         return true;
     }
 
+    /**
+     * 大模型配置（马先生 2026-11-09）：自建模型列表（含删除墓碑）+ 总开关推过去。
+     * 接收端按条合并：增、改、删都带 utime，谁改得晚听谁的，不会整块覆盖。
+     * 内部标记（快捷码自己人）不推：内置通道只认本机自己的标记，推给谁也不能把内置白送出去。
+     */
+    public static boolean ai(String host) throws Exception {
+        org.json.JSONObject object = new org.json.JSONObject();
+        object.put(AiSetting.KEY_MODELS, Prefers.getString(AiSetting.KEY_MODELS, ""));
+        object.put("ai_judge", AiSetting.isEnabled());
+        post(host, "aimodels", new FormBody.Builder().add("data", object.toString()).build());
+        return true;
+    }
+
     /** 配置 / 历史 / 收藏 / 系统设置打包成一个 Backup 一次性推送 */
     public static void data(String host, List<String> keys) throws Exception {
         Backup backup = new Backup();
@@ -210,7 +234,8 @@ public class Push {
         Map<String, Object> result = new HashMap<>();
         for (Map.Entry<String, ?> entry : Prefers.getPrefers().getAll().entrySet()) {
             String key = entry.getKey();
-            if (key == null || key.startsWith("webdav_") || key.startsWith("moontv_")) continue;
+            // ai_ 系列只走上面的「大模型」专项推送（按条合并）：塞在系统设置里会整块覆盖对面的增删改
+            if (key == null || key.startsWith("webdav_") || key.startsWith("moontv_") || key.startsWith("ai_")) continue;
             if (key.equals(HOST)) continue;
             result.put(key, entry.getValue());
         }
