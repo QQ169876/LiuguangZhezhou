@@ -72,6 +72,8 @@ public class SyncManager {
     private static final AtomicInteger failures = new AtomicInteger();
     private static final AtomicLong playMark = new AtomicLong();
     private static final int MAX_FAIL = 3;
+    /** 老版本留下「旧账号归属标记」的一次性归位，只跑一次，不每次同步都改账本 */
+    private static final String KEY_ADOPT = "webdav_owner_adopt_2";
     private static ScheduledFuture<?> future;
     private static ScheduledFuture<?> playTask;
 
@@ -156,6 +158,11 @@ public class SyncManager {
     }
 
     private static void silent() {
+        // 定时任务是在 post()/playTick() 里排的，排队那一刻可能还没换同步目标；
+        // 等这 15~20 秒里用户改了地址/账号/标识，触发时 isSwitch 已经变 true。
+        // 这里必须再挡一次，否则自动同步会带着旧归属账本把本机记录全判成「别人的」。
+        if (WebDavSetting.isSwitch()) return;
+        adoptOnce();
         if (!busy.compareAndSet(false, true)) return;
         SyncStatus.begin(R.string.sync_status_webdav); // 让用户在右下角看见这一趟在跑
         try {
@@ -196,18 +203,49 @@ public class SyncManager {
     }
 
     public static void sync(Listener listener) {
+        if (!switchConfirmed(listener)) return;
         Task.execute(() -> notify(listener, () -> doSync()));
     }
 
     public static void push(Listener listener) {
+        if (!switchConfirmed(listener)) return;
         Task.execute(() -> notify(listener, () -> doPush()));
     }
 
     public static void pull(Listener listener) {
+        if (!switchConfirmed(listener)) return;
         Task.execute(() -> notify(listener, () -> doPull()));
     }
 
+    /**
+     * 换过同步地址/账号/标识却还没在设置里选「以哪边为准」时，不许闷头跑同步。
+     * 旧行为只在设置对话框点同步时才弹方向确认，别的入口（自动、快捷入口）直接调 sync/push/pull 会绕过；
+     * 而 participate() 会把本机原有记录全判成上一个账号的、一条都不带，
+     * 一轮下来用户看到的就是「同步完记录没了」（2026-11-11 TV 那次）。
+     * 这里拦下来让他去设置里选一次方向：选完 putConfirm()，本闸自动放行，正常同步照旧。
+     */
+    private static boolean switchConfirmed(Listener listener) {
+        if (!WebDavSetting.isSwitch()) return true;
+        done(listener, false, ResUtil.getString(R.string.webdav_switch_wait));
+        return false;
+    }
+
+    /**
+     * 升级上来的一次性归位：目标已经确认过（isSwitch=false），归属账本却还挂着旧账号的标记，
+     * 会让本机记录被 participate() 静默排除、看着像丢了。清一次账本，本机记录全算当前账号的。
+     * 还没选方向的（isSwitch=true）不在这儿动，交给设置里的「以哪边为准」确认流程。
+     */
+    private static void adoptOnce() {
+        if (Prefers.getBoolean(KEY_ADOPT, false)) return;
+        if (WebDavSetting.isSwitch()) return; // 还没选方向：这次不判、也不把一次性机会用掉，等确认完再归位
+        Prefers.put(KEY_ADOPT, true);
+        if (!Owner.hasForeign(Owner.DAV)) return;
+        Owner.adopt(Owner.DAV);
+        DebugLog.d("Sync", "同步目标已确认：本机旧归属记录归位到当前账号");
+    }
+
     private static void notify(Listener listener, Action action) {
+        adoptOnce();
         if (!busy.compareAndSet(false, true)) {
             done(listener, false, ResUtil.getString(R.string.webdav_busy));
             return;
@@ -273,28 +311,34 @@ public class SyncManager {
         WebDavData data = WebDavData.create();
         Backup backup = data.getData();
         List<History> history = new ArrayList<>();
+        int excludedHistory = 0;
         for (History item : backup.getHistory()) {
             String name = Owner.key(item.getKey(), Owner.RECORD);
             if (name == null) {
                 history.add(item);
             } else if (takeover || !Owner.foreign(Owner.DAV, bookRecord, name)) {
                 history.add(item);
+            } else {
+                excludedHistory++;
             }
         }
         List<Keep> keep = new ArrayList<>();
+        int excludedKeep = 0;
         for (Keep item : backup.getKeep()) {
             String name = Owner.key(item.getKey(), Owner.FAVORITE);
             if (name == null) {
                 keep.add(item);
             } else if (takeover || !Owner.foreign(Owner.DAV, bookFavorite, name)) {
                 keep.add(item);
+            } else {
+                excludedKeep++;
             }
         }
         List<History> mergedHistory = accountHistory(history);
         List<Keep> mergedKeep = accountKeep(keep);
         backup.setHistory(mergedHistory);
         backup.setKeep(mergedKeep);
-        DebugLog.d("Sync", "本机参与：记录 " + history.size() + " 条收成 " + mergedHistory.size() + " 条，收藏 " + keep.size() + " 条收成 " + mergedKeep.size() + " 条（当前源 cid=" + currentCid() + "）");
+        DebugLog.d("Sync", "本机参与：记录 " + history.size() + " 条收成 " + mergedHistory.size() + " 条，收藏 " + keep.size() + " 条收成 " + mergedKeep.size() + " 条（当前源 cid=" + currentCid() + "）；归属排除 记录 " + excludedHistory + " 条／收藏 " + excludedKeep + " 条");
         // 源地址 Config 不上传：点播源/直播源/壁纸不参与同步，每台设备各配各的
         backup.setConfig(Backup.withoutSources(backup.getConfig()));
         return data;
@@ -363,7 +407,11 @@ public class SyncManager {
         String url = WebDavSetting.getFileUrl();
         JSONObject bookRecord = Owner.load(Owner.DAV, Owner.RECORD);
         JSONObject bookFavorite = Owner.load(Owner.DAV, Owner.FAVORITE);
-        WebDavData remoteData = WebDavData.from(WebDav.get(url));
+        String remote = WebDav.get(url);
+        WebDavData remoteData = remote == null ? null : WebDavData.from(remote);
+        // 文件在、内容却读不出来（多半是服务器覆盖写不截断留下的旧尾巴）：
+        // 不能当成「文件不存在」静默回退成空数据，更不能拿空数据去合并、再把空文件写回云端。
+        if (remote != null && remoteData == null) throw new Exception(ResUtil.getString(R.string.webdav_corrupt));
         WebDavData baseData = readBaseline();
         WebDavData localData = participate(false, bookRecord, bookFavorite);
         if (remoteData == null) remoteData = baseData == null ? WebDavData.empty() : WebDavData.from(baseData.toJson());
@@ -412,8 +460,13 @@ public class SyncManager {
         check();
         Owner.touch();
         String url = WebDavSetting.getFileUrl();
-        WebDavData remoteData = WebDavData.from(WebDav.get(url));
-        if (remoteData == null) throw new Exception("Remote file not found");
+        String remote = WebDav.get(url);
+        if (remote == null) throw new Exception("Remote file not found");
+        WebDavData remoteData = WebDavData.from(remote);
+        if (remoteData == null) throw new Exception(ResUtil.getString(R.string.webdav_corrupt));
+        // 「云端覆盖本机」是整库清空再填入：云端文件合法却一条数据都没有时，
+        // 十有八九是别的设备写坏/写空的，先把本机数据保住，别让用户点一下就全没了。
+        if (WebDavData.noMedia(remoteData) && localHasData()) throw new Exception(ResUtil.getString(R.string.webdav_remote_blank));
         // 记录/收藏跟着账号走：云端那份先按「站点key+视频id」收成一条，挂到当前源名下
         remoteData.getData().setHistory(accountHistory(remoteData.getData().getHistory()));
         remoteData.getData().setKeep(accountKeep(remoteData.getData().getKeep()));
@@ -438,6 +491,12 @@ public class SyncManager {
         reload();
         DebugLog.d("Sync", "云端覆盖本机：整库清空再填入，设置 " + remoteData.getPrefers().size() + " 项、记录 " + remoteData.getData().getHistory().size() + " 条、收藏 " + remoteData.getData().getKeep().size() + " 条");
         return getSummary(remoteData);
+    }
+
+    /** 本机确实有观看记录/收藏：空云端要覆盖本机时，得先拦下来 */
+    private static boolean localHasData() {
+        return !AppDatabase.get().getHistoryDao().findAll().isEmpty()
+                || !AppDatabase.get().getKeepDao().findAll().isEmpty();
     }
 
     /** 本机正在用的源地址（点播源 / 直播源 / 壁纸）：doPull 覆盖前先抄下来，完事原样放回去 */
@@ -478,6 +537,8 @@ public class SyncManager {
 
     private static void check() throws Exception {
         if (!WebDavSetting.isValid()) throw new Exception(ResUtil.getString(R.string.webdav_empty));
+        // 最后一道闸：不管从哪个入口进来，没选过同步方向就不许动数据
+        if (WebDavSetting.isSwitch()) throw new Exception(ResUtil.getString(R.string.webdav_switch_wait));
         WebDav.createFolders();
     }
 

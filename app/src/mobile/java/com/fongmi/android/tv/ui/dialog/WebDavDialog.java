@@ -23,6 +23,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.github.catvod.utils.Prefers;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.sync.Owner;
 import com.fongmi.android.tv.ui.activity.ScanActivity;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
@@ -300,7 +301,10 @@ public class WebDavDialog extends BaseBottomSheetDialog {
      */
     private void checkSwitch() {
         asked = true;
-        if (WebDavSetting.isSwitch()) SyncManager.resetBase();
+        if (WebDavSetting.isSwitch()) {
+            SyncManager.resetBase();
+            Owner.adopt(Owner.DAV); // 选完方向：本机记录归当前账号，别再被判成「别人的」静默排除
+        }
         WebDavSetting.putConfirm();
     }
 

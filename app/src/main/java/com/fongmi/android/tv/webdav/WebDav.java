@@ -106,16 +106,79 @@ public class WebDav {
         }
     }
 
+    /**
+     * 整份覆盖写同步文件。
+     *
+     * 有些 WebDAV（实测 43.165.3.81 上那台）PUT 覆盖时**不截断旧内容**：
+     * 先传 5008 字节再传 9 字节，读回来还是 5008 字节，前 9 字节是新的、后面全挂着上一版。
+     * 客户端拿整串给 Gson 解就直接失败，然后被当成「云端文件不存在」，一轮同步下来数据就没了。
+     * 咱们的归档脚本 2026-10-04 就踩过、改成先 DELETE 再 PUT 了，客户端这边现在跟上：
+     * 先正常 PUT，回读校验；发现尾部残留才删掉重传，再校验一次。
+     * 不直接先删是为了避免 DELETE 成功、PUT 失败时把云端文件弄丢。
+     */
     public static void put(String url, String body) throws IOException {
+        int code = putWithFolder(url, body);
+        requireOk(code);
+        String echo = get(url);
+        if (same(body, echo)) return;
+        // 服务器没截断：删掉带残留的旧文件，重新整份写一次。
+        // DELETE 成功、随后 PUT 却失败时云端会整份消失，所以失败要把刚读到的原文尽力放回去，
+        // 至少保住上一版内容（带尾巴的也能被 WebDavData.from 截断解析）。
+        delete(url);
+        code = putWithFolder(url, body);
+        if (ok(code)) {
+            String again = get(url);
+            if (same(body, again)) return;
+            restore(url, echo);
+            throw new IOException("PUT verify failed (trailing data " + (again == null ? 0 : again.length()) + "/" + body.length() + ")");
+        }
+        restore(url, echo);
+        requireOk(code);
+        throw new IOException("PUT verify failed");
+    }
+
+    private static boolean ok(int code) {
+        return code == 200 || code == 201 || code == 204;
+    }
+
+    private static void requireOk(int code) throws IOException {
+        if (ok(code)) return;
+        if (code == 401 || code == 403) throw new IOException("Auth failed (" + code + ")");
+        throw new IOException("PUT failed (" + code + ")");
+    }
+
+    /** 补救写：尽力把上一版内容放回去，失败也只能算了，真正的错误由调用方抛 */
+    private static void restore(String url, String previous) {
+        if (previous == null) return;
+        try {
+            putWithFolder(url, previous);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static int putWithFolder(String url, String body) throws IOException {
         int code = putOnce(url, body);
         // 目录被第三方删掉/未建好时，坚果云等会返回 404/409，重建目录后重试一次
         if (code == 404 || code == 409) {
             createFolders();
             code = putOnce(url, body);
         }
-        if (code == 201 || code == 200 || code == 204) return;
-        if (code == 401 || code == 403) throw new IOException("Auth failed (" + code + ")");
-        throw new IOException("PUT failed (" + code + ")");
+        return code;
+    }
+
+    /** 覆盖写不截断的服务器要先删旧文件；文件不存在或不许 DELETE 都不算错，随后的 PUT 会报真原因 */
+    private static void delete(String url) throws IOException {
+        try (Response response = client.newCall(prepare(url).delete().build()).execute()) {
+            // 204/200/404/405/403 一律放行
+        }
+    }
+
+    /** 回读比对：容掉 BOM 和首尾空白，别因为服务器加了点装饰就误判成残留 */
+    private static boolean same(String expect, String actual) {
+        if (actual == null) return false;
+        String text = actual.trim();
+        if (text.startsWith("\uFEFF")) text = text.substring(1).trim();
+        return expect.trim().equals(text);
     }
 
     private static int putOnce(String url, String body) throws IOException {

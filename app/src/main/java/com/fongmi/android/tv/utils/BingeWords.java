@@ -158,12 +158,57 @@ public class BingeWords {
             try (Response res = OkHttp.client(timeout).newCall(request).execute()) {
                 if (!res.isSuccessful() || res.body() == null) return null;
                 String body = res.body().string();
-                return body == null || body.trim().isEmpty() ? null : body;
+                return body == null || body.trim().isEmpty() ? null : sanitize(body);
             }
         } catch (Throwable e) {
             DebugLog.d(TAG, "提示词取不到 " + domain);
             return null;
         }
+    }
+
+    /**
+     * 这台 WebDAV 覆盖写不截断：新内容比旧的短时，文件会变成「一份新 JSON + 上一版的尾巴」，
+     * JSONObject 整串解直接失败，三个域名就都当成拉不到，全线退回内置词表（2026-11-11 实测）。
+     * 这里截到第一个完整 JSON 对象再交给下游；只采信主内容，尾巴是旧版本，不参与合并。
+     */
+    private static String sanitize(String body) {
+        String text = body.startsWith("\uFEFF") ? body.substring(1) : body;
+        try {
+            new JSONObject(text);
+            return text;
+        } catch (Throwable ignored) {
+        }
+        String head = firstObject(text);
+        if (head == null || head.length() >= text.length()) return null;
+        try {
+            new JSONObject(head);
+            DebugLog.d(TAG, "提示词文档带旧尾巴，截断 " + (text.length() - head.length()) + " 字符后解析成功");
+            return head;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** 第一个完整 JSON 对象的结束位置：跳过字符串里的括号和转义符 */
+    private static String firstObject(String json) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                if (escape) escape = false;
+                else if (c == '\\') escape = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') inString = true;
+            else if (c == '{' || c == '[') depth++;
+            else if (c == '}' || c == ']') {
+                if (--depth == 0) return json.substring(0, i + 1);
+            }
+        }
+        return null;
     }
 
     /** 解析文档 → 扁平词表（长词优先、去重）；解析不出来返回 false，缓存不动 */
@@ -356,17 +401,68 @@ public class BingeWords {
         }
     }
 
+    /**
+     * 整份写回并回读校验：服务器 PUT 覆盖不截断时，写完 GET 会发现尾部挂着上一版，
+     * 这时删掉重传一次再校验。不先删是为了避免 DELETE 成功、PUT 失败把文档弄丢；
+     * 真失败了也尽力把原文放回去，别让云端比写之前更糟。
+     */
     private static boolean put(String domain, String body) {
+        String url = "https://www." + domain + PATH;
         try {
-            Request request = new Request.Builder().url("https://www." + domain + PATH)
-                    .header("Authorization", SelfHost.auth())
-                    .put(RequestBody.create(body, JSON)).build();
-            try (Response res = OkHttp.client(TIMEOUT).newCall(request).execute()) {
-                return res.isSuccessful() || res.code() == 201 || res.code() == 204;
+            if (!call(url, "PUT", body)) return false;
+            String echo = get(url);
+            if (same(body, echo)) return true;
+            call(url, "DELETE", null);
+            if (!call(url, "PUT", body)) {
+                restore(url, echo);
+                return false;
             }
+            String again = get(url);
+            if (same(body, again)) return true;
+            // 二次校验没过也不能把上一版写回去：文件里很可能已经是新内容，
+            // 回写反而把刚学到的词冲掉。判失败让下次重试，云端保持现状。
+            return false;
         } catch (Throwable e) {
             return false;
         }
+    }
+
+    private static boolean call(String url, String method, String body) {
+        Request.Builder builder = new Request.Builder().url(url).header("Authorization", SelfHost.auth());
+        if ("DELETE".equals(method)) builder.delete();
+        else if (body == null) builder.get();
+        else builder.put(RequestBody.create(body, JSON));
+        try (Response res = OkHttp.client(TIMEOUT).newCall(builder.build()).execute()) {
+            return res.isSuccessful();
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private static String get(String url) {
+        Request request = new Request.Builder().url(url)
+                .header("Authorization", SelfHost.auth())
+                .header("Cache-Control", "no-cache")
+                .cacheControl(CacheControl.FORCE_NETWORK).get().build();
+        try (Response res = OkHttp.client(TIMEOUT).newCall(request).execute()) {
+            if (!res.isSuccessful() || res.body() == null) return null;
+            return res.body().string();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** DELETE 成功、随后 PUT 却失败时把上一版内容尽力放回去 */
+    private static void restore(String url, String previous) {
+        if (previous == null) return;
+        call(url, "PUT", previous);
+    }
+
+    private static boolean same(String expect, String actual) {
+        if (actual == null) return false;
+        String text = actual.trim();
+        if (text.startsWith("\uFEFF")) text = text.substring(1).trim();
+        return expect.trim().equals(text);
     }
 
     private static int versionOf(String body) {

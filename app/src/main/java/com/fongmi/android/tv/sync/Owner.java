@@ -123,6 +123,30 @@ public class Owner {
         Prefers.put(BOOK[channel][type], map.toString());
     }
 
+    /**
+     * 换过同步目标、用户也选完「以哪边为准」之后：本机已有的记录一律归当前账号。
+     * 老实现只换 scope、不清账本，旧记录会被 participate() 全判成「别人的」静默排除，
+     * 一轮同步下来本机看着就是记录凭空消失（2026-11-11 TV 那次）。
+     * 账本清空后每条本机记录都变回「没分过账号」，自然算当前账号的。
+     */
+    public static void adopt(int channel) {
+        save(channel, RECORD, new JSONObject());
+        save(channel, FAVORITE, new JSONObject());
+    }
+
+    /** 账本里还挂着别的账号的标记（用来判断要不要做一次归位） */
+    public static boolean hasForeign(int channel) {
+        String scope = scope(channel);
+        for (int type : new int[]{RECORD, FAVORITE}) {
+            JSONObject book = load(channel, type);
+            for (Iterator<String> it = book.keys(); it.hasNext(); ) {
+                String who = of(book, it.next());
+                if (!who.isEmpty() && !who.equals(scope)) return true;
+            }
+        }
+        return false;
+    }
+
     /** 这条数据归谁；空 = 还没分过账号 */
     public static String of(JSONObject book, String key) {
         return book.optString(key, "");

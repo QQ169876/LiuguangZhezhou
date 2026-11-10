@@ -3,6 +3,7 @@ package com.fongmi.android.tv.webdav;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.Backup;
 import com.fongmi.android.tv.utils.ConfigCache;
+import com.fongmi.android.tv.utils.DebugLog;
 import com.github.catvod.utils.Prefers;
 import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
@@ -44,16 +45,73 @@ public class WebDavData {
         return item;
     }
 
+    /**
+     * 解析云端同步文件。
+     *
+     * 服务器覆盖写不截断时，文件会变成「一份合法 JSON + 上一版的尾巴」，
+     * Gson 整串解会抛异常返回 null，上层就把它当成「文件不存在」，
+     * 于是「云端覆盖本机」整库清空、或普通同步悄悄回退成空数据（2026-11-11 TV 丢记录那次）。
+     * 这里做兜底：整串解不了就截到第一个完整 JSON 对象再解，只采信主内容，
+     * 尾部那截是旧版本，不参与合并；同时留一行日志方便核对。
+     */
     public static WebDavData from(String json) {
+        if (json == null || json.trim().isEmpty()) return null;
+        if (json.startsWith("\uFEFF")) json = json.substring(1); // 服务器加了 BOM 也照解
+        WebDavData item = parse(json);
+        if (item != null) return item;
+        String head = firstObject(json);
+        // 用 json.length() 比，别用 trim()：文件前有空白/BOM 时 head 也含前缀，
+        // 拿 trim 后的长度比会误判成「没有尾巴」，兜底就不生效了。
+        if (head != null && head.length() < json.length()) {
+            item = parse(head);
+            if (item != null) {
+                DebugLog.d("Sync", "云端同步文件带旧尾巴，截断 " + (json.length() - head.length()) + " 字符后解析成功");
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private static WebDavData parse(String json) {
         try {
-            if (json == null || json.trim().isEmpty()) return null;
             GsonBuilder builder = new GsonBuilder().setObjectToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER);
             WebDavData item = builder.create().fromJson(json, WebDavData.class);
-            if (item == null || item.getData() == null) return null;
-            return item;
+            return item == null || item.getData() == null ? null : item;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 第一个完整 JSON 对象/数组的结束位置：跳过字符串里的括号和转义符 */
+    private static String firstObject(String json) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                if (escape) escape = false;
+                else if (c == '\\') escape = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') inString = true;
+            else if (c == '{' || c == '[') depth++;
+            else if (c == '}' || c == ']') {
+                if (--depth == 0) return json.substring(0, i + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 云端文件合法，但一条观看记录/收藏都没有：用来挡住「空云端整库覆盖本机」。
+     * 只看记录/收藏，不看设置项——设备写空文件时往往还带着一堆偏好，
+     * 按「全空」判断会漏，本机记录照样被 clearLocal() 清掉。
+     */
+    public static boolean noMedia(WebDavData data) {
+        if (data == null || data.getData() == null) return true;
+        return data.getData().getHistory().isEmpty() && data.getData().getKeep().isEmpty();
     }
 
     public String toJson() {

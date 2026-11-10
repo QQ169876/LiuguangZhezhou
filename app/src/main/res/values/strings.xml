@@ -358,6 +358,9 @@
     <string name="webdav_last">Last: %s</string>
     <string name="webdav_success">Sync successful</string>
     <string name="webdav_fail">Sync failed</string>
+    <string name="webdav_corrupt">Cloud sync file is corrupted (present but unreadable). Sync stopped to protect local data.</string>
+    <string name="webdav_remote_blank">Cloud sync file is empty. Refused to wipe local history.</string>
+    <string name="webdav_switch_wait">Pick a sync direction first: open sync settings and choose which side wins.</string>
     <string name="webdav_remote_title">That folder already has data</string>
     <string name="webdav_remote_exists">The sync folder you just set already exists on the server, so it may belong to another device or account. Keep using it and the watch history and favorites from both sides will get mixed together. Continue?</string>
     <string name="webdav_auto_stop">Three failed attempts in a row. Auto sync is off now — check the address and account, then turn it back on yourself.</string>

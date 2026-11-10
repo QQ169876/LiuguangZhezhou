@@ -357,6 +357,9 @@
     <string name="webdav_last">上次同步：%s</string>
     <string name="webdav_success">同步成功</string>
     <string name="webdav_fail">同步失败</string>
+    <string name="webdav_corrupt">云端同步文件损坏（文件在，但内容读不出来），已中止同步保护本机数据</string>
+    <string name="webdav_remote_blank">云端同步文件是空的，已阻止清空本机记录</string>
+    <string name="webdav_switch_wait">还没选同步方向，请先到同步设置里选一次以哪边为准，再同步</string>
     <string name="webdav_remote_title">这个目录里已经有数据</string>
     <string name="webdav_remote_exists">你刚填的同步目录在服务器上已经存在，可能是别的设备或别的账号留下的。继续用下去，两边的观看记录、收藏会混在一起。是否继续使用？</string>
     <string name="webdav_auto_stop">连续 3 次没连上，已关闭自动同步。请核对地址、目录、账号没问题后，再自己手动打开</string>

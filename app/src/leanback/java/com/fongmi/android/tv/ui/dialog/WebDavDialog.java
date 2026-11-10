@@ -15,6 +15,7 @@ import com.github.catvod.utils.Prefers;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogWebdavBinding;
 import com.fongmi.android.tv.server.Server;
+import com.fongmi.android.tv.sync.Owner;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QrHelper;
 import com.fongmi.android.tv.utils.Task;
@@ -288,7 +289,10 @@ public class WebDavDialog extends BaseAlertDialog {
      */
     private void checkSwitch() {
         asked = true;
-        if (WebDavSetting.isSwitch()) SyncManager.resetBase();
+        if (WebDavSetting.isSwitch()) {
+            SyncManager.resetBase();
+            Owner.adopt(Owner.DAV); // 选完方向：本机记录归当前账号，别再被判成「别人的」静默排除
+        }
         WebDavSetting.putConfirm();
     }
 
