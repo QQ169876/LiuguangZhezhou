@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
 
 import com.fongmi.android.tv.utils.AliveBeat;
+import com.fongmi.android.tv.utils.BingeWords;
 import com.fongmi.android.tv.utils.CrashReporter;
 import com.fongmi.android.tv.utils.DebugLog;
 import com.fongmi.android.tv.utils.Notify;
@@ -104,6 +105,7 @@ public class App extends Application implements Application.ActivityLifecycleCal
         SyncManager.boot();
         MoonSync.boot();
         ShortcutConfig.boot(); // 服务器上的快捷码配置：后台拉一次，取到就覆盖内置默认值（不用发版）
+        BingeWords.boot();     // 刷剧题材提示词：启动先让本地缓存生效，再后台拉共享文档（拉不到用内置默认）
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.playback.vod;
 
+import com.fongmi.android.tv.utils.BingeWords;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -16,8 +18,12 @@ public class BingeTags {
      */
     public static final String[][] FAMILIES = {
         // 古装 / 宫斗 / 宅斗
-        {"王妃", "王爷", "宫斗", "宅斗", "太子", "公主", "长公主", "郡主", "世子", "摄政", "太后", "太妃", "娘娘", "贵妃", "冷宫", "废后", "选妃", "和亲", "替嫁", "冲喜",
-         "主母", "小妾", "姨娘", "侧妃", "通房", "嫡女", "庶女", "夫人", "少奶奶", "内宅", "后宫", "朝堂", "权臣", "驸马", "皇帝", "皇叔", "国师", "太监", "宫女", "世家", "贵女"},
+        {"王妃", "王爷", "宫斗", "宅斗", "太子", "公主", "长公主", "郡主", "世子", "摄政", "太后", "太妃", "娘娘", "贵妃", "皇后", "皇子", "帝后", "冷宫", "废后", "选妃", "和亲", "替嫁", "冲喜",
+         "储君", "东宫", "太子妃", "皇女", "皇叔", "皇兄", "皇弟", "登基", "继位", "夺嫡", "册封", "封后", "中宫", "凤位", "圣旨", "朝局",
+         "主母", "小妾", "姨娘", "侧妃", "通房", "嫡女", "庶女", "夫人", "少奶奶", "内宅", "后宫", "朝堂", "权臣", "驸马", "皇帝", "国师", "太监", "宫女", "世家", "贵女",
+         // 马先生 2026-11-11：内置默认提示词。《小富即安，不，本公子意在天下》这类「公子/权谋」剧名，
+         // 以前一个词都抠不出来，没配大模型时只能掉到「画像最热族」乱撞。这些词同时作为共享文档的种子。
+         "本公子", "公子", "权谋", "朝堂", "首辅", "科举", "入仕", "仕途", "门客", "寒门", "监国", "丞相", "谋士", "布衣", "逆袭", "扮猪吃虎"},
         // 重生 / 穿越 / 系统流
         {"重生", "穿越", "穿书", "系统", "签到", "金手指", "空间", "读心", "时间循环", "马甲", "隐藏身份", "扮猪吃虎", "无限流", "副本", "规则怪谈", "觉醒"},
         // 现代都市 / 婚恋
@@ -158,7 +164,7 @@ public class BingeTags {
     /** 名字里有没有题材词（短剧语境加分） */
     public static boolean hasTag(String name) {
         if (name == null || name.isEmpty()) return false;
-        for (String tag : SORTED_TAGS) if (name.contains(tag)) return true;
+        for (String tag : allTags()) if (name.contains(tag)) return true;
         return false;
     }
 
@@ -324,12 +330,38 @@ public class BingeTags {
     private static final Pattern EPISODES = Pattern.compile("(\\d{1,4})\\s*[集章话]");
 
     private static final List<String> SORTED_TAGS = sortedTags();
+    private static volatile List<String> cachedRemote;
+    private static volatile List<String> cachedAll;
+
+    static {
+        BingeWords.builtin(SORTED_TAGS); // 登记内置词：有模型的客户端写回共享文档时不必再存一份
+    }
 
     private static List<String> sortedTags() {
         List<String> tags = new ArrayList<>();
         for (String[] family : FAMILIES) for (String tag : family) if (!tags.contains(tag)) tags.add(tag);
         tags.sort(Comparator.comparingInt(String::length).reversed());
         return tags;
+    }
+
+    /**
+     * 匹配用的完整词表 = 共享文档学到的词 + 内置默认词。
+     * 远程词排在同等长度的内置词前面（新学到的更贴当下剧名），长词优先不变；
+     * BingeWords 每次更新都换一个新的不可变 List，这里按引用缓存，匹配时不重复排序。
+     * 文档拉不到／没配大模型时 remote 为空，直接退化为内置词表，一个字都不少（马先生 2026-11-11）。
+     */
+    public static List<String> allTags() {
+        List<String> remote = BingeWords.words();
+        if (remote.isEmpty()) return SORTED_TAGS;
+        List<String> cached = cachedAll;
+        if (cached != null && cachedRemote == remote) return cached;
+        List<String> all = new ArrayList<>(SORTED_TAGS.size() + remote.size());
+        all.addAll(remote);
+        for (String tag : SORTED_TAGS) if (!all.contains(tag)) all.add(tag);
+        all.sort(Comparator.comparingInt(String::length).reversed());
+        cachedRemote = remote;
+        cachedAll = all;
+        return all;
     }
 
     /** 题材词属于哪一族（见 FAMILIES），查不到返回 -1 */
@@ -357,7 +389,7 @@ public class BingeTags {
     public static List<String> tagsOf(String name) {
         List<String> tags = new ArrayList<>();
         if (name == null || name.isEmpty()) return tags;
-        for (String tag : SORTED_TAGS) if (name.contains(tag) && !tags.contains(tag)) tags.add(tag);
+        for (String tag : allTags()) if (name.contains(tag) && !tags.contains(tag)) tags.add(tag);
         return tags;
     }
 
@@ -490,7 +522,7 @@ public class BingeTags {
         String word = regionWord(region);
         if (!word.isEmpty()) keys.add(word);
         String clean = clean(title);
-        for (String tag : SORTED_TAGS) {
+        for (String tag : allTags()) {
             if (clean.contains(tag) && !keys.contains(tag)) keys.add(tag);
             if (keys.size() >= 3) break;
         }

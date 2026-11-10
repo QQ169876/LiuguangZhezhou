@@ -71,32 +71,53 @@ public class AiJudge {
             + "真不知道就返回 {\"form\":\"未知\",\"actors\":[],\"studio\":\"\",\"plot\":\"\"}，不要编造。";
 
     /**
-     * 刷剧「下一部」：以前是我们拿题材词去站里撞，撞到什么算什么（相关度全靠名字里有没有那个词）。
-     * 现在多一条路——让模型直接报出**真实存在的同类剧名**，我们拿这些名字去站里搜，
-     * 搜到就是它，命中率比题材词高一大截。2026-10-19 马先生要求。
+     * 刷剧「下一部」：马先生 2026-11-10 定的问法——**先问有没有新一季/续作，再要同类推荐**，
+     * 一句话问齐（他给豆包的原话就是「《XX》有没有新一季或和这个剧题材类型相近的剧，推荐几部」）。
+     * 以前这问法明确禁止模型给续作、只要同类，结果《小富即安，不，本公子意在天下》明明有第二部，
+     * 模型只报同类，刷剧接出去的就是八竿子打不着的剧。
      *
      * 铁律不变：关掉、断网、超时、返回乱码一律当「没问」，刷剧照旧走本地词表，绝不卡住。
      */
-    private static final String SYSTEM_NEXT = "你是短剧推荐助手。用户刚看完一部剧，要一部接一部往下刷。"
-            + "请推荐真实存在、在影视站里能搜到的同类作品**剧名**（要剧名，不是题材词）："
-            + "1. 必须跟它是**同一种形态**（按给出的「剧种」：漫剧就只给漫剧/动态漫/AI漫剧，"
-            + "短剧就只给真人短剧，电视剧就只给电视剧；不许跨到真人剧、电影、解说去）"
-            + "和**同一个地区**（按给出的「地区」；地区写「未知」时按剧名语言判断，中文剧名就只给中文剧）；"
-            + "2. 不要给电影、综艺、解说、混剪、盘点、番外；"
-            + "3. 不要给当前这部本身、它的续作或前作，也不要给「已看过」名单里的；"
-            + "4. 最像的排在最前，最多 5 个。判不出同形态同地区的宁可少给，绝不编造不存在的剧。"
-            + "另外给 2~3 个这类剧的题材词（每个 2~8 字，用来在站里搜同类，题材词也要是同一形态的）。"
-            + "先用 reason 写一句判断依据（这部是什么形态题材、据此该接哪类剧），40字以内，想清楚再给名字；"
-            + "再用 picks 逐项给剧名，每项 title 填剧名、note 填一句「为什么接这部」（20字以内），片名和理由放在同一个对象里，别串位。"
-            + "titles 和 notes 是给老版本用的兼容字段，填了 picks 就都留空数组。"
-            + "只输出 JSON，不要任何解释：{\"reason\":\"判断依据\",\"picks\":[{\"title\":\"剧名\",\"note\":\"为什么接这部\"}],"
-            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"]}";
+    /**
+     * 把「先问清这部剧是什么」和「有没有后续 / 有没有同类型」放在**一次调用**里分两步做完：
+     * 先让模型把形态（AI漫剧/真人网剧/…）、题材、主题、主演、地区写成 profile，
+     * 再严格照 profile 回答两问（有没有新一季/新一部；有没有同类、按排名）。
+     * 马先生 2026-11-10：以前直接问「接下来看什么」，模型凭一个剧名瞎猜题材，
+     * 《小富即安，不，本公子意在天下》接出去的竟是《僵尸校园》；题材先定准，模型给的才精确。
+     * profile 会落进本机缓存，之后换季、按口味、单部作品那些问法把它当「已核实档案」带上，
+     * 不再让模型重新猜一遍（也省一轮 token）。没配大模型时这一整套都不跑，纯本地剧名关键词。
+     */
+    private static final String SYSTEM_NEXT = "你是影视推荐助手。用户刚看完一部剧/电影，要一部接一部往下刷。"
+            + "**第一步：先认剧**——把这部作品是什么写进 profile：形态（AI漫剧、动态漫、沙雕漫、真人短剧、网剧、电视剧、电影、动画，只选一个）、"
+            + "题材（古装、穿越、权谋、宫斗、宅斗、玄幻、重生、系统、逆袭、都市、甜宠、复仇、悬疑…挑 2~4 个最贴切的）、"
+            + "主题（一句话，20 字以内）、主演（真人作品给 1~4 个人名；AI漫剧/动态漫这类没有真人演员给空数组）、地区（按内容产地，别按剧名语言）。"
+            + "题面里若给了【已核实的本剧档案】，一律以它为准、profile 照抄，不许自己另猜。这一步先想清楚，后面所有推荐都必须严格照它来："
+            + "档案写 AI漫剧就只找 AI漫剧，写真人网剧就只找真人网剧，写古装穿越权谋就只找这一类，"
+            + "不许跨形态也不许跨题材去推不相干的作品（这是硬要求）。"
+            + "**第二步：回答两问**——"
+            + "① 这部有没有新一季/第二季/第二部/续作/后续？有就把续作在影视站里可能出现的名称写法列出来"
+            + "（中文季号「剧名 第二季」、阿拉伯季号「剧名 第2季」、连写「剧名2」、续作另起的名字各给一种），"
+            + "放在 picks 最前面，has_next 给 true；确定没有给 false，拿不准给 null。"
+            + "② 有没有和它同形态、同题材、同主题气质的作品？要真实存在、站里能搜到的剧名（不是题材词），"
+            + "按推荐顺序排在续作后面，**picks 的顺序就是推荐顺序，用户会照着排第一的一路往下看**；"
+            + "含续作一共最多 6 项，判不准的宁可少给，绝不编造不存在的剧。"
+            + "不要给与它形态不符的作品、综艺、解说、混剪、盘点、番外，不要给当前这部、它的前作，也不要给「已看过」名单里的。"
+            + "另外给 2~3 个这类剧的题材词（每个 2~8 字，同一形态，用来在站里搜同类）。"
+            + "题面若给了用户常看的题材、几乎不碰的题材、关注过的演员：只用来在同类里排先后、避开不碰的方向，"
+            + "**不许因此改掉同形态同题材这条硬要求**，也不许把「已看过」名单里的推出来。"
+            + "reason 写一句判断依据（照档案：什么形态题材、有没有续作、据此该接哪几部），40字以内。"
+            + "picks 逐项给剧名，每项 title 填剧名、note 填一句「为什么接这部」（20字以内），片名和理由放在同一个对象里，别串位。"
+            + "titles/notes 是老版本兼容字段，填了 picks 就留空数组。"
+            + "只输出 JSON，不要任何解释：{\"profile\":{\"form\":\"\",\"genres\":[],\"theme\":\"\",\"actors\":[],\"region\":\"\"},"
+            + "\"reason\":\"判断依据\",\"picks\":[{\"title\":\"剧名\",\"note\":\"为什么接这部\"}],"
+            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":null}";
 
     /**
      * 系列剧「下一季」：站源写法五花八门（第3季 / 第三季 / 剧名3 / S3 / 之某某），
      * 本地正则抠不全会漏，模型知道这个系列的正名和季号排列，让它把可能的写法一次性给齐。
      */
     private static final String SYSTEM_NEXT_SEASON = "你是影视资料助手。用户刚看完一个系列的某一季，想知道后面还有没有，要接着看。"
+            + "题面里若给了【已核实的本剧档案】（形态/题材/主题/主演/地区），一律以它为准，别把这部剧认成别的题材或形态。"
             + "先判断这个系列**还有没有下一季**：有就 has_next 给 true，已经完结/确定没有了就给 false，拿不准给 null。"
             + "有可能就把这个系列**下一季**在影视站里可能出现的名称写法都列出来，每种都要："
             + "中文季号（第X季）、阿拉伯季号（第X季）、连写（剧名X）、英文（Season X / SX）、以及续作另起的名字（如「XX之YYY」）。"
@@ -116,6 +137,8 @@ public class AiJudge {
      * （收藏里没有爱情剧，就别往人家眼前推爱情剧），模型必须尊重。
      */
     private static final String SYSTEM_NEXT_TASTE = "你是影视推荐助手。用户刚看完一部作品，这个系列（或这部）已经没有下一季/下一部了，他要一部接一部接着看。"
+            + "题面里若给了【已核实的本剧档案】（形态/题材/主题/主演/地区），一律以它为准：档案写 AI 漫剧就只推 AI 漫剧，"
+            + "写真人网剧就只推真人网剧，写古装穿越权谋就只推这一类，不许跨形态跨题材。"
             + "请按下面给的**用户口味**推荐真实存在、在影视站里能搜到的**剧名**（要剧名，不是题材词）："
             + "1. 优先跟它是同一种形态、同一个地区（按给出的「剧种」「地区」；漫剧就给漫剧，短剧就给真人短剧）；"
             + "2. 优先包含指定主演、或用户关注过的演员的作品 —— 有的人是冲着某个演员看的；"
@@ -139,6 +162,8 @@ public class AiJudge {
     private static final ConcurrentHashMap<String, List<ActorsCallback>> ACTOR_WAIT = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Next> NEXT = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> NEXT_ASKING = new ConcurrentHashMap<>();
+    /** 第一问「这部剧是什么」的画像缓存：同一部剧只问一次，第二问直接拿它当已知条件（省 token、也定得准） */
+    private static final ConcurrentHashMap<String, Profile> PROFILE = new ConcurrentHashMap<>();
     private static final int MEMO_LIMIT = 800;
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
 
@@ -146,6 +171,7 @@ public class AiJudge {
     private static volatile boolean suggestLoaded;
     private static volatile boolean actorLoaded;
     private static volatile boolean nextLoaded;
+    private static volatile boolean profileLoaded;
 
     public interface Callback {
         void onResult(boolean ok);
@@ -199,6 +225,43 @@ public class AiJudge {
         /** 名字一个都没给、也不肯说有没有下一季 —— 这条推荐等于没问 */
         public boolean useless() {
             return isEmpty() && hasNext == null;
+        }
+    }
+
+    /**
+     * 第一问「这部剧到底是什么」的画像：形态、题材、主题、主演、地区。
+     * 用户 2026-11-10 的意思：先把题材问清楚、把形态定准（AI 漫剧就当 AI 漫剧、真人网剧就当真人网剧），
+     * 第二问再拿这份档案当**已知条件**去问「有没有后续 / 有没有同类型」，模型给的才精确。
+     * 全部字段都过了脱敏闸才存；空了就当没问到，第二问照旧发，绝不拦着刷剧。
+     */
+    public static final class Profile {
+        public final String form;
+        public final List<String> genres;
+        public final String theme;
+        public final List<String> actors;
+        public final String region;
+
+        Profile(String form, List<String> genres, String theme, List<String> actors, String region) {
+            this.form = form == null ? "" : form;
+            this.genres = genres == null ? new ArrayList<>() : genres;
+            this.theme = theme == null ? "" : theme;
+            this.actors = actors == null ? new ArrayList<>() : actors;
+            this.region = region == null ? "" : region;
+        }
+
+        public boolean empty() {
+            return form.isEmpty() && genres.isEmpty() && theme.isEmpty() && actors.isEmpty() && region.isEmpty();
+        }
+
+        /** 拼成第二问里的一段「已核实档案」，每行一项，别让模型看串了 */
+        String brief() {
+            StringBuilder sb = new StringBuilder("【已核实的本剧档案】（请严格照此回答，不要另猜）");
+            if (!form.isEmpty()) sb.append("\n形态：").append(form);
+            if (!genres.isEmpty()) sb.append("\n题材：").append(TextUtils.join("、", genres));
+            if (!theme.isEmpty()) sb.append("\n主题：").append(theme);
+            if (!actors.isEmpty()) sb.append("\n主演：").append(TextUtils.join("、", actors));
+            if (!region.isEmpty()) sb.append("\n地区：").append(region);
+            return sb.toString();
         }
     }
 
@@ -308,6 +371,7 @@ public class AiJudge {
             if (tags != null) {
                 if (SUGGEST.size() > MEMO_LIMIT) SUGGEST.clear();
                 SUGGEST.put(name, tags);
+                BingeWords.learn("题材词", tags); // 模型给的同类搜索词也进共享词库
                 saveSuggest();
             }
             List<String> result = tags;
@@ -475,8 +539,134 @@ public class AiJudge {
      */
     private static String nextKey(String name, String kindWord, String region, int mode) {
         String head = mode == MODE_MOVIE ? "movie·" : mode == MODE_SERIAL ? "serial·" : mode == MODE_TASTE ? "taste·" : "";
-        // 2026-11-08 提示词升级成「reason + 结构化 picks」，旧缓存里平铺 titles 的旧答案不再复用，让新判断真正生效
-        return "v2·" + head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
+        // 版本必须和 loadNext() 认的前缀一致：2026-11-10 提示词升级成「先画像、再按档案问后续/同类」，
+        // 旧答案不带档案不复用。上一版曾把这里升到 v3 却忘了改读缓存的 v2，答案存了读不回来、每部剧重复问模型。
+        return "v4·" + head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
+    }
+
+    /** 画像缓存键：剧名 + 剧种 + 地区（形态/产地一变，旧画像作废） */
+    private static String profileKey(String name, String kindWord, String region) {
+        return "v1·" + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
+    }
+
+    /**
+     * 上一次问「下一部」时模型写出的本剧档案，直接拿来当这一问的已知条件。
+     * 只读缓存、绝不为此单独发一次请求（铁律：别为画像多烧一轮 token）。
+     * 开关没开一律返回 null：没配大模型时连缓存里的模型结论都不许用，纯走本地剧名关键词。
+     */
+    private static Profile peekProfile(String name, String kindWord, String region) {
+        if (!AiSetting.ready() || name == null || name.isEmpty()) return null;
+        if (AiGuard.blocked(name)) return null;
+        loadProfile();
+        Profile hit = PROFILE.get(profileKey(name, kindWord, region));
+        return hit == null || hit.empty() ? null : hit;
+    }
+
+    /**
+     * 从「下一部」那次回答里把 profile 字段收下来、落进本机缓存。
+     * 下一次换季/按口味/单部作品再问时，这份「已核实的本剧档案」就会作为已知条件带上，
+     * 模型不用重新猜这部剧是什么形态、什么题材（马先生 2026-11-10：题材先弄清楚，给的才精确）。
+     * 逐字段过脱敏闸、限长、限个数；形态必须是那几个定值之一，乱写的一律不认，免得把后面带偏。
+     */
+    private static void rememberProfile(JSONObject json, String name, String kindWord, String region) {
+        try {
+            JSONObject obj = json == null ? null : json.optJSONObject("profile");
+            if (obj == null) return;
+            String form = cleanText(obj.optString("form", ""), 12).trim();
+            if (form.isEmpty() || !"AI漫剧,动态漫,沙雕漫,真人短剧,网剧,电视剧,电影,动画,未知".contains(form)) form = "";
+            List<String> genres = new ArrayList<>();
+            JSONArray genreArray = obj.optJSONArray("genres");
+            if (genreArray != null) for (int i = 0; i < genreArray.length() && genres.size() < 4; i++) {
+                String tag = cleanText(genreArray.optString(i, ""), 8).trim();
+                if (tag.length() < 2 || tag.isEmpty() || AiGuard.blocked(tag) || genres.contains(tag)) continue;
+                genres.add(tag);
+            }
+            String theme = cleanText(obj.optString("theme", ""), 40).trim();
+            List<String> actors = new ArrayList<>();
+            JSONArray actorArray = obj.optJSONArray("actors");
+            if (actorArray != null) for (int i = 0; i < actorArray.length() && actors.size() < 4; i++) {
+                String star = cleanText(actorArray.optString(i, ""), 12).trim();
+                if (star.length() < 2 || star.isEmpty() || AiGuard.blocked(star) || actors.contains(star)) continue;
+                actors.add(star);
+            }
+            String area = cleanText(obj.optString("region", ""), 12).trim();
+            Profile profile = new Profile(form, genres, theme, actors, area);
+            if (profile.empty()) return; // 模型没给出可用档案：这次就不记，下次让它重新认
+            // 档案里的题材/形态也是提示词：一并攒进共享文档（马先生 2026-11-11）
+            BingeWords.learn("题材", genres);
+            BingeWords.learn("形态", form);
+            String key = profileKey(name, kindWord, region);
+            loadProfile();
+            if (PROFILE.size() > MEMO_LIMIT) PROFILE.clear();
+            PROFILE.put(key, profile);
+            saveProfile();
+            DebugLog.d("AiJudge", "本剧档案 " + profile.brief().replace('\n', ' '));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void loadProfile() {
+        if (profileLoaded) return;
+        synchronized (AiJudge.class) {
+            if (profileLoaded) return;
+            try {
+                File file = profileFile();
+                if (file.exists()) {
+                    byte[] data = new byte[(int) file.length()];
+                    try (FileInputStream in = new FileInputStream(file)) {
+                        int read = in.read(data);
+                        JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
+                        for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
+                            String key = it.next();
+                            if (!key.startsWith("v1·")) continue;
+                            JSONObject item = json.optJSONObject(key);
+                            if (item == null) continue;
+                            List<String> genres = new ArrayList<>();
+                            JSONArray g = item.optJSONArray("genres");
+                            if (g != null) for (int i = 0; i < g.length(); i++) {
+                                String t = g.optString(i, "");
+                                if (!t.isEmpty() && !AiGuard.blocked(t)) genres.add(t);
+                            }
+                            List<String> actors = new ArrayList<>();
+                            JSONArray a = item.optJSONArray("actors");
+                            if (a != null) for (int i = 0; i < a.length(); i++) {
+                                String t = a.optString(i, "");
+                                if (!t.isEmpty() && !AiGuard.blocked(t)) actors.add(t);
+                            }
+                            PROFILE.put(key, new Profile(
+                                    cleanText(item.optString("form", ""), 12), genres,
+                                    cleanText(item.optString("theme", ""), 40), actors,
+                                    cleanText(item.optString("region", ""), 12)));
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            profileLoaded = true;
+        }
+    }
+
+    private static synchronized void saveProfile() {
+        try {
+            JSONObject json = new JSONObject();
+            for (java.util.Map.Entry<String, Profile> entry : PROFILE.entrySet()) {
+                JSONObject item = new JSONObject();
+                item.put("form", entry.getValue().form);
+                item.put("genres", new JSONArray(entry.getValue().genres));
+                item.put("theme", entry.getValue().theme);
+                item.put("actors", new JSONArray(entry.getValue().actors));
+                item.put("region", entry.getValue().region);
+                json.put(entry.getKey(), item);
+            }
+            try (FileOutputStream out = new FileOutputStream(profileFile())) {
+                out.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static File profileFile() {
+        return new File(App.get().getFilesDir(), "ai_profile.json");
     }
 
     /**
@@ -485,6 +675,7 @@ public class AiJudge {
      * 跟上面两个分开：给短剧的那一版明写着「不要给电影」，给系列的那一版只问季号，口径都不一样。
      */
     private static final String SYSTEM_NEXT_MOVIE = "你是影视资料助手。用户刚看完一部电影/单部作品，要接着往下看。"
+            + "题面里若给了【已核实的本剧档案】（形态/题材/主题/主演/地区），一律以它为准，同类型就照档案里的题材和形态找，别跨题材。"
             + "第一步先判断这部作品有没有**续作/下一部**（同系列的后一部，可能是「第X部」「X」「II」或另起的名字）："
             + "有就 has_next 给 true，并把续作在影视站里可能出现的名称写法都列出来（中文第X部、阿拉伯第X部、连写、英文名、另起的名字都给）；"
             + "确定没有了（或已经是最后一部）就 has_next 给 false。"
@@ -509,8 +700,18 @@ public class AiJudge {
      * ⚠️ 这是**纯建议**：模型报的剧名站里未必有，搜不到就当没这回事，下一步照旧换词搜。
      */
     public static void nextUp(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, NextCallback callback) {
+        nextUp(name, typeName, region, kindWord, actor, seriesMain, seriesIndex, callback, null, null, null);
+    }
+
+    /**
+     * 带观影口味的「下一部」：口味（常看题材 / 几乎不碰的题材 / 关注过的演员）从播放历史和收藏里攒，
+     * 只用来给同类推荐排排序，**不许因此改掉「同形态同题材」这条硬要求**（马先生 2026-11-10）。
+     * 口味不进缓存键：答案里有哪些剧不因口味而变，别为口味变一次就重问一遍模型。
+     */
+    public static void nextUp(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex,
+                              NextCallback callback, List<String> liked, List<String> avoided, List<String> stars) {
         int mode = seriesIndex > 0 && seriesMain != null && !seriesMain.isEmpty() ? MODE_SERIAL : MODE_GENERIC;
-        askNext(name, typeName, region, kindWord, actor, seriesMain, seriesIndex, mode, callback);
+        askNext(name, typeName, region, kindWord, actor, seriesMain, seriesIndex, mode, callback, liked, avoided, stars);
     }
 
     /**
@@ -566,7 +767,11 @@ public class AiJudge {
         POOL.execute(() -> {
             Next next = null;
             try {
-                next = requestNext(safe[0], safe[1], region, kindWord, safe[2], seriesMain, seriesIndex, mode, liked, avoided, stars);
+                // 上一轮模型写出的本剧档案，这一轮直接当已知条件带上；
+                // 没有就让它在本轮回答里先认剧（profile 字段），答完存下来给下一轮用。
+                // 全程只有一次模型调用，不为画像多烧一轮，也绝不拖住刷剧。
+                Profile profile = peekProfile(safe[0], kindWord, region);
+                next = requestNext(safe[0], safe[1], region, kindWord, safe[2], seriesMain, seriesIndex, mode, liked, avoided, stars, profile);
             } catch (Throwable e) {
                 // 为什么不可用要留痕：以前只记一句「不可用」，模型换了地址、令牌过期、设备断网看起来一模一样，事后无从分辨
                 next = null;
@@ -601,7 +806,7 @@ public class AiJudge {
         }
     }
 
-    private static Next requestNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode, List<String> liked, List<String> avoided, List<String> stars) throws Exception {
+    private static Next requestNext(String name, String typeName, String region, String kindWord, String actor, String seriesMain, int seriesIndex, int mode, List<String> liked, List<String> avoided, List<String> stars, Profile profile) throws Exception {
         boolean serial = mode == MODE_SERIAL;
         boolean movie = mode == MODE_MOVIE;
         boolean taste = mode == MODE_TASTE;
@@ -616,29 +821,47 @@ public class AiJudge {
         if (movie && seriesIndex > 0) sb.append("\n这是系列里的第").append(seriesIndex).append("部，系列名：").append(seriesMain);
         String watched = watched(name);
         if (!watched.isEmpty()) sb.append("\n已看过（不要推荐）：").append(watched);
-        if (taste) { // 把攒出来的口味摊给模型：常看的、几乎不碰的、关注过的演员
-            if (liked != null && !liked.isEmpty()) sb.append("\n用户常看的题材：").append(TextUtils.join("、", liked));
-            if (avoided != null && !avoided.isEmpty()) sb.append("\n用户几乎不碰的题材（务必避开）：").append(TextUtils.join("、", avoided));
-            if (stars != null && !stars.isEmpty()) sb.append("\n用户关注过的演员（优先考虑他们的作品）：").append(TextUtils.join("、", stars));
+        // 观影口味（播放历史 + 收藏 + 关注演员攒出来的）：主问和兜底问都带上，
+        // 只用于同类推荐排序，不许因此跨形态跨题材；每一项也过一遍脱敏闸
+        if (liked != null && !liked.isEmpty()) {
+            List<String> clean = new ArrayList<>();
+            for (String tag : liked) if (tag != null && !tag.isEmpty() && !AiGuard.blocked(tag)) clean.add(tag);
+            if (!clean.isEmpty()) sb.append("\n用户常看的题材（同类里优先这个方向）：").append(TextUtils.join("、", clean));
         }
+        if (avoided != null && !avoided.isEmpty()) {
+            List<String> clean = new ArrayList<>();
+            for (String tag : avoided) if (tag != null && !tag.isEmpty() && !AiGuard.blocked(tag)) clean.add(tag);
+            if (!clean.isEmpty()) sb.append("\n用户几乎不碰的题材（同类里尽量避开，但仍不许跨形态跨题材）：").append(TextUtils.join("、", clean));
+        }
+        if (stars != null && !stars.isEmpty()) {
+            List<String> clean = new ArrayList<>();
+            for (String star : stars) if (star != null && !star.isEmpty() && !AiGuard.blocked(star)) clean.add(star);
+            if (!clean.isEmpty()) sb.append("\n用户关注过的演员（同类里优先考虑他们的作品）：").append(TextUtils.join("、", clean));
+        }
+        // 上一次模型写出的「已核实档案」放在所有线索之后、问题之前：这是定过性的，优先级高于站源标注和模型自己的印象
+        if (profile != null && !profile.empty()) sb.append("\n").append(profile.brief());
         sb.append(serial
                 ? "\n问：这个系列最新到第几季？第" + seriesIndex + "季之后还有没有下一季（有没有完结）？有就把下一季的名称写法都列出来，已经完结就直说没有。站源可能收录了你不知道的版本，没把握的 has_next 给 null 别把话说死，我们本地还会再搜。"
                 : movie
                 ? "\n问：这部作品有没有下一部/续作？有就把续作可能的名称写法都列出来，顺便推荐几部同类型的；确定没有续作就 has_next 给 false，没把握给 null。"
                 : taste
-                ? "\n问：它已经没有下一季/下一部了。参照上面的口味，接下来该看哪几部？优先同形态同地区、优先含指定主演或关注演员的作品，避开不碰的题材，给出剧名。"
-                : "\n问：接下来该看哪几部同类的剧？给出剧名。");
+                ? "\n问：它已经没有下一季/下一部了。参照上面的口味" + (profile == null || profile.empty() ? "" : "和本剧档案") + "，接下来该看哪几部？优先同形态同地区、优先含指定主演或关注演员的作品，避开不碰的题材，给出剧名。"
+                : "\n问：" + (profile == null || profile.empty()
+                    ? "先确认它是什么剧，把形态、题材、主题、主演、地区写进 profile，"
+                    : "照上面的【已核实的本剧档案】确认它是什么剧，")
+                    + "再回答两件事：①这部有没有新一季/第二季/第二部/后续？有就先给续作的名称写法；②有没有和它同类型的剧？同类型严格按档案里的形态、题材、主题，按推荐顺序排好，排第一的是最该接着看的。");
 
         // 模型链统一从 AiChat 走：豆包优先（限额省钱），千问兜底（按量计费总有答）
         String content = AiChat.chat(serial ? SYSTEM_NEXT_SEASON : movie ? SYSTEM_NEXT_MOVIE : taste ? SYSTEM_NEXT_TASTE : SYSTEM_NEXT, sb.toString());
-        return parseNext(content, name);
+        // requestNext 的 name 已是 AiGuard.pass 脱敏后的，档案缓存与 peekProfile 用同一个键
+        return parseNext(content, name, kindWord, region);
     }
 
     /**
      * 模型报的剧名逐个过闸：太短太长都不像剧名、跟当前这部一样的不收、脏词直接扔。
      * 一个都不剩就当没问（返回空 Next，调用方退回本地词表）。
      */
-    private static Next parseNext(String content, String current) {
+    private static Next parseNext(String content, String current, String kindWord, String region) {
         if (content == null) return null;
         String text = content.trim();
         int start = text.indexOf('{');
@@ -646,6 +869,7 @@ public class AiJudge {
         if (start < 0 || end <= start) return null;
         try {
             JSONObject json = new JSONObject(text.substring(start, end + 1));
+            rememberProfile(json, current, kindWord, region); // 把「这部剧是什么」的定性收进缓存，下一问直接带上
             List<String> titles = new ArrayList<>();
             List<String> notes = new ArrayList<>();
             // 结构化 picks 优先：片名和「为什么接这部」绑在同一个对象里，绝不串位（参照智能搜索）
@@ -686,6 +910,8 @@ public class AiJudge {
             // 「有没有下一季」是后面要不要接着搜的判断依据，模型没写就当没说（null），不当「没有」
             Boolean hasNext = json.has("has_next") && !json.isNull("has_next") ? json.optBoolean("has_next") : null;
             String reason = cleanText(json.optString("reason", ""), 60);
+            // 配了大模型的客户端把模型给出的题材词攒进共享文档，没配大模型的客户端启动时拉走就能用
+            BingeWords.learn("题材词", tags);
             DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags + " 还有下一季=" + hasNext + " 依据=" + reason);
             return new Next(titles, tags, hasNext, notes, reason);
         } catch (Exception e) {
@@ -752,7 +978,7 @@ public class AiJudge {
                         JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
                         for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
                             String key = it.next();
-                            if (!key.startsWith("v2·")) continue; // 提示词升级前的旧答案不复用，也别让它在缓存文件里常驻
+                            if (!key.startsWith("v4·")) continue; // 提示词升级前的旧答案不复用，也别让它在缓存文件里常驻（版本须与 nextKey 一致）
                             JSONObject item = json.optJSONObject(key);
                             if (item == null) continue;
                             List<String> titles = new ArrayList<>();
