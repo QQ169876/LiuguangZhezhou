@@ -811,6 +811,26 @@ public class MoonSync {
         }
     }
 
+    /**
+     * 删除之后本机又看过 / 又收藏过这部：站点墓碑已经过期，不该再删本机数据。
+     * 只按时间判「谁在后听谁的」——本机刚看的记录比删除时刻新，就算本机墓碑被撤过，
+     * 这条老墓碑也不能再生效。给 MoonTomb.merge() 拉到站点墓碑时用。
+     */
+    static boolean revived(String siteKey, boolean favorite, long dead) {
+        if (dead <= 0 || siteKey == null || siteKey.isEmpty()) return false;
+        if (favorite) {
+            for (Keep item : AppDatabase.get().getKeepDao().findAll()) {
+                if (item.getType() != 0) continue;
+                if (siteKey.equals(siteKey(item)) && item.getCreateTime() > dead) return true;
+            }
+        } else {
+            for (History item : AppDatabase.get().getHistoryDao().findAll()) {
+                if (siteKey.equals(siteKey(item)) && item.getCreateTime() > dead) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean stillThere(String siteKey, boolean favorite) {
         try {
             return favorite ? MoonApi.hasFavorite(siteKey) : MoonApi.hasRecord(siteKey);

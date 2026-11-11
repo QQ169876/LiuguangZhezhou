@@ -59,22 +59,35 @@ public class MoonTomb {
         if (remote == null || remote.length() == 0) return;
         JSONObject local = MoonSync.loadTomb(favorite ? MoonSync.tombFavorite() : MoonSync.tombRecord());
         List<String> arrived = new ArrayList<>();
+        int revoked = 0;
         try {
             for (Iterator<String> it = remote.keys(); it.hasNext(); ) {
                 String key = it.next();
                 long time = remote.optLong(key, 0);
                 if (time <= 0) continue;
                 if (time > local.optLong(key, 0)) {
+                    // 删除之后本机又看过 / 又收藏过这部：这条墓碑已经过期，不能再拿它删本机数据。
+                    // 旧实现只比「本机墓碑里有没有更晚的时间」，本机墓碑被 dropAlive 撤掉后，
+                    // 站点那条老墓碑每次同步都会被当成「别台设备刚删的」，把刚看的记录又删一遍，
+                    // 然后 push 又把墓碑推回站点 —— 看一次删一次，循环不停（2026-11-11 实测）。
+                    // 这里直接把过期墓碑撤掉，后面的 push 会把站点那份也清干净。
+                    if (MoonSync.revived(key, favorite, time)) {
+                        local.remove(key);
+                        ++revoked;
+                        DebugLog.d("Sync", "墓碑已过期（本机之后又看过/收藏）：" + key);
+                        continue;
+                    }
                     local.put(key, time);
                     arrived.add(key);
                 }
             }
         } catch (Exception ignored) {
         }
-        if (arrived.isEmpty()) return;
+        if (arrived.isEmpty() && revoked == 0) return;
+        // 撤掉的过期墓碑也要落盘，不然本机墓碑里还留着，下次同步又会被推回站点
         MoonSync.saveTomb(favorite ? MoonSync.tombFavorite() : MoonSync.tombRecord(), local);
         for (String key : arrived) MoonSync.purgeLocal(key, favorite); // 本机命中的删掉，上传才不会把它推回去
-        DebugLog.d("Sync", "拉到别台设备删过的墓碑 " + arrived.size() + " 条（" + (favorite ? "收藏" : "记录") + "）");
+        DebugLog.d("Sync", "墓碑合并：拉到别台删过的 " + arrived.size() + " 条、撤掉过期 " + revoked + " 条（" + (favorite ? "收藏" : "记录") + "）");
     }
 
     /** 往站点推一份本机墓碑（同步时调一次；删完一条也会立刻推，见 markDeleted） */
