@@ -625,8 +625,9 @@ public class SyncManager {
         if (!data.getPrefers().isEmpty()) applyPrefers(data.getPrefers(), local.getPrefers());
         if (!data.getCookies().isEmpty()) CookieStore.apply(data.getCookies());
         SpiderVault.apply(data.getSpider());
-        if (configChanged) reload();
-        notifyDataChanged();
+        // 局域网推送（onMerge）：不是那两项同步，配置照旧完整重载、页面照旧完整刷新
+        if (configChanged) reload(false);
+        notifyDataChanged(true);
     }
 
     /**
@@ -1152,52 +1153,84 @@ public class SyncManager {
      * 同步把历史 / 收藏写进数据库后，通知开着的页面立刻重查。
      * 之前只有局域网推送（applyPush）发这个事件，WebDAV 同步（doSync/doPull）写完库就完了，
      * 首页的最近观看和收藏页一直显示旧数据，要重启 App 才变 —— 马先生在小米盒子上踩到（2026-10-05）。
+     *
+     * 同步收尾：只刷新播放记录，节目单 / 搜索结果这些浏览态页面一律不惊动。
+     * 局域网推送走下面的带参版，不受这条约束。
      */
     private static void notifyDataChanged() {
-        App.post(() -> {
-            RefreshEvent.history();
-            RefreshEvent.keep();
-            RefreshEvent.star(); // 整份替换时演员表也被清过重建，关注页跟着重查
-            // 马先生 2026-11-09：下拉同步/推送完成后整份数据都换了，开着的页面一律原地重读，
-            // 首页、分类页、设置显示都不留旧数据，不再靠重启 App 生效。
-            RefreshEvent.home();     // 首页重新拉分类 + 重设标题
-            RefreshEvent.category(); // 分类页原地重读
-            // history() 已让首页重建最近观看，home() 已重拉分类，不必再发 size() 重复请求一遍
-        });
-    }
-
-    /** 局域网推送刚把登录态/配置写进来：原地重载配置与各页面，不重启进程 */
-    public static void reloadInPlace() {
-        reload();
-        notifyDataChanged();
+        notifyDataChanged(false);
     }
 
     /**
-     * 同步改了非源配置（解析接口、规则等）后重新加载让变化生效。
+     * full=false（WebDAV / 影视站同步）：只发 history / keep / star。
+     * 马先生 2026-11-12：同步完连 home()/category() 一起发，用户正在浏览节目单或
+     * 搜索结果时会被整页重建，当前 tab / 滚动位置全丢；撤销 11-09「开着的页面一律原地重读」。
+     *
+     * full=true（局域网推送）：照旧发 home()/category() 完整刷新。
+     * 马先生 2026-11-12 补充：推送不是那两项同步，该怎么刷就怎么刷，用户体验优先，
+     * 推完点播源/登录态要立刻在首页看到，不要让用户进出一次页面才生效。
+     */
+    private static void notifyDataChanged(boolean full) {
+        App.post(() -> {
+            RefreshEvent.history();
+            RefreshEvent.keep();
+            RefreshEvent.star(); // 演员关注也显示在收藏页，整份替换后跟着重查
+            if (full) {
+                RefreshEvent.home();     // 首页重新拉分类 + 重设标题
+                RefreshEvent.category(); // 分类页原地重读
+            }
+            // 同步路径不发 home()/category()/size()：首页分类、节目单、搜索结果都不重拉
+            // history() 已让首页重建最近观看，home() 已重拉分类，不必再发 size() 重复请求
+        });
+    }
+
+    /** 局域网推送刚把登录态 / 配置写进来：原地重载配置并完整刷新各页面，不重启进程 */
+    public static void reloadInPlace() {
+        reload(false);
+        notifyDataChanged(true);
+    }
+
+    /** 同步路径：静默重载，不惊动开着的页面 */
+    private static void reload() {
+        reload(true);
+    }
+
+    /**
+     * 配置重新解析让变化立即生效。两条路径分开，别再一刀切：
+     *
+     * silent=true（WebDAV / 影视站同步）：走 loadSilent，不发 ConfigEvent、不弹公告。
+     * 否则 VodConfig.load() 会经 ConfigEvent.vod() 让首页再发一轮 home()/history()，
+     * 等于绕过 notifyDataChanged() 又整体刷一次，浏览节目单/搜索结果照样被打断。
+     *
+     * silent=false（局域网推送）：走普通 load()，照旧发 ConfigEvent 完整刷新，
+     * 推完立刻看到新内容 —— 马先生 2026-11-12：推送该怎么刷就怎么刷。
      *
      * 关键：用当前内存里已经在用的 Config 重新加载，不调 init() 从数据库重新取——
      * init() 会 findOne(type) 按 time DESC 取一条，如果用户刚改了源但新源还在加载中
      * （config.update() 还没跑到、time 还是 0），findOne 就会返回旧源，
      * 把用户刚选的源给冲掉。源地址已经排除出同步，同步后没理由换源。
      */
-    private static void reload() {
+    private static void reload(boolean silent) {
         App.post(() -> {
-            VodConfig.get().load(VodConfig.get().getConfig(), new Callback() {
-                @Override
-                public void error(String msg) {
-                }
-            });
-            LiveConfig.get().load(LiveConfig.get().getConfig(), new Callback() {
-                @Override
-                public void error(String msg) {
-                }
-            });
-            WallConfig.get().load(WallConfig.get().getConfig(), new Callback() {
-                @Override
-                public void error(String msg) {
-                }
-            });
+            if (silent) {
+                VodConfig.loadSilent(VodConfig.get().getConfig(), noop());
+                LiveConfig.loadSilent(LiveConfig.get().getConfig(), noop());
+                WallConfig.loadSilent(WallConfig.get().getConfig(), noop());
+            } else {
+                VodConfig.load(VodConfig.get().getConfig(), noop());
+                LiveConfig.load(LiveConfig.get().getConfig(), noop());
+                WallConfig.load(WallConfig.get().getConfig(), noop());
+            }
         });
+    }
+
+    /** 配置重载只关心「有没有生效」，失败也不打扰用户 */
+    private static Callback noop() {
+        return new Callback() {
+            @Override
+            public void error(String msg) {
+            }
+        };
     }
 
     /** 三份里的同一键取出来当 JSON 数组（大模型那串是数组，别的键用不到） */

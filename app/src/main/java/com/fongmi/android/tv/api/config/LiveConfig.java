@@ -77,6 +77,11 @@ public class LiveConfig extends BaseConfig {
         get().clear().config(config).load(callback);
     }
 
+    /** 同步后静默重载：配置生效，但不发 ConfigEvent 惊动开着的页面 */
+    public static void loadSilent(Config config, Callback callback) {
+        get().clear().config(config).loadSilent(callback);
+    }
+
     public LiveConfig init() {
         return config(Config.live());
     }
@@ -108,8 +113,7 @@ public class LiveConfig extends BaseConfig {
     }
 
     @Override
-    protected void postEvent() {
-        super.postEvent();
+    protected void postTypeEvent() {
         ConfigEvent.live();
     }
 

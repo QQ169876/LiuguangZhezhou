@@ -64,8 +64,23 @@ abstract class BaseConfig {
         }
     }
 
-    protected void postEvent() {
+    /**
+     * 是否发配置事件由「本次加载」的 quiet 决定，不用实例字段：
+     * 两个 load 并发时全局标志会串台，把换源 / 强制更新 / 局域网推送该发的事件一起吞掉。
+     */
+    protected void postEvent(boolean quiet) {
+        if (quiet) return;
         ConfigEvent.common();
+        postTypeEvent();
+    }
+
+    /** 不走 load() 的路径（VodConfig 强制更新点播源）：一律照常发事件 */
+    protected void postEvent() {
+        postEvent(false);
+    }
+
+    /** 子类各自的 ConfigEvent 类型事件，统一走 postEvent() 的静默判断，免得以后漏判 */
+    protected void postTypeEvent() {
     }
 
     public boolean needSync(String url) {
@@ -89,13 +104,27 @@ abstract class BaseConfig {
     }
 
     public void load(Callback callback) {
+        start(callback, false);
+    }
+
+    /**
+     * 静默重载：只让配置重新解析生效，不发 ConfigEvent、不弹公告。
+     * 只给 WebDAV / 影视站同步用 —— 配置照样立即生效，但不会把用户正在浏览的
+     * 节目单、分类页、搜索结果整页重建（马先生 2026-11-12）。
+     * 局域网推送不走这里：它用普通 load()，照旧完整刷新，推完立刻看到新内容。
+     */
+    public void loadSilent(Callback callback) {
+        start(callback, true);
+    }
+
+    private void start(Callback callback, boolean quiet) {
         int id = taskId.incrementAndGet();
         if (future != null && !future.isDone()) future.cancel(true);
-        future = Task.submit(() -> loadConfig(id, config, callback));
+        future = Task.submit(() -> loadConfig(id, config, callback, quiet));
         callback.start();
     }
 
-    protected void loadConfig(int id, Config config, Callback callback) {
+    protected void loadConfig(int id, Config config, Callback callback, boolean quiet) {
         boolean cached = false;
         if (config != null && !isLoaded()) {
             try {
@@ -105,7 +134,7 @@ abstract class BaseConfig {
             }
             if (cached) {
                 Log.d(getTag(), "offline cache used");
-                postEvent();
+                postEvent(quiet);
                 App.post(callback::success);
             }
         }
@@ -117,7 +146,7 @@ abstract class BaseConfig {
             if (taskId.get() != id) return;
             fresh = true;
             if (config.equals(this.config)) config.update();
-            App.post(() -> Notify.show(config.getNotice()));
+            if (!quiet) App.post(() -> Notify.show(config.getNotice()));
             if (!cached) App.post(callback::success);
         } catch (Throwable e) {
             e.printStackTrace();
@@ -128,7 +157,7 @@ abstract class BaseConfig {
             else if (e instanceof OutOfMemoryError) App.post(() -> callback.error(ResUtil.getString(R.string.error_config_large)));
             else App.post(() -> callback.error(Notify.getError(R.string.error_config_get, e)));
         } finally {
-            if (taskId.get() == id && (!cached || fresh)) postEvent();
+            if (taskId.get() == id && (!cached || fresh)) postEvent(quiet);
         }
     }
 

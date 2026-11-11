@@ -41,6 +41,11 @@ public class WallConfig extends BaseConfig {
         get().config(config).load(callback);
     }
 
+    /** 同步后静默重载：配置生效，但不发 ConfigEvent 惊动开着的页面 */
+    public static void loadSilent(Config config, Callback callback) {
+        get().config(config).loadSilent(callback);
+    }
+
     public WallConfig init() {
         return config(Config.wall());
     }
@@ -68,8 +73,7 @@ public class WallConfig extends BaseConfig {
     }
 
     @Override
-    protected void postEvent() {
-        super.postEvent();
+    protected void postTypeEvent() {
         ConfigEvent.wall();
     }
 

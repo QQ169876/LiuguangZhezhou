@@ -1367,10 +1367,9 @@ public class MoonSync {
             RefreshEvent.history();
             DebugLog.d("Sync", "刷新事件 执行 keep");
             RefreshEvent.keep();
-            // 马先生 2026-11-09：影视站同步整份换库后，首页/分类页也原地重读，别让用户重启 App
-            RefreshEvent.star();
-            RefreshEvent.home();
-            RefreshEvent.category();
+            // 马先生 2026-11-12：影视站同步完只刷新播放记录，首页/分类页/节目单/搜索结果一律不重读。
+            // 撤销 2026-11-09 加的 home()/category()：那会把正在浏览的用户整页重建。
+            RefreshEvent.star(); // 演员关注显示在收藏页，跟着重查
             DebugLog.d("Sync", "刷新事件 执行完毕");
         });
     }

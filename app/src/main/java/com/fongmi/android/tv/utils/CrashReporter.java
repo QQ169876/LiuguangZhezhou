@@ -247,9 +247,14 @@ public class CrashReporter {
         }
     }
 
-    /** 右下角一闪而过的小「R」：日志已上传的内部暗号，不给用户任何说明 */
+    /**
+     * 右下角一闪而过的小「R」：日志已上传的内部暗号，不给用户任何说明。
+     * 马先生 2026-11-12：只在**开着调试模式**时亮。崩溃日志补传（uploadPending）不依赖调试模式，
+     * 普通用户默认没开也会撞见这个莫名其妙的 R，按他的要求非调试模式一律不提示。
+     */
     private static void hintR() {
         try {
+            if (!DebugLog.isEnabled()) return;
             App.post(() -> {
                 try {
                     Toast toast = Toast.makeText(App.get(), "R", Toast.LENGTH_SHORT);
