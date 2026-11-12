@@ -37,17 +37,31 @@ public final class DebugLog {
 
     private static PrintWriter writer;
     private static File file;
+    // 开关缓存起来：日志默认关，却处处调用（心跳、播放、生命周期…），
+    // 原来每打一行都要加一次锁再读一次 SharedPreferences，纯属白烧。
+    // null = 还没读过，等首次用到再读，避开 Application 初始化时序。
+    private static volatile Boolean enabled;
 
     private DebugLog() {
     }
 
-    public static synchronized boolean isEnabled() {
-        // 默认关：平常不记，崩过了（启动时会提示）再打开，省得老设备天天白写文件
-        return Prefers.getBoolean("debug_trace", false);
+    public static boolean isEnabled() {
+        Boolean value = enabled;
+        if (value != null) return value;
+        synchronized (DebugLog.class) {
+            if (enabled != null) return enabled;
+            try {
+                enabled = Prefers.getBoolean("debug_trace", false);
+            } catch (Throwable e) {
+                return false; // Prefers 还没就绪，别把 false 缓存死，等下次真正用到再读
+            }
+            return enabled;
+        }
     }
 
     public static synchronized void setEnabled(boolean on) {
         Prefers.put("debug_trace", on);
+        enabled = on;
         if (on) d("Debug", "---- 调试日志已开启 ----");
         else close();
     }

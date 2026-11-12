@@ -16,12 +16,17 @@ import com.google.common.net.HttpHeaders;
 
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public class Force implements Source.Extractor, ServiceConnection {
 
     private static final Pattern PATTERN = Pattern.compile("(?i)(p[2-9]p|mitv)");
-    private final HashSet<String> set = new HashSet<>();
+    private static final long BIND_TIMEOUT = 5000L;
+    // 服务连接回调在主线程写、fetch 在工作线程读：原来的裸 HashSet 既没有可见性保证，
+    // 回调可能永远等不到，while 循环就会 10ms 一次空转到底
+    private final Set<String> set = Collections.synchronizedSet(new HashSet<>());
+    private volatile boolean bound;
 
     @Override
     public boolean match(Uri uri) {
@@ -29,6 +34,7 @@ public class Force implements Source.Extractor, ServiceConnection {
     }
 
     private void init(String scheme) {
+        bound = true;
         App.get().bindService(Util.intent(App.get(), scheme), this, Context.BIND_AUTO_CREATE);
     }
 
@@ -36,7 +42,11 @@ public class Force implements Source.Extractor, ServiceConnection {
     public String fetch(String url) throws Exception {
         String scheme = Util.scheme(url);
         if (!set.contains(scheme)) init(scheme);
-        while (!set.contains(scheme)) SystemClock.sleep(10);
+        long until = SystemClock.elapsedRealtime() + BIND_TIMEOUT;
+        while (!set.contains(scheme)) {
+            if (SystemClock.elapsedRealtime() >= until) throw new IllegalStateException("Force service bind timeout: " + scheme);
+            SystemClock.sleep(10);
+        }
         Uri uri = UrlUtil.uri(url);
         int port = Util.port(scheme);
         String id = uri.getLastPathSegment();
@@ -52,10 +62,11 @@ public class Force implements Source.Extractor, ServiceConnection {
     @Override
     public void exit() {
         try {
-            if (!set.isEmpty()) App.get().unbindService(this);
+            if (bound) App.get().unbindService(this); // 按「发起过绑定」解，别因为超时时 set 还是空的就漏解
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
+            bound = false;
             set.clear();
         }
     }

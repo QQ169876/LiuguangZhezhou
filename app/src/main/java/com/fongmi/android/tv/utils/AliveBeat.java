@@ -46,8 +46,11 @@ public final class AliveBeat {
         try {
             long now = System.currentTimeMillis();
             boolean fast = now < fastUntil;
-            DebugLog.d("Alive", (fast ? "存活(细) +" + (now - since) + "ms " : "存活 ") + snapshot());
-            App.post(BEAT, fast ? FAST : IDLE);
+            // 日志没开就别白算：参数是先求值再进 d() 的，原来即使不记日志，
+            // 每 5 秒（细打点档每 200ms）照样在主线程做一次 getMemoryInfo 跨进程调用 + 拼字符串。
+            boolean trace = DebugLog.isEnabled();
+            if (trace) DebugLog.d("Alive", (fast ? "存活(细) +" + (now - since) + "ms " : "存活 ") + snapshot());
+            App.post(BEAT, trace && fast ? FAST : IDLE);
         } catch (Throwable ignored) {
         }
         return 0;

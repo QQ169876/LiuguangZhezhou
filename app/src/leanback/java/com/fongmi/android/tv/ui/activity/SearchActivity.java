@@ -57,6 +57,9 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     private boolean aiMode;    // 右侧结果区正被智能搜索占着
     private boolean aiVoice;   // 这次语音是「AI」键起的，说完直接进智能搜索
     private String aiQuestion = "";
+    private Call wordCall;              // 联想词/热搜在飞的请求，输入变了就掐掉，别让旧结果回来刷屏
+    private volatile String pendingWord = "";
+    private final Runnable wordFetch = this::fetchWord;
 
     public static void start(Activity activity) {
         activity.startActivity(new Intent(activity, SearchActivity.class));
@@ -145,38 +148,64 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
         mBinding.keyword.setSelection(text.length());
     }
 
+    /**
+     * 以前每敲一个字就立刻发一次联想请求，遥控器连打五六个字就是五六个并发请求，
+     * 谁先回来谁刷列表，旧的还会把新的盖掉。改成停手 250ms 才发，并且只认最后一次输入。
+     */
     private void getWord(String text) {
         exitAiMode();
-        if (text.isEmpty()) getHot();
+        pendingWord = text == null ? "" : text;
+        App.post(wordFetch, 250);
+    }
+
+    private void fetchWord() {
+        String text = pendingWord == null ? "" : pendingWord;
+        if (wordCall != null) {
+            wordCall.cancel();
+            wordCall = null;
+        }
+        if (text.isEmpty()) getHot(text);
         else getSuggest(text);
     }
 
-    private void getHot() {
+    private void getHot(String keyword) {
         mBinding.word.setText(R.string.search_hot);
         mWordAdapter.setItems(Word.objectFrom(Setting.getHot()).getData());
-        OkHttp.newCall("https://api.web.360kan.com/v1/rank?cat=1", Collections.singletonMap(HttpHeaders.REFERER, "https://www.360kan.com/rank/general")).enqueue(getCallback(true));
+        wordCall = OkHttp.newCall("https://api.web.360kan.com/v1/rank?cat=1", Collections.singletonMap(HttpHeaders.REFERER, "https://www.360kan.com/rank/general"));
+        wordCall.enqueue(getCallback(true, keyword));
     }
 
-    private void getSuggest(String text) {
+    private void getSuggest(String keyword) {
         mBinding.word.setText(R.string.search_suggest);
-        OkHttp.newCall("https://suggest.video.iqiyi.com/?if=mobile&key=" + Uri.encode(ZhuToPin.get(text))).enqueue(getCallback(false));
+        wordCall = OkHttp.newCall("https://suggest.video.iqiyi.com/?if=mobile&key=" + Uri.encode(ZhuToPin.get(keyword)));
+        wordCall.enqueue(getCallback(false, keyword));
     }
 
-    private Callback getCallback(boolean hot) {
+    private Callback getCallback(boolean hot, String keyword) {
         return new Callback() {
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                String result = response.body().string();
-                if (TextUtils.isEmpty(result)) return;
-                App.post(() -> setAdapter(result, hot));
+                try {
+                    String result = response.body() == null ? null : response.body().string();
+                    if (TextUtils.isEmpty(result)) return;
+                    if (hot) Setting.putHot(result); // 热搜缓存与输入无关，先存下，别因为用户接着打字就丢掉
+                    if (call.isCanceled() || !keyword.equals(pendingWord)) return; // 输入已经变了，不刷列表
+                    List<Word.Data> data;
+                    try {
+                        data = Word.objectFrom(result).getData(); // JSON 解析放在回调线程，别占着主线程
+                    } catch (Exception e) {
+                        return; // 站点返回格式不对，丢掉这趟，别把回调线程搞崩
+                    }
+                    if (data == null) return;
+                    App.post(() -> {
+                        if (isFinishing() || isDestroyed() || !keyword.equals(pendingWord)) return;
+                        mWordAdapter.setItems(data);
+                    });
+                } finally {
+                    response.close(); // 提前 return 也要关，不然连接会一直挂在连接池里
+                }
             }
         };
-    }
-
-    private void setAdapter(String result, boolean save) {
-        if (!save && empty()) return;
-        if (save) Setting.putHot(result);
-        mWordAdapter.setItems(Word.objectFrom(result).getData());
     }
 
     @Override
@@ -481,6 +510,8 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        App.removeCallbacks(wordFetch); // 页面都没了就别再发联想请求
+        if (wordCall != null) wordCall.cancel();
         mBinding.mic.destroy();
     }
 }

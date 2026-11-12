@@ -163,9 +163,10 @@ public class SyncDialog extends BaseBottomSheetDialog implements DeviceAdapter.O
 
     private void send(Device item, String mode, boolean force) {
         String url = String.format(Locale.getDefault(), "%s/action?do=sync&mode=%s&type=%s%s", item.getIp(), mode, type, force ? "&force=true" : "");
+        // buildBody() 要查库 + Gson 序列化整份收藏/配置，别放主线程；
+        // enqueue 本来就是异步，回调里也已切回主线程，两条分支统一走后台串行。
         Runnable request = () -> OkHttp.newCall(client, url, buildBody()).enqueue(getCallback());
-        if (type.equals("history")) Task.executeSerial(request);
-        else request.run();
+        Task.executeSerial(request);
     }
 
     private FormBody buildBody() {
