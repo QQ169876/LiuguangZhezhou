@@ -432,7 +432,8 @@ public class MoonSync {
         Set<String> delFavorites = diff(remoteFavorites, localFavorites);
         // 站点上要删的这批同样先过确认：数量偏大说明对端可能压根不是同一个库（见 SyncGuard）
         int delCount = 0;
-        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), remoteRecords.size() + remoteFavorites.size())) {
+        // 刚换过站点/账号时站点那份本来就是另一套数据，整批替换不算误删 —— 守卫按通道判，首轮豁免
+        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), remoteRecords.size() + remoteFavorites.size(), Owner.MOON)) {
             delCount = deleteRemote(delRecords, false) + deleteRemote(delFavorites, true);
         } else {
             DebugLog.d("Sync", "站点批量删除待确认：观看记录 " + delRecords.size() + " 条、收藏 " + delFavorites.size() + " 条");

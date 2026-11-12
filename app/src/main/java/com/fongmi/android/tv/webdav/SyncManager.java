@@ -898,7 +898,8 @@ public class SyncManager {
         int lost = lostHistory.size() + lostKeep.size();
         if (lost == 0) return;
         int total = local.getData().getHistory().size() + local.getData().getKeep().size() + lost;
-        if (SyncGuard.allow(lost, total)) return;
+        // 刚换过同步账号时云端覆盖本机也会整批变少，那不是误删 —— 守卫按通道判，首轮豁免
+        if (SyncGuard.allow(lost, total, Owner.DAV)) return;
         // 数量大就真等用户答完再往下走：确认 → 这一轮就让删除生效（云端和本机一起删）；
         // 拒绝 / 没界面 / 超时 → 按误删救回。
         // 改动前是「先无条件救回、同步照跑」，本机库当场被填回去，用户再点「仍然删除」重跑一趟

@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.moontv;
 
+import com.fongmi.android.tv.sync.Owner;
+import com.fongmi.android.tv.sync.SyncGuard;
 import com.github.catvod.utils.Prefers;
 
 import org.json.JSONObject;
@@ -119,7 +121,13 @@ public class MoonSetting {
         return !getConfirm().equals(getScope());
     }
 
+    /**
+     * 选完「以哪边为准」，把当前目标记成已确认。若这次确实是**换过站点 / 账号**（isSwitch），
+     * 顺手给批量删除守卫打个招呼：接下来云端覆盖本机造成的整批数据变化是换号的正常结果，
+     * 别再弹「是你在 App 里删的吗」（马先生 2026-11-12）。没换目标时 isSwitch() 为 false，不打扰。
+     */
     public static void putConfirm() {
+        if (isSwitch()) SyncGuard.onAccountChanged(Owner.MOON, getScope());
         Prefers.put("moontv_confirm", getScope());
     }
 }
