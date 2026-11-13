@@ -92,6 +92,7 @@ public class MoonTomb {
 
     /** 往站点推一份本机墓碑（同步时调一次；删完一条也会立刻推，见 markDeleted） */
     public static void push() {
+        if (!MoonSetting.isSyncable()) return; // 没开影视站同步：不做任何站点请求
         try {
             JSONObject record = MoonSync.loadTomb(MoonSync.tombRecord());
             JSONObject favorite = MoonSync.loadTomb(MoonSync.tombFavorite());

@@ -102,6 +102,9 @@ public class SyncManager {
     }
 
     public static void touch() {
+        // 没开 WebDAV 同步：本机播放记录完全走原有的、基于点播源的逻辑，
+        // 连 dirty 标记都不置（普通用户存/删记录不该惊动同步）。
+        if (!WebDavSetting.isSyncable()) return;
         if (MoonSync.isWriting()) return; // 站点同步写库时不反向触发
         dirty.set(true);
         post(20);
@@ -158,6 +161,9 @@ public class SyncManager {
     }
 
     private static void silent() {
+        // 定时任务排队时还开着同步，跑起来之前用户可能已经把地址清了/关了开关：再挡一次，
+        // 空配置下绝不带着空地址去建连，也不碰本机记录。
+        if (!WebDavSetting.isSyncable()) return;
         // 定时任务是在 post()/playTick() 里排的，排队那一刻可能还没换同步目标；
         // 等这 15~20 秒里用户改了地址/账号/标识，触发时 isSwitch 已经变 true。
         // 这里必须再挡一次，否则自动同步会带着旧归属账本把本机记录全判成「别人的」。
@@ -225,6 +231,12 @@ public class SyncManager {
      * 这里拦下来让他去设置里选一次方向：选完 putConfirm()，本闸自动放行，正常同步照旧。
      */
     private static boolean switchConfirmed(Listener listener) {
+        // 手动同步只认「地址填没填」：配了地址就以网络数据为准，哪怕自动同步开关没开也放行。
+        // 空地址直接给一句人话提示收工，别带着空地址去建连（自动同步另有 isSyncable 把关）。
+        if (!WebDavSetting.isValid()) {
+            done(listener, false, ResUtil.getString(R.string.webdav_empty));
+            return false;
+        }
         if (!WebDavSetting.isSwitch()) return true;
         done(listener, false, ResUtil.getString(R.string.webdav_switch_wait));
         return false;
@@ -590,6 +602,7 @@ public class SyncManager {
                 if (old != null) {
                     item.setCid(old.getCid());
                     History.keepSkip(old, item);
+                    History.keepEpisode(old, item);
                 }
                 AppDatabase.get().getHistoryDao().insertOrUpdate(item);
             }
@@ -829,6 +842,7 @@ public class SyncManager {
         if (b.getCreateTime() != a.getCreateTime()) win = b.getCreateTime() > a.getCreateTime() ? b : a;
         else win = Math.max(b.getPosition(), 0) > Math.max(a.getPosition(), 0) ? b : a;
         History.keepSkip(win == a ? b : a, win);
+        History.keepEpisode(win == a ? b : a, win);
         return win;
     }
 
@@ -1012,6 +1026,7 @@ public class SyncManager {
             if (old != null) {
                 item.setCid(old.getCid());
                 History.keepSkip(old, item);
+                History.keepEpisode(old, item);
             }
             AppDatabase.get().getHistoryDao().insertOrUpdate(item);
         }

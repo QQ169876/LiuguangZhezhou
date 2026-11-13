@@ -337,6 +337,30 @@ public class History implements Diffable<History> {
         if (to.getEnding() <= 0 && from.getEnding() > 0) to.setEnding(from.getEnding());
     }
 
+    /**
+     * 集数 / 线路 / 播放地址：只补空，不覆盖已有的值。
+     * 影视站早先会把多集剧的集号落成空串（站点 total_episodes 恒写 1），
+     * 这条残记录一旦在 WebDAV 合并里胜出，换设备拉下来就是「有记录没集数」、点进去播不了。
+     * 合并时拿另一条完整的补回去，别让这个残缺扩散到别的设备。
+     */
+    public static boolean keepEpisode(History from, History to) {
+        if (from == null || to == null) return false;
+        boolean changed = false;
+        if (TextUtils.isEmpty(to.getVodRemarks()) && !TextUtils.isEmpty(from.getVodRemarks())) {
+            to.setVodRemarks(from.getVodRemarks());
+            changed = true;
+        }
+        if (TextUtils.isEmpty(to.getVodFlag()) && !TextUtils.isEmpty(from.getVodFlag())) {
+            to.setVodFlag(from.getVodFlag());
+            changed = true;
+        }
+        if (TextUtils.isEmpty(to.getEpisodeUrl()) && !TextUtils.isEmpty(from.getEpisodeUrl())) {
+            to.setEpisodeUrl(from.getEpisodeUrl());
+            changed = true;
+        }
+        return changed;
+    }
+
     public boolean canSave() {
         return getPosition() >= 0 && getDuration() > 0;
     }

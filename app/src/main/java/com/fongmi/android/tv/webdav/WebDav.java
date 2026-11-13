@@ -42,7 +42,10 @@ public class WebDav {
         return Credentials.basic(WebDavSetting.getUser(), WebDavSetting.getPass());
     }
 
-    private static Request.Builder prepare(String url) {
+    private static Request.Builder prepare(String url) throws IOException {
+        // 没配地址时 OkHttp 会抛 IllegalArgumentException，改成可控的 IOException，
+        // 连接测试/同步入口都能正常收到「服务地址为空」，不会因为空配置冒出怪异常。
+        if (url == null || url.isEmpty()) throw new IOException("Address is empty");
         Request.Builder builder = new Request.Builder().url(url).addHeader("Accept", "*/*");
         // 「无需登录」或压根没填账号密码的服务，空账号也带 Authorization 反而会被拒，干脆不带
         if (WebDavSetting.hasAuth()) builder.addHeader("Authorization", auth());

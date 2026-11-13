@@ -78,6 +78,9 @@ public class MoonSync {
      * 同步过程中自己写库不会再触发，避免来回打转。
      */
     public static void touch() {
+        // 没开影视站同步：本机播放记录完全走原有的、基于点播源的逻辑，
+        // 连同步状态都不碰（普通用户存/删一条记录不该惊动同步）。
+        if (!MoonSetting.isSyncable()) return;
         if (writing || SyncManager.isBusy()) return; // 别和 WebDAV 同步互相打架
         post(20);
     }
@@ -494,7 +497,7 @@ public class MoonSync {
      * @param fresh true = 整库替换（以云端为准）：库已清空，纯插入，不按时间/片名跟旧记录合并，墓碑也不拦
      */
     private static int[] pullRecords(JSONObject remote, int cid, Map<String, long[]> skip, JSONObject owner, boolean fresh) {
-        int add = 0, update = 0;
+        int add = 0, update = 0, named = 0;
         List<Entry> items = sort(remote);
         JSONObject tomb = loadTomb(tombRecord());
         for (int i = 0; i < items.size(); i++) {
@@ -513,24 +516,28 @@ public class MoonSync {
             if (opening <= 0 && local != null) opening = local[0];
             if (ending <= 0 && local != null) ending = local[1];
             if (duration <= 0) {
-                position = 0;
+                // 站点偶尔只给 play_time 不给总时长（别的设备刚点开、还没解析完就写了一条）：
+                // 这时把进度一并清成 0，换设备后就成了「看过但没进度」。保留 play_time，
+                // 只是没总时长可夹，时长标成未知。
                 duration = 0;
+                position = Math.max(position, 0);
             } else {
-                position = Math.min(position, duration);
+                position = Math.min(Math.max(position, 0), duration);
             }
             History target = new History();
             target.setKey(entry.source.concat(AppDatabase.SYMBOL).concat(entry.id));
             target.cid(cid);
             target.setVodName(item.optString("title"));
             target.setVodPic(item.optString("cover"));
-            target.setVodFlag("");
-            target.setVodRemarks(mark(item.optInt("index", 1), item.optInt("total_episodes", 1)));
-            target.setEpisodeUrl("");
+            target.setVodFlag(item.optString("vod_flag", ""));
+            target.setVodRemarks(episodeName(item));
+            target.setEpisodeUrl(item.optString("episode_url", ""));
             target.setPosition(position);
             target.setDuration(duration);
             target.setCreateTime(saveTime);
             if (opening > 0) target.setOpening(opening);
             if (ending > 0) target.setEnding(ending);
+            if (!target.getVodRemarks().isEmpty()) ++named;
             if (fresh) { // 整库替换：站点这条直接落库，不跟本机旧记录比时间、也不按片名找旧记录改写
                 AppDatabase.get().getHistoryDao().insertOrUpdate(target);
                 ++add;
@@ -541,22 +548,34 @@ public class MoonSync {
             if (old == null) {
                 AppDatabase.get().getHistoryDao().insertOrUpdate(target);
                 ++add;
-            } else if (saveTime > old.getCreateTime()) {
-                old.setVodName(target.getVodName());
-                old.setVodPic(target.getVodPic());
-                // 站点只给得出「第X集」这种粗集号，本机记的才是源里那一集的真名（还带着播放地址）。
-                // 集号对得上就留本机那条，别把它冲成「第X集」甚至空串，不然下次打开认不出看到哪一集。
-                if (!sameEpisode(old.getVodRemarks(), target.getVodRemarks())) old.setVodRemarks(target.getVodRemarks());
-                old.setPosition(position);
-                old.setDuration(duration);
-                old.setCreateTime(saveTime);
-                if (opening > 0) old.setOpening(opening);
-                if (ending > 0) old.setEnding(ending);
-                AppDatabase.get().getHistoryDao().insertOrUpdate(old);
-                ++update;
+            } else {
+                // 旧版本把站点集号丢了，本机可能留着「有片名、没集数」的残条。
+                // 不管谁的时间新，缺的字段先补回去 —— 只补空，不覆盖已有的值。
+                boolean changed = fillEpisode(old, target);
+                if (saveTime > old.getCreateTime()) {
+                    old.setVodName(target.getVodName());
+                    if (!blank(target.getVodPic())) old.setVodPic(target.getVodPic());
+                    // 站点只给得出「第X集」这种粗集号，本机记的才是源里那一集的真名（还带着播放地址）。
+                    // 集号对得上就留本机那条，别把它冲成「第X集」甚至空串，不然下次打开认不出看到哪一集。
+                    if (!sameEpisode(old.getVodRemarks(), target.getVodRemarks())) old.setVodRemarks(target.getVodRemarks());
+                    // 站点这条没带进度（别的设备刚点开没播就写了一条更晚的记录很常见）时，
+                    // 别把本机已经记好的进度清成 0；只在站点确实带了进度时才跟着它走。
+                    if (duration > 0 && position > 0) {
+                        old.setPosition(position);
+                        old.setDuration(duration);
+                    }
+                    old.setCreateTime(saveTime);
+                    if (opening > 0) old.setOpening(opening);
+                    if (ending > 0) old.setEnding(ending);
+                    changed = true;
+                }
+                if (changed) {
+                    AppDatabase.get().getHistoryDao().insertOrUpdate(old);
+                    ++update;
+                }
             }
         }
-        DebugLog.d("Sync", "影视站拉记录：站点 " + items.size() + " 条，本机新增 " + add + " 更新 " + update);
+        DebugLog.d("Sync", "影视站拉记录：站点 " + items.size() + " 条，带集名 " + named + " 条，本机新增 " + add + " 更新 " + update);
         return new int[]{add, update};
     }
 
@@ -678,6 +697,9 @@ public class MoonSync {
      * 墓碑立刻往站点发一次删除，不用等下一次自动同步，免得别的设备在这空档又补回来。
      */
     public static void markDeleted(String localKey, boolean favorite) {
+        // 没开影视站同步：删记录就是本机删，不写墓碑、不往站点发删除。
+        // 否则本机删过的片会在本机留一张墓碑，等哪天开了同步反而把云端那条删掉。
+        if (!MoonSetting.isSyncable()) return;
         String siteKey = toSiteKey(localKey);
         if (siteKey == null) return;
         String who = ownerOf(favorite ? ownerFavorite() : ownerRecord(), siteKey);
@@ -1213,19 +1235,33 @@ public class MoonSync {
             if (!takeover && foreign(owner, name)) continue; // 别的账号的记录，不混进当前账号
             JSONObject old = remote.optJSONObject(name);
             try {
+                String remarks = safe(item.getVodRemarks());
+                // 本机这条要是旧版本落下的残条（没集名），绝不能拿空值把站点上的集号冲成 1：
+                // 实测《炼气十万年》站点是 index=250 / remarks=第250集，写回去一次就变第1集，别台设备也跟着坏。
+                // 「大结局」这类不含数字的集名是有效的，只沿用站点集号、别把集名也换掉。
+                int idx = hasNumber(remarks) ? index(remarks) : old == null ? 1 : old.optInt("index", 1);
+                if (blank(remarks)) {
+                    String remoteRemarks = old == null ? "" : old.optString("remarks", "");
+                    if (!remoteRemarks.isEmpty()) remarks = remoteRemarks;
+                }
+                boolean noProgress = item.getPosition() <= 0 && item.getDuration() <= 0;
                 JSONObject record = new JSONObject();
                 record.put("title", item.getVodName());
                 record.put("source_name", siteName(source, ""));
-                record.put("cover", item.getVodPic());
-                record.put("index", index(item.getVodRemarks()));
+                record.put("cover", safe(item.getVodPic()));
+                record.put("index", idx);
                 record.put("total_episodes", old == null ? 1 : old.optInt("total_episodes", 1));
-                record.put("play_time", Math.max(item.getPosition(), 0) / 1000);
-                record.put("total_time", Math.max(item.getDuration(), 0) / 1000);
+                // 本机完全没记过进度时沿用站点的，别把别台设备的进度写回 0
+                record.put("play_time", noProgress && old != null ? old.optDouble("play_time", 0) : Math.max(item.getPosition(), 0) / 1000);
+                record.put("total_time", noProgress && old != null ? old.optDouble("total_time", 0) : Math.max(item.getDuration(), 0) / 1000);
                 record.put("opening", Math.max(item.getOpening(), 0) / 1000);
                 record.put("ending", Math.max(item.getEnding(), 0) / 1000);
                 record.put("save_time", saveTime);
                 record.put("search_title", "");
-                record.put("remarks", item.getVodRemarks());
+                record.put("remarks", safe(remarks));
+                // 站点原样存整个 record，把线路和播放地址也带过去：换设备后能直接按地址认出那一集
+                record.put("vod_flag", safe(item.getVodFlag()));
+                record.put("episode_url", safe(item.getEpisodeUrl()));
                 MoonApi.saveRecord(name, record);
                 if (!me().equals(ownerOf(owner, name))) mark(owner, name);
                 dirty = true;
@@ -1321,8 +1357,37 @@ public class MoonSync {
         return new String[]{value.substring(0, index), value.substring(index + 1)};
     }
 
-    private static String mark(int index, int total) {
-        return total > 1 && index > 0 ? "第" + index + "集" : "";
+    /**
+     * 站点记录里的「上次看到哪一集」。
+     * 流光褶皱 / MoonTV 的多集剧把 total_episodes 恒写成 1，真实集号放在 index 和 remarks 里
+     * （实测《炼气十万年》index=250、total_episodes=1、remarks=第250集）。
+     * 以前只按 mark(index, total_episodes) 造集名，total<=1 时直接返回空串，
+     * 换设备拉下来就成了「有记录没集数」，点进去认不出是哪一集、播不了。
+     * 这里优先用站点给的 remarks，没有再按 index 造，不再看 total_episodes。
+     */
+    private static String episodeName(JSONObject item) {
+        String remarks = item.optString("remarks", "").trim();
+        if (remarks.isEmpty() || remarks.length() > 24 || remarks.contains("http")) {
+            return mark(item.optInt("index", 0));
+        }
+        return remarks;
+    }
+
+    private static String mark(int index) {
+        return index > 0 ? "第" + index + "集" : "";
+    }
+
+    private static boolean hasNumber(String text) {
+        return text != null && INDEX.matcher(text).find();
+    }
+
+    private static boolean blank(String text) {
+        return text == null || text.isEmpty();
+    }
+
+    /** 只补空：旧版本同步落下的「有片名没集数」残条，拿站点这次给的值填回去，自愈不用清库 */
+    private static boolean fillEpisode(History old, History target) {
+        return History.keepEpisode(target, old);
     }
 
     /** 两边说的是不是同一集（只比集号：本机「05」和站点「第5集」算一集） */
@@ -1335,7 +1400,14 @@ public class MoonSync {
     private static int index(String text) {
         if (text == null) return 1;
         Matcher matcher = INDEX.matcher(text);
-        return matcher.find() ? Math.max(Integer.parseInt(matcher.group(1)), 1) : 1;
+        if (!matcher.find()) return 1;
+        // 集名里可能混着长串数字（资源 ID、时间戳），parseInt 会溢出抛异常，
+        // 而 sameEpisode 在拉取循环里没有单条兜底，一条脏数据就能带崩整轮同步。
+        try {
+            return (int) Math.max(Math.min(Long.parseLong(matcher.group(1)), Integer.MAX_VALUE), 1);
+        } catch (NumberFormatException e) {
+            return 1;
+        }
     }
 
     private static String siteName(String key, String fallback) {

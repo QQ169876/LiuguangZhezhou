@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.177-legacy",
-  "desc": "修复首页推荐显示不全的问题",
-  "code": 737,
-  "tag": "v5.6.177-legacy"
+  "name": "流光褶皱TV v5.6.178-legacy",
+  "desc": "修复同步后播放集数和进度丢失的问题",
+  "code": 738,
+  "tag": "v5.6.178-legacy"
 }
