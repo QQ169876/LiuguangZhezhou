@@ -78,7 +78,22 @@ public class VodConfig extends BaseConfig {
 
     /** 同步后静默重载：配置生效，但不发 ConfigEvent 惊动开着的页面 */
     public static void loadSilent(Config config, Callback callback) {
-        get().clear().config(config).loadSilent(callback);
+        get().softClear().config(config).loadSilent(callback);
+    }
+
+    /**
+     * 静默重载专用：只让 spider jar / 规则缓存失效，内存里的站点和首页站点先留着。
+     *
+     * 原来直接用 clear()，而 clear() 是在主线程先跑、解析再丢后台的，中间有一段空窗：
+     * 这期间 getHome() 只能拿到一个空 Site，首页推荐就会只剩半屏甚至整块空白
+     * （马先生 2026-11-13：32 位电视上首页推荐显示不全，模拟器正常）。
+     * 解析成功后 initSite() 会把 sites / home 整体替换掉，旧数据留着不影响配置生效，
+     * 反而把这段空窗填上了；万一解析失败，首页也还能继续用原来的站点。
+     */
+    public VodConfig softClear() {
+        BaseLoader.get().clear();
+        RuleConfig.get().invalidate();
+        return this;
     }
 
     /**

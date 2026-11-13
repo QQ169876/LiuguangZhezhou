@@ -480,6 +480,13 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
     @Override
     protected void onResume() {
         super.onResume();
+        // 部分电视/盒子弹窗关掉后不补 onWindowFocusChanged(true)，海报请求会一直停在
+        // pauseRequests() 上，首页推荐看着就是半屏空白。回到前台无条件恢复一次，
+        // 弹窗期间暂停背后重绘的优化照旧保留。
+        try {
+            com.bumptech.glide.Glide.with(this).resumeRequests();
+        } catch (Throwable ignored) {
+        }
         mClock.start();
         // 回到首页兜底重查一遍最近观看：同步/推送改库时页面多半在后台（设置页、对话框底下），
         // 事件万一没接住，这里再补一刀，省得非得重进 App 才见着新数据

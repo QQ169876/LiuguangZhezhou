@@ -1214,7 +1214,7 @@ public class SyncManager {
     private static void reload(boolean silent) {
         App.post(() -> {
             if (silent) {
-                VodConfig.loadSilent(VodConfig.get().getConfig(), noop());
+                VodConfig.loadSilent(VodConfig.get().getConfig(), homeOnly());
                 LiveConfig.loadSilent(LiveConfig.get().getConfig(), noop());
                 WallConfig.loadSilent(WallConfig.get().getConfig(), noop());
             } else {
@@ -1228,6 +1228,24 @@ public class SyncManager {
     /** 配置重载只关心「有没有生效」，失败也不打扰用户 */
     private static Callback noop() {
         return new Callback() {
+            @Override
+            public void error(String msg) {
+            }
+        };
+    }
+
+    /**
+     * 静默重载解析完成后，只让首页重拉一次推荐：站点刚重新解析过，推荐得按新站点出。
+     * 只发 home()，不发 category()、不发 ConfigEvent，用户正在浏览的节目单和搜索结果
+     * 不会被整页重建（同步后不打断浏览这条约定不变）。
+     */
+    private static Callback homeOnly() {
+        return new Callback() {
+            @Override
+            public void success() {
+                App.post(RefreshEvent::home);
+            }
+
             @Override
             public void error(String msg) {
             }
