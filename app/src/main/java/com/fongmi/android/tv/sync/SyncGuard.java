@@ -29,8 +29,12 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
  * ⚠️ 2026-11-12 补的一条（马先生）：**换过同步账号之后，从云端覆盖本机**会把上一个账号的
  * 观看记录 / 收藏 / 关注整批换掉，光看「本机少了一批」就会误判成同账号下批量删除，弹出确认框。
  * 换号是用户刚在「以哪边为准」里点过头的正常操作，不该再问一遍「是你在 App 里删的吗」。
- * 所以两条通道各自记一个「刚切换账号」标记（见 onAccountChanged），首轮真正要弹窗时豁免一次。
- * 豁免是一次性的、带 30 分钟时限，之后同账号下的误删照旧拦 —— 别把它做成永久开关。
+ * 所以两条通道各自记当前同步账号（见 onAccountChanged / allow），账号一变就按换号处理。
+ *
+ * 2026-11-15 再改一版（马先生）：这套提示要**跟着同步账号的数据量走，不跟本机算**。
+ *   · 判断用的总量是该账号云端 / 站点那份，不是本机当前剩多少（换号、首次拉数时本机数量本来就是失真的）；
+ *   · 账号按通道实时比对，切号 / 切回旧账号 / 没走「以哪边为准」确认流程，都能认出整批差异属换号；
+ *   · 没设置「同步 WebDAV」「影视站同步」这两项时，本机只有点播源那套记录逻辑，这套守卫整个忽略。
  */
 public final class SyncGuard {
 
@@ -43,11 +47,8 @@ public final class SyncGuard {
     /** 拒过之后隔多久才再问一次：太短会烦人，永久不问的话用户后来真想删就没机会点了 */
     private static final long DECLINE_TTL = 30 * 60 * 1000L;
 
-    /** 「刚切换同步账号」标记，按通道（WebDAV / 影视站）各存一份；值 = 新账号 scope|时间戳 */
-    private static final String PREF_SWITCH = "sync_guard_switch_";
-
-    /** 换号标记的时效：只罩住切换后那一两轮同步，过期自动恢复防误删 */
-    private static final long SWITCH_TTL = 30 * 60 * 1000L;
+    /** 每个通道上次判断时用的同步账号（scope）：按账号隔离，换账号就重新建基准，不拿旧账号的数据算差额 */
+    private static final String PREF_ACCOUNT = "sync_guard_account_";
 
     private static String declined;   // 上次被拒的规模，一样的话不再反复弹，免得每次同步都来一遍
     private static long declinedAt;
@@ -56,11 +57,20 @@ public final class SyncGuard {
     private SyncGuard() {
     }
 
-    /** 这个删除量算不算「批量」 */
+    /** 这个删除量算不算「批量」。total 传的是同步账号自己的数据量，不是本机数量 */
     public static boolean risky(int deletes, int total) {
         if (deletes <= 0) return false;
         if (deletes >= MIN_COUNT) return true;
         return total >= MIN_TOTAL && deletes * 2 >= total;
+    }
+
+    /**
+     * 「哪个账号、删了多少」的记号：确认过「仍然删除」和拒过「先不删」都按账号隔离，
+     * 换账号后不串台。allow() 和 ask() 必须共用这一份，否则点完「仍然删除」下一轮还会再弹。
+     */
+    private static String signOf(int deletes) {
+        return Owner.scope(Owner.DAV).concat("|").concat(Owner.scope(Owner.MOON))
+                .concat("|").concat(String.valueOf(deletes));
     }
 
     /**
@@ -74,46 +84,41 @@ public final class SyncGuard {
      * @param scope   切换后的新账号身份（由调用方给，免得 Setting 反过来依赖 Owner）
      */
     public static void onAccountChanged(int channel, String scope) {
-        Prefers.put(PREF_SWITCH + channel, scope.concat("|").concat(String.valueOf(System.currentTimeMillis())));
-        DebugLog.d("Sync", "同步账号已切换，首轮批量删除确认豁免");
+        // 清掉上一个账号的基准：下一趟 allow 按新账号重新记账，换号那轮的整批差异直接放行
+        Prefers.put(PREF_ACCOUNT + channel, "");
+        DebugLog.d("Sync", "同步账号已切换：" + Owner.hash(scope) + "，批量删除守卫按新账号重算");
     }
 
     /**
-     * 这一趟批量删除是否属于「刚换号」。命中即消费 —— 只豁免切换后的第一次判断，
-     * 之后同账号下真误删照样拦。期间又换过号、或超过时效，标记作废。
-     */
-    private static boolean skipForSwitch(int channel) {
-        String key = PREF_SWITCH + channel;
-        String raw = Prefers.getString(key);
-        if (raw.isEmpty()) return false;
-        Prefers.put(key, ""); // 一次性：读到就消费，别留着把以后的误删也放过去
-        int bar = raw.lastIndexOf('|');
-        if (bar <= 0) return false;
-        long at;
-        try {
-            at = Long.parseLong(raw.substring(bar + 1));
-        } catch (Exception ignored) {
-            return false;
-        }
-        return raw.substring(0, bar).equals(Owner.scope(channel))
-                && System.currentTimeMillis() - at < SWITCH_TTL;
-    }
-
-    /**
-     * 这笔删除能不能直接做（true = 照做、不弹窗）。用户刚刚对同样规模点过「仍然删除」的照做不再问；
-     * 数量没到批量阈值也照做；真到阈值、且是刚切换同步账号造成的整批变化，也照做 —— 不打扰。
+     * 这笔删除能不能直接做（true = 照做、不弹窗）。
+     *
+     * 三道闸，顺序别动（马先生 2026-11-15：提示要跟着同步账号走，不跟本机算）：
+     *   1. 这条通道压根没设置同步 → 没有「账号的数据」可比，整套守卫忽略，连提示都不该有；
+     *   2. 同步账号变了（切号 / 切回去 / 首次接上云端）→ 本机相对上一个账号少一批是换号的正常结果，
+     *      不是在同一个账号里删了数据 → 这轮放行，并把基准切到新账号；
+     *   3. 同一个账号里才看数量：用户刚点过「仍然删除」照做，没到批量阈值照做，真到阈值才问一句。
+     *
+     * 第 2 道按账号实时比对，不依赖「刚换号」那种一次性标记：切回旧账号、或没走「以哪边为准」
+     * 确认流程时也能认出来，不会反复弹「是你在 App 里删的吗」。
+     *
+     * @param total 这个同步账号自己的数据量（云端 / 站点那份），不是本机当前剩多少
      */
     public static synchronized boolean allow(int deletes, int total, int channel) {
-        if (approved != null && approved.equals(String.valueOf(deletes))) {
+        if (!Owner.syncable(channel)) return true; // 没设置这一项同步：整个忽略
+        if (approved != null && approved.equals(signOf(deletes))) {
             approved = null;
             return true;
         }
-        if (!risky(deletes, total)) return true;
-        if (skipForSwitch(channel)) {
-            DebugLog.d("Sync", "刚切换同步账号：整批差异属换号正常逻辑，跳过批量删除确认");
+        String scope = Owner.scope(channel);
+        String account = Prefers.getString(PREF_ACCOUNT + channel);
+        if (!scope.equals(account)) {
+            Prefers.put(PREF_ACCOUNT + channel, scope);
+            approved = null; // 上一个账号点过的「仍然删除」不带到新账号
+            declined = null;
+            if (!account.isEmpty()) DebugLog.d("Sync", "同步账号已变化（" + Owner.id(channel) + "）：这轮按换号处理，不弹批量删除确认");
             return true;
         }
-        return false;
+        return !risky(deletes, total);
     }
 
     /**
@@ -130,7 +135,8 @@ public final class SyncGuard {
      * WebDAV 的守卫要靠它落闸：调用方在后台线程上等这个答案，拿到「不删」才知道要把那批救回来。
      */
     public static void ask(int historyDel, int keepDel, Runnable action, Runnable onPass) {
-        String sign = String.valueOf(historyDel + keepDel);
+        // 按账号隔离：切了账号，上一个账号那次「先不删」不该压住新账号的确认
+        String sign = signOf(historyDel + keepDel);
         // 刚才已经为同样的规模拒过一次，别每次同步都来烦人；过了 TTL 再问，真想删还有机会点
         if (sign.equals(declined) && System.currentTimeMillis() - declinedAt < DECLINE_TTL) {
             if (onPass != null) onPass.run();

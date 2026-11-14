@@ -42,6 +42,9 @@ import java.util.concurrent.Executors;
  */
 public class AiSearch {
 
+    /** 推荐清单最多几条：列表本身可向下滚动，给足 10 条（马先生 2026-11-15：原来只列 5 条太少） */
+    static final int MAX_PICKS = 10;
+
     private static final String SYSTEM = "你是影视搜索意图识别助手，任务是把用户的话翻译成找片指令。"
             + "只允许处理与电影、电视剧、短剧、漫剧、动画、综艺等影视作品相关的找片或推荐请求；"
             + "其它任何请求（写作、翻译、总结、闲聊、知识问答等）一律拒答。"
@@ -63,7 +66,7 @@ public class AiSearch {
             + "3. 「类似/像《X》这种」→ similar：similar 填参照作品名；"
             + "form 填它的形态（AI漫剧/动态漫/沙雕漫填「漫剧」，动漫/动画/卡通填「动画」，真人出演的剧填「真人剧」，"
             + "电影填「电影」，拿不准填「未知」）；tags 填 3~5 个同类题材词（形态词要保留）；"
-            + "picks 是唯一的推荐清单，给 3~6 部**跟它同一种形态、同一类题材**的作品，每项一个对象："
+            + "picks 是唯一的推荐清单，尽量给满 10 部（8~10 部）**跟它同一种形态、同一类题材**的作品，每项一个对象："
             + "title 填片名，note 填 20~45 字中文推荐理由，说清这部为什么符合用户那句话"
             + "（形态、题材、爽点、跟参照作品的共同点），不要复述片名、不要写序号或「推荐」二字、不要编造具体剧情细节；"
             + "参照是 AI 漫剧就只推 AI 漫剧，不许跨形态推真人剧，也不许把电影、综艺、解说混进来；"
@@ -295,7 +298,7 @@ public class AiSearch {
     private static void parsePicks(JSONObject json, Plan plan) {
         JSONArray picks = json.optJSONArray("picks");
         if (picks != null) {
-            for (int i = 0; i < picks.length() && plan.titles.size() < 6; i++) {
+            for (int i = 0; i < picks.length() && plan.titles.size() < MAX_PICKS; i++) {
                 JSONObject item = picks.optJSONObject(i);
                 if (item == null) continue;
                 String title = clean(item.optString("title"), 30);
@@ -310,7 +313,7 @@ public class AiSearch {
         JSONArray titles = json.optJSONArray("titles");
         JSONArray notes = json.optJSONArray("notes");
         if (titles == null) return;
-        for (int i = 0; i < titles.length() && plan.titles.size() < 6; i++) {
+        for (int i = 0; i < titles.length() && plan.titles.size() < MAX_PICKS; i++) {
             String title = clean(titles.optString(i, ""), 30);
             if (!validTitle(title, plan.titles)) continue;
             plan.titles.add(title);

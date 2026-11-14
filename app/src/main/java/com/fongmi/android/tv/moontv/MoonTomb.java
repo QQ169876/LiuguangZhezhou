@@ -28,8 +28,13 @@ public class MoonTomb {
     private static final String ID = "tomb";
     public static final String KEY = SOURCE.concat("+").concat(ID);
 
-    /** 墓碑推上去最多带多少条：90 天清理前也得有个硬顶，cover 字段不能无限膨胀 */
-    private static final int MAX_ITEMS = 300;
+    /**
+     * 墓碑推上去最多带多少条 / 多少字节：90 天清理前也得有个硬顶，cover 不能无限膨胀。
+     * record / favorite 各 32KB，整条 cover 控制在 64KB 内；收藏和记录越多、删得越频，
+     * 墓碑越长，不封顶的话站点那条会写失败，被截掉的老墓碑还会让别的设备把删过的记录补回来。
+     */
+    private static final int MAX_ITEMS = 1000;
+    private static final int MAX_BYTES = 32 * 1024;
 
     /** 这条收藏是不是我们塞的删除墓碑 */
     public static boolean is(String source, String id) {
@@ -111,19 +116,35 @@ public class MoonTomb {
         }
     }
 
-    /** 太老的砍掉：带上最新的 MAX_ITEMS 条就够，90 天外的本来也压不住删除了 */
+    /** 太老的砍掉：按删除时刻留最新的一批，条数和字节双重封顶 */
     private static JSONObject cap(JSONObject source) {
-        if (source.length() <= MAX_ITEMS) return source;
         List<String> keys = new ArrayList<>();
         for (Iterator<String> it = source.keys(); it.hasNext(); ) keys.add(it.next());
+        if (keys.size() <= MAX_ITEMS) {
+            int total = 0;
+            for (String key : keys) total += bytes(key, source.optLong(key, 0));
+            if (total <= MAX_BYTES) return source; // 没超就不重排，省一次排序
+        }
         keys.sort((a, b) -> Long.compare(source.optLong(b, 0), source.optLong(a, 0)));
         JSONObject result = new JSONObject();
-        for (int i = 0; i < MAX_ITEMS; i++) {
+        int used = 0;
+        for (int i = 0; i < keys.size() && i < MAX_ITEMS; i++) {
+            String key = keys.get(i);
+            long time = source.optLong(key, 0);
+            int size = bytes(key, time);
+            if (used + size > MAX_BYTES) break;
             try {
-                result.put(keys.get(i), source.optLong(keys.get(i), 0));
+                result.put(key, time);
+                used += size;
             } catch (Exception ignored) {
             }
         }
         return result;
+    }
+
+    /** 这条墓碑写进 JSON 大概占多少字节：key 要转义，中文站点名按 UTF-8 真实字节算 */
+    private static int bytes(String key, long time) {
+        return JSONObject.quote(key).getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                + Long.toString(time).length() + 2;
     }
 }

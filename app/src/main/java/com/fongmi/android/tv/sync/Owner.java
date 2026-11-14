@@ -74,6 +74,11 @@ public class Owner {
         return channel == DAV ? WebDavSetting.getScope() : MoonSetting.getScope();
     }
 
+    /** 这条同步通道有没有设置：没设置就没有「账号的数据」可比，批量删除守卫整套忽略 */
+    public static boolean syncable(int channel) {
+        return channel == DAV ? WebDavSetting.isSyncable() : MoonSetting.isSyncable();
+    }
+
     public static String hash(String text) {
         try {
             MessageDigest digest = MessageDigest.getInstance("MD5");

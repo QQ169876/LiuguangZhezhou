@@ -900,19 +900,25 @@ public class SyncManager {
     /**
      * 防的是「App 里误删 → 一同步网盘上的也没了」这一步（见 SyncGuard）。
      *
-     * 判据：上次同步时本机有、这一趟本机没有了的那些（别的同步标识的、换了点播源的不算）。
+     * 判据：这个账号上次同步的快照（base）里有、这一趟本机没有了的那些（别的账号的、换了点播源的不算）。
+     * 数量算不算「批量」也按这个账号的数据量当分母，不按本机数量（见 SyncGuard）。
      * 数量偏大就在同步的时候问一句，**问的时候这一趟先停下等答案**：
      *   · 说「是我删的」→ 这一轮就按删除走，云端和本机一起删掉；
      *   · 没界面弹 / 不表态 / 超时 / 说「不是」→ 一条都不删，那批救回这一轮的结果里 ——
      *     网盘原样留着，本机刚删的那批也跟着回来了，等于把误删救回来。
      */
     private static void guardLocalLoss(WebDavData merged, WebDavData local, WebDavData base, JSONObject bookRecord, JSONObject bookFavorite, Runnable again) {
+        if (!WebDavSetting.isSyncable()) return; // 没设置 WebDAV 同步：整套防误删忽略，连比都不用比
         List<History> lostHistory = lostHistory(base, local, bookRecord);
         List<Keep> lostKeep = lostKeep(base, local, bookFavorite);
         int lost = lostHistory.size() + lostKeep.size();
         if (lost == 0) return;
-        int total = local.getData().getHistory().size() + local.getData().getKeep().size() + lost;
-        // 刚换过同步账号时云端覆盖本机也会整批变少，那不是误删 —— 守卫按通道判，首轮豁免
+        // 分母用「这个同步账号的数据量」，不是本机当前剩多少：换号 / 首次拉数 / 云端覆盖后，
+        // 本机数量本来就是失真的，拿它算会把正常的账号差异判成批量删除（马先生 2026-11-15）。
+        // base 是按账号分开存的上次同步快照（Owner.baseline），lost 全是从它里面少掉的，天然跟着账号走。
+        int total = base == null ? lost : base.getData().getHistory().size() + base.getData().getKeep().size();
+        DebugLog.d("Sync", "WebDAV 批量删除判定：账号=" + Owner.id(Owner.DAV) + " 账号数据量=" + total + " 本机少=" + lost);
+        // 没设同步 / 刚换账号 / 数量没到批量，守卫自己会放行，这里不用再判
         if (SyncGuard.allow(lost, total, Owner.DAV)) return;
         // 数量大就真等用户答完再往下走：确认 → 这一轮就让删除生效（云端和本机一起删）；
         // 拒绝 / 没界面 / 超时 → 按误删救回。

@@ -258,7 +258,7 @@ public class AiSearchRunner {
      *   ① 模型提名的每部作品都上屏，剧名下面直接铺它写的推荐理由；
      *   ② 站内验货只用来补真名、海报、「站里有片源」标记和排序，不再决定上不上屏
      *      （点剧名本来就是想拿这个名字去搜，站里有没有让他点了自己看）；
-     *   ③ 提名太少（不到 3 部）才用站内同类和题材词垫底，且同类最多 6 条。
+     *   ③ 提名太少（不到 3 部）才用站内同类垫底，补齐到 10 条（列表可向下滚动）。
      */
     private static void similar(AiSearch.Plan plan, boolean withTags, String question, View view) {
         String ref = plan.similar.isEmpty() ? "" : plan.similar.get(0);
@@ -276,7 +276,7 @@ public class AiSearchRunner {
             Set<String> names = new HashSet<>();
             for (TmdbWork row : rows) names.add(AiSiteProbe.plain(row.getName()));
             if (picks.size() < 3) {
-                int room = 6;
+                int room = AiSearch.MAX_PICKS - rows.size(); // 补齐到 10 条，多出来的交给列表向下滚
                 for (TmdbWork work : sameType(ref)) {
                     if (room-- <= 0) break;
                     if (!names.add(AiSiteProbe.plain(work.getName()))) continue;

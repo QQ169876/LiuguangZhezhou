@@ -403,7 +403,7 @@ public class MoonSync {
         DebugLog.d("Sync", "影视站本地库写入完成（整库替换：新增记录 " + gotRecords[0] + " 收藏 " + gotFavorites[0] + "）");
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 拉下来的都归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
-        saveBase(records, favorites, null, null);
+        saveBase(records, favorites);
         beat("基线已保存");
         MoonSetting.putLast(System.currentTimeMillis());
         beat("同步时间已写");
@@ -433,10 +433,13 @@ public class MoonSync {
         Set<String> localFavorites = localKeepKeys();
         Set<String> delRecords = diff(remoteRecords, localRecords);
         Set<String> delFavorites = diff(remoteFavorites, localFavorites);
-        // 站点上要删的这批同样先过确认：数量偏大说明对端可能压根不是同一个库（见 SyncGuard）
+        // 站点上要删的这批同样先过确认（见 SyncGuard）。分母用站点（= 当前账号）自己的数据量，
+        // 不是本机剩多少；账号一变，整批差异按换号处理，不再问「是你在 App 里删的吗」。
         int delCount = 0;
-        // 刚换过站点/账号时站点那份本来就是另一套数据，整批替换不算误删 —— 守卫按通道判，首轮豁免
-        if (SyncGuard.allow(delRecords.size() + delFavorites.size(), remoteRecords.size() + remoteFavorites.size(), Owner.MOON)) {
+        int deletes = delRecords.size() + delFavorites.size();
+        int total = remoteRecords.size() + remoteFavorites.size();
+        DebugLog.d("Sync", "站点批量删除判定：账号=" + Owner.id(Owner.MOON) + " 数据量=" + total + " 本机少=" + deletes);
+        if (SyncGuard.allow(deletes, total, Owner.MOON)) {
             delCount = deleteRemote(delRecords, false) + deleteRemote(delFavorites, true);
         } else {
             DebugLog.d("Sync", "站点批量删除待确认：观看记录 " + delRecords.size() + " 条、收藏 " + delFavorites.size() + " 条");
@@ -450,7 +453,7 @@ public class MoonSync {
         int[] upRecords = pushRecords(records, true);
         int[] upFavorites = pushFavorites(favorites, true);
         DebugLog.d("Sync", "影视站上传写库完成");
-        saveBase(records, favorites, localRecords, localFavorites);
+        saveBase(records, favorites);
         beat("基线已保存");
         // 墓碑留着：删过的东西不能再被别的设备补回来（站点条目时间比删除时刻新才会复活）
         MoonSetting.putLast(System.currentTimeMillis());
@@ -673,14 +676,10 @@ public class MoonSync {
         Owner.save(Owner.MOON, Owner.RECORD, ownerRecord); // 站点拉下来的归当前账号
         Owner.save(Owner.MOON, Owner.FAVORITE, ownerFavorite);
         int[] clean = dedupe();
-        // 基线只记当前账号这一份：别的账号的条目不该被算进「站点上少了什么」的判断里
-        // 在删完、拉完、去重之后再取，这时的本机才是同步后的真实状态
-        Set<String> mineRecords = mineOnly(localRecordKeys(), ownerRecord);
-        Set<String> mineFavorites = mineOnly(localKeepKeys(), ownerFavorite);
         int[] up = pushRecords(records, false);
         int[] keepUp = pushFavorites(favorites, false);
         DebugLog.d("Sync", "影视站上传完成");
-        saveBase(records, favorites, mineRecords, mineFavorites);
+        saveBase(records, favorites);
         beat("基线已保存");
         pruneTomb();
         MoonSetting.putLast(System.currentTimeMillis());
@@ -1090,13 +1089,6 @@ public class MoonSync {
         return set;
     }
 
-    /** 只留归当前账号的那些（本机自己看的没归属，也算当前账号的） */
-    private static Set<String> mineOnly(Set<String> keys, JSONObject owner) {
-        Set<String> set = new HashSet<>();
-        for (String key : keys) if (!foreign(owner, key)) set.add(key);
-        return set;
-    }
-
     /**
      * 站点这份里真正参与「整份覆盖」的条目键：所有站点 key 都算，不再只看本机碰过的那些
      * （以前 scopedRemote 只留本机当前源出现过的站点，云端剩下的原样留着 = 合并）。
@@ -1118,13 +1110,18 @@ public class MoonSync {
         return set;
     }
 
-    private static void saveBase(JSONObject records, JSONObject favorites, Set<String> localRecords, Set<String> localFavorites) {
-        Set<String> baseRecords = keysOf(records);
-        if (localRecords != null) baseRecords.addAll(localRecords);
-        Set<String> baseFavorites = keysOf(favorites);
-        if (localFavorites != null) baseFavorites.addAll(localFavorites);
-        saveSet(baseRecord(), baseRecords);
-        saveSet(baseFavorite(), baseFavorites);
+    /**
+     * 基线只记「这一趟同步时站点上真实有哪些键」。
+     *
+     * 以前还把本机全部键也并进来，理由是「本机推上去的也算站点该有的」。但数据一多、
+     * 逐条 POST 里只要失败几条，站点上其实没有，基线里却记着；下一轮 diff(base, remote)
+     * 就把它当成「站点上被删了」，回头把本机这条记录/收藏删掉 —— 条目越多越容易踩，
+     * 而且是静默丢数据。只用站点快照最保守：宁可少删（本机多留一条，下轮再推），绝不误删。
+     * 别的账号的条目本来就不在站点快照里，配合 deleteLocalHistory 里的 foreign 判断照旧留在本机。
+     */
+    private static void saveBase(JSONObject records, JSONObject favorites) {
+        saveSet(baseRecord(), keysOf(records));
+        saveSet(baseFavorite(), keysOf(favorites));
     }
 
     private static void clearTomb() {
@@ -1262,6 +1259,12 @@ public class MoonSync {
                 // 站点原样存整个 record，把线路和播放地址也带过去：换设备后能直接按地址认出那一集
                 record.put("vod_flag", safe(item.getVodFlag()));
                 record.put("episode_url", safe(item.getEpisodeUrl()));
+                // 站点这条跟本机完全一致就别再 POST：记录一多，每轮全量逐条写就是几百上千次请求，
+                // 慢电视上一趟同步要几分钟，中途失败的那几条还会让基线判断错（见 saveBase）。
+                if (sameRecord(old, record)) {
+                    if (!me().equals(ownerOf(owner, name))) { mark(owner, name); dirty = true; }
+                    continue;
+                }
                 MoonApi.saveRecord(name, record);
                 if (!me().equals(ownerOf(owner, name))) mark(owner, name);
                 dirty = true;
@@ -1294,12 +1297,17 @@ public class MoonSync {
                 JSONObject favorite = new JSONObject();
                 favorite.put("source_name", safe(siteName(source, item.getSiteName())));
                 favorite.put("total_episodes", old == null ? 1 : old.optInt("total_episodes", 1));
-                favorite.put("title", item.getVodName());
+                favorite.put("title", safe(item.getVodName()));
                 favorite.put("year", "");
-                favorite.put("cover", item.getVodPic());
+                favorite.put("cover", safe(item.getVodPic()));
                 favorite.put("save_time", item.getCreateTime());
                 favorite.put("search_title", "");
                 favorite.put("origin", "vod");
+                // 同上：收藏多起来以后稳态同步不该全量重写一遍
+                if (sameFavorite(old, favorite)) {
+                    if (!me().equals(ownerOf(owner, name))) { mark(owner, name); dirty = true; }
+                    continue;
+                }
                 MoonApi.saveFavorite(name, favorite);
                 if (!me().equals(ownerOf(owner, name))) mark(owner, name);
                 dirty = true;
@@ -1388,6 +1396,28 @@ public class MoonSync {
     /** 只补空：旧版本同步落下的「有片名没集数」残条，拿站点这次给的值填回去，自愈不用清库 */
     private static boolean fillEpisode(History old, History target) {
         return History.keepEpisode(target, old);
+    }
+
+    /** 本机要写的这份跟站点已有的是不是一样：一样就跳过这次 POST（稳态同步不再全量写） */
+    private static boolean sameRecord(JSONObject old, JSONObject next) {
+        if (old == null || next == null) return false;
+        for (String key : new String[]{"title", "source_name", "cover", "remarks", "vod_flag", "episode_url"}) {
+            if (!safe(old.optString(key, "")).equals(safe(next.optString(key, "")))) return false;
+        }
+        for (String key : new String[]{"index", "total_episodes", "play_time", "total_time", "opening", "ending", "save_time"}) {
+            if (Math.abs(old.optDouble(key, 0) - next.optDouble(key, 0)) > 0.001) return false;
+        }
+        return true;
+    }
+
+    /** 收藏同理：只比我们自己写进去的那几个字段，站点多出来的字段不影响判断 */
+    private static boolean sameFavorite(JSONObject old, JSONObject next) {
+        if (old == null || next == null) return false;
+        for (String key : new String[]{"source_name", "title", "year", "cover", "search_title", "origin"}) {
+            if (!safe(old.optString(key, "")).equals(safe(next.optString(key, "")))) return false;
+        }
+        if (Math.abs(old.optDouble("total_episodes", 0) - next.optDouble("total_episodes", 0)) > 0.001) return false;
+        return Math.abs(old.optLong("save_time", 0) - next.optLong("save_time", 0)) <= 1000;
     }
 
     /** 两边说的是不是同一集（只比集号：本机「05」和站点「第5集」算一集） */

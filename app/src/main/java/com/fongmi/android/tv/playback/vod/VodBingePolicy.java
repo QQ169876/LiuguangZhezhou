@@ -42,7 +42,7 @@ class VodBingePolicy {
     private final List<Vod> pool = new ArrayList<>();
     private final Set<String> tried = new HashSet<>();
     private final Runnable timeoutTask = this::onTimeout;
-    private final Runnable pickTask = this::pickNow;
+    private final Runnable pickTask = this::pickNow; // pickNow 里有「等紧邻下一季」的闸，所有入口都绕不过去
     private final Runnable probeTimeoutTask = this::onProbeTimeout;
     private final Runnable probeGraceTask = this::onProbeGrace;
     private final Runnable aiTimeoutTask = this::onAiTimeout;
@@ -72,6 +72,7 @@ class VodBingePolicy {
     private int seriesIndex = -1; // 当前是系列里的第几季；名字里没写就是 -1
     private boolean serialMode; // 名字里明写着第几季：只认这个系列的下一季，绝不换别的剧
     private boolean serialMarked; // 名字里明写着第几季/第几部（跟 serialMode 分开记：降级那两步会把它清掉，退路的判断还得认它）
+    private long serialWaitStart; // 开始等「紧邻下一季」的时间戳，0 = 本轮还没等过
     private String region = "";
     private String typeName = ""; // 站点给的分类（如「爱情/都市」），搜同类用得上
     private String actor = ""; // 当前这部的主演（红果那招：看《A》也推同主演的《B》）
@@ -121,6 +122,10 @@ class VodBingePolicy {
     private static final long TYPE_GRACE = 1200L;
     /** 等分类池子的总上限：站点分类表头一回拉可能要好几秒，不能让用户一直干等着 */
     private static final long TYPE_WAIT_MAX = 3000L;
+    /** 池子里只有「跳着来的季」、紧邻下一季还在搜：每回给它这么久回来 */
+    private static final long SERIAL_GRACE = 1200L;
+    /** 等紧邻下一季的总上限：过了就照现有池子挑（分层仍先挑最靠近的那一档），绝不把用户晾着 */
+    private static final long SERIAL_WAIT_MAX = 6000L;
     /** 从「短剧分类」里捞出来的候选加这么多分：站点自己分的类，比名字猜靠谱得多 */
     private static final int TYPE_BONUS = 8;
     /** 大模型点名的剧加分：它给的是具体剧名，搜出来就是它，比题材词撞运气准得多 */
@@ -312,6 +317,7 @@ class VodBingePolicy {
         aiPickGate = false;
         waitingAi = false;
         seriesHasNext = null;
+        serialWaitStart = 0; // 每轮重新给「等紧邻下一季」计时
         genreFallback = false;
         similarFallback = false;
         tasteFallback = false;
@@ -483,6 +489,10 @@ class VodBingePolicy {
             // 光靠搜索结果那道 watched() 挡不够 —— 名字进了搜索词就白跑一趟，降级分支还可能绕过。
             // 系列剧的「下一季写法」是「剧名 第X季」这类，跟历史里的完整名对不上，不会误挡。
             if (watched(title)) continue;
+            // 模型偶尔把「最新一季」（第四季）当成下一部报出来，顶到搜索词最前；
+            // 同系列里明显跳季的一律不收，本地 partKeywords/sequelKeys 里本来就有紧邻下一季的写法。
+            // 认不出季号的写法（-1）照收交给验货；降级后（改刷同类）不再管季号，交给下面那条 laterPart。
+            if (!similarFallback && !genreFallback && !tasteFallback && serialGap(title) > 0) continue;
             // 降级推荐时别再报「本系列的下一季」：本地那几种写法刚刚全都搜空了才走到这一步，
             // 再拿同样的名字搜一遍纯属浪费（日志 13:23 那轮又搜了一遍「持械入宋：第十一季」等四个）
             if ((similarFallback || genreFallback || tasteFallback) && laterPart(title)) continue;
@@ -944,6 +954,27 @@ class VodBingePolicy {
         App.post(pickTask, wait ? TYPE_GRACE : BingeSetting.PICK_DELAY);
     }
 
+    /**
+     * 池子里已经有本系列的后续季、却全是「跳着来的」（第四季这种，紧邻的下一季还没露面），
+     * 而下一季的关键词 / 全站那一圈 / 大模型的答案还在路上：先别挑，给它一点时间回来。
+     * 只在「还有搜索在飞」时等，且有总上限；等不到就照现有池子挑，分层仍保证先挑最靠近的那一档。
+     * 普通跨剧推荐（池子里没有本系列后续季）一点不拦。
+     */
+    private boolean waitingForNextSerial() {
+        if (seriesMain.isEmpty()) return false;
+        boolean later = false;
+        for (Vod v : pool) {
+            int gap = serialGap(v.getName());
+            if (gap == 0) return false; // 紧邻下一季已经在池子里，正常按分档挑
+            if (gap > 0) later = true;
+        }
+        if (!later) return false; // 没有本系列后续季：这是普通跨剧推荐，别拦
+        if (!(searchHome || keywordIndex < keywords.size() || waitingAi)) return false; // 该搜的都搜完了，不用等
+        long now = System.currentTimeMillis();
+        if (serialWaitStart == 0) serialWaitStart = now;
+        return now - serialWaitStart < SERIAL_WAIT_MAX;
+    }
+
     private List<Vod> filter(List<Vod> list) {
         List<Vod> items = new ArrayList<>();
         if (list == null || list.isEmpty()) return items;
@@ -1124,11 +1155,59 @@ class VodBingePolicy {
     private void pickNow() {
         if (!active || probing || pool.isEmpty()) return; // 已经有一批在验了，不许再挑，防止双切
         if (aiPickGate) return; // 大模型的排名还没到（也没等超时）：先别挑，免得分类池抢先把不相干的怼上来
+        // 池子里只有「跳着来的季」（第四季这种），紧邻下一季的关键词 / 全站那一圈 / 大模型答案还在路上：
+        // 先别挑，自动安排稍后重挑。闸放在这里而不是 schedulePick，是因为 AI 排名到了、分类池回来、
+        // 等模型超时收尾这些入口都会直接调 pickNow，只守 schedulePick 会被它们绕过去。
+        if (waitingForNextSerial()) {
+            App.post(pickTask, SERIAL_GRACE);
+            return;
+        }
         final int penalty = dynamicPenalty();
-        pool.sort((a, b) -> Integer.compare(scoreOf(b, penalty), scoreOf(a, penalty)));
+        // 池子里有「本系列、认得出季号的后续季」时按季号分档挑，把顺延做成硬约束：
+        // 以前季号差只值 20 分/季，模型把第四季排第一就 +300，播完第一季一下跳到第四季。
+        // 只认本系列的后续季，别的剧一律不分层 —— 普通刷剧（跨剧推荐）的排序一点不动。
+        boolean layered = false;
+        for (Vod v : pool) if (serialGap(v.getName()) >= 0) { layered = true; break; }
+        final boolean bySeason = layered;
+        pool.sort((a, b) -> {
+            if (bySeason) {
+                int ta = tierOf(a.getName());
+                int tb = tierOf(b.getName());
+                if (ta != tb) return Integer.compare(ta, tb);
+            }
+            return Integer.compare(scoreOf(b, penalty), scoreOf(a, penalty));
+        });
         List<Vod> batch = new ArrayList<>();
-        for (int i = 0; i < PROBE_PARALLEL && !pool.isEmpty(); i++) batch.add(pool.remove(0));
+        // 这一批只验最靠近的那一档：更后面的季和别的剧都留在池子里，这一档播不了了再一轮轮往后顺延，
+        // 绝不和下一季混在同一批里靠半秒验货抢先切走（马先生 2026-11-15：一部接一部顺延，别跳到最新季）。
+        int tier = bySeason ? tierOf(pool.get(0).getName()) : TIER_OTHER;
+        for (int i = 0; i < PROBE_PARALLEL && !pool.isEmpty(); i++) {
+            if (bySeason && tierOf(pool.get(0).getName()) != tier) break;
+            batch.add(pool.remove(0));
+        }
         probe(batch);
+    }
+
+    /** 不参与季号分层的候选统一排到最后一档（Integer.MAX_VALUE 只用于比较，不参与运算） */
+    private static final int TIER_OTHER = Integer.MAX_VALUE;
+
+    private int tierOf(String name) {
+        int gap = serialGap(name);
+        return gap < 0 ? TIER_OTHER : gap;
+    }
+
+    /**
+     * 这个候选离「紧邻下一季」差几档：0 = 正好下一季，1 = 再往后一季，2 = 更远……；
+     * -1 = 不是本系列里认得出季号的后续季（别的剧、当季/更早、或站源给续季起了副标题认不出季号），不分层。
+     * 名字里明写「第一季」的和「第一季」压根没写季号的（AI 漫剧常见）都走这里：
+     * 前者 seriesIndex=1，后者 seriesIndex=-1，两种都把「第二季」算作第 0 档。
+     */
+    private int serialGap(String name) {
+        if (seriesMain.isEmpty() || !sameSeries(seriesMain, name)) return -1;
+        int index = BingeTags.serialOf(name);
+        if (index <= 0) return -1;
+        int gap = index - (Math.max(seriesIndex, 1) + 1);
+        return gap < 0 ? -1 : gap;
     }
 
     /** 候选总分：系列续季 + 关键词命中 + 剧种对不对 + 是不是从站点的分类池里捞的（这个最可信，加成最大） */
