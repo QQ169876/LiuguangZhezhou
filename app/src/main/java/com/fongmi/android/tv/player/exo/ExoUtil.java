@@ -33,6 +33,7 @@ import com.fongmi.android.tv.player.track.LangUtil;
 import com.fongmi.android.tv.setting.DecodeSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
+import com.fongmi.android.tv.utils.DecodeGuard;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -74,7 +75,9 @@ public class ExoUtil {
         if (DecodeSetting.isPreferAAC()) builder.setPreferredAudioMimeType(MimeTypes.AUDIO_AAC);
         builder.setPreferredTextLanguages(LangUtil.getPreferredTextLanguages());
         builder.setTunnelingEnabled(DecodeSetting.isTunnelingEnabled());
-        builder.setForceHighestSupportedBitrate(true);
+        // 弱机（32 位老盒子）硬解扛不住高码率，别无条件顶最高码率那一路——
+        // 让它按设备能力选更稳妥的轨，配合软解兜底减少卡顿/音画不同步（马先生 2026-11-19）。
+        builder.setForceHighestSupportedBitrate(!DecodeGuard.isWeakDevice());
         trackSelector.setParameters(builder.build());
         setDecodePreferences(trackSelector, decode);
         return trackSelector;

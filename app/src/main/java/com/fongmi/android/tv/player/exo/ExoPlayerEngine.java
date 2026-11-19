@@ -15,6 +15,7 @@ import com.fongmi.android.tv.player.effect.PlayerEffect;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
 import com.fongmi.android.tv.player.media.MediaItemFactory;
 import com.fongmi.android.tv.player.media.PlaySpec;
+import com.fongmi.android.tv.utils.DecodeGuard;
 
 public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
@@ -24,8 +25,10 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     private final ExoDiskPreload preload;
     private final ExoPlayer player;
     private PlaySpec spec;
+    private volatile boolean hardDecode;
 
     public ExoPlayerEngine(int decode, Player.Listener listener) {
+        this.hardDecode = decode == PlayerEngine.HARD;
         this.effect = new ExoPlayerEffect();
         this.preload = new ExoDiskPreload();
         this.provider = new ExoErrorMessageProvider();
@@ -48,6 +51,15 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     @Override
     public void onTracksChanged(@NonNull EventTime eventTime, @NonNull Tracks tracks) {
         effect.applyVideoEffect();
+    }
+
+    /**
+     * 硬解持续丢帧 = 解码跟不上码率，弱机上表现为卡顿+音画不同步（马先生 2026-11-19）。
+     * 只把硬解时的丢帧喂给守卫：软解本来就可能丢帧，跟解码能力无关，不算数。
+     */
+    @Override
+    public void onDroppedVideoFrames(@NonNull EventTime eventTime, int droppedFrames, long elapsedMs) {
+        if (hardDecode) DecodeGuard.noteDroppedFrames(droppedFrames);
     }
 
     @Override
@@ -81,6 +93,8 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
     @Override
     public void setDecode(int decode) {
+        hardDecode = decode == PlayerEngine.HARD;
+        DecodeGuard.clearLagWindow(); // 切了解码方式，丢帧窗口从头算
         session.setDecode(decode);
     }
 
@@ -125,6 +139,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
         MediaItem item = MediaItemFactory.from(spec);
         MediaSource source = session.usePreloadedMediaSource(item);
         effect.clearAudioEffect();
+        DecodeGuard.clearLagWindow(); // 每次起播/换源重新计丢帧，别跨片累计
         if (source == null) player.setMediaItem(item, position);
         else player.setMediaSource(source, position);
         preload.start(player, item);

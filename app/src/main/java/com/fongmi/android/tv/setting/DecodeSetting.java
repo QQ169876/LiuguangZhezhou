@@ -7,7 +7,10 @@ import com.github.catvod.utils.Prefers;
 public class DecodeSetting {
 
     public static boolean isAudioPassThrough() {
-        return Prefers.getBoolean("decode_audio_pass_through", Prefers.getBoolean("audio_pass_through", true));
+        // 弱机（32 位老盒子）音频直通容易和硬解视频时钟对不上、造成音画不同步，
+        // 默认改成关（走 PCM）。只在用户从没设过时才用这个默认值，手动设过的照旧尊重（马先生 2026-11-19）。
+        boolean fallback = Prefers.getBoolean("audio_pass_through", !com.fongmi.android.tv.utils.DecodeGuard.isWeakDevice());
+        return Prefers.getBoolean("decode_audio_pass_through", fallback);
     }
 
     public static void putAudioPassThrough(boolean audioPassThrough) {
