@@ -24,6 +24,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     private final ExoPlayerEffect effect;
     private final ExoDiskPreload preload;
     private final ExoPlayer player;
+    private final ExoDiag diag;
     private PlaySpec spec;
     private volatile boolean hardDecode;
 
@@ -36,6 +37,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
         this.player = this.session.player();
         this.player.addAnalyticsListener(this);
         this.effect.setPlayer(player);
+        this.diag = new ExoDiag(player); // 只在调试模式工作，不改播放行为
     }
 
     @Override
@@ -51,6 +53,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     @Override
     public void onTracksChanged(@NonNull EventTime eventTime, @NonNull Tracks tracks) {
         effect.applyVideoEffect();
+        diag.tracks(tracks);
     }
 
     /**
@@ -60,6 +63,17 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     @Override
     public void onDroppedVideoFrames(@NonNull EventTime eventTime, int droppedFrames, long elapsedMs) {
         if (hardDecode) DecodeGuard.noteDroppedFrames(droppedFrames);
+        diag.dropped(droppedFrames, elapsedMs);
+    }
+
+    @Override
+    public void onRenderedFirstFrame(@NonNull EventTime eventTime, Object output, long renderTimeMs) {
+        diag.firstFrame();
+    }
+
+    @Override
+    public void onAudioUnderrun(@NonNull EventTime eventTime, int bufferSize, long bufferSizeMs, long elapsedSinceLastFeedMs) {
+        diag.audioUnderrun(bufferSize, bufferSizeMs, elapsedSinceLastFeedMs);
     }
 
     @Override
@@ -85,6 +99,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
     @Override
     public void release() {
+        diag.stop();
         player.removeAnalyticsListener(this);
         preload.release();
         effect.release();
@@ -116,6 +131,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
     @Override
     public void stop() {
+        diag.stop();
         preload.stop();
         player.stop();
     }
@@ -142,6 +158,7 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
         DecodeGuard.clearLagWindow(); // 每次起播/换源重新计丢帧，别跨片累计
         if (source == null) player.setMediaItem(item, position);
         else player.setMediaSource(source, position);
+        diag.start("pos=" + position + " url=" + spec.getUrl());
         preload.start(player, item);
         prepareAndPlay();
     }

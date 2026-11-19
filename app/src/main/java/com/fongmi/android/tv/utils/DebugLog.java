@@ -25,6 +25,11 @@ import java.util.Locale;
  * 每条都立刻 flush：进程随时可能被干掉，攒在缓冲区里等于白记。
  * 文件超过 2MB 滚一份旧的（debug_old.log），不占满存储。
  * 本地只留 3 天：启动时 prune() 把超龄的旧文件清掉。
+ *
+ * 2026-11-20 全局默认规则（马先生，所有端/所有版本一致）：调试模式**只在开启当天有效**，
+ * 跨过当天一律视为关闭，避免有人开了调试日志忘了关、长期在后台写文件耗资源。
+ * 判据用「开启时的本地自然日」，纯算术不 new 对象（isEnabled 是心跳/播放都调的热路径）。
+ * 老版本升级上来若只有 debug_trace=true、没有日期记录，按"默认关闭"处理，重新点一次开关即可。
  */
 public final class DebugLog {
 
@@ -35,34 +40,56 @@ public final class DebugLog {
     private static final long KEEP = 3 * 24 * 60 * 60 * 1000L; // 本地日志只留 3 天
     private static final SimpleDateFormat FMT = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US);
 
+    private static final String KEY_ON = "debug_trace";
+    private static final String KEY_DAY = "debug_trace_day"; // 开启当天（本地自然日序号）；-1 = 没记过
+
     private static PrintWriter writer;
     private static File file;
     // 开关缓存起来：日志默认关，却处处调用（心跳、播放、生命周期…），
     // 原来每打一行都要加一次锁再读一次 SharedPreferences，纯属白烧。
     // null = 还没读过，等首次用到再读，避开 Application 初始化时序。
     private static volatile Boolean enabled;
+    /** 开启那天的本地自然日序号，跟 enabled 一起缓存；跨天后 isEnabled 自动变 false */
+    private static volatile long enabledDay = -1;
 
     private DebugLog() {
     }
 
+    /** 本地时区的自然日序号：跨过当天午夜就 +1，纯算术不 new 对象（热路径） */
+    private static long todayIndex() {
+        long now = System.currentTimeMillis();
+        return (now + java.util.TimeZone.getDefault().getOffset(now)) / 86400000L;
+    }
+
+    /**
+     * 调试模式是否生效：开关为开**且**是开启当天。跨过当天一律按关闭处理（全局默认规则）。
+     * 缓存命中后仍要校验自然日，所以不需要定时器去「到点关闭」——时间一过自然就false。
+     */
     public static boolean isEnabled() {
         Boolean value = enabled;
-        if (value != null) return value;
-        synchronized (DebugLog.class) {
-            if (enabled != null) return enabled;
-            try {
-                enabled = Prefers.getBoolean("debug_trace", false);
-            } catch (Throwable e) {
-                return false; // Prefers 还没就绪，别把 false 缓存死，等下次真正用到再读
+        if (value == null) {
+            synchronized (DebugLog.class) {
+                if (enabled == null) {
+                    try {
+                        enabled = Prefers.getBoolean(KEY_ON, false);
+                        enabledDay = Prefers.getLong(KEY_DAY, -1);
+                    } catch (Throwable e) {
+                        return false; // Prefers 还没就绪，别把 false 缓存死，等下次真正用到再读
+                    }
+                }
+                value = enabled;
             }
-            return enabled;
         }
+        // 老版本只存了 true 没存日期（-1）：按默认关闭，重新点一次开关即可
+        return value && enabledDay == todayIndex();
     }
 
     public static synchronized void setEnabled(boolean on) {
-        Prefers.put("debug_trace", on);
+        Prefers.put(KEY_ON, on);
+        Prefers.put(KEY_DAY, on ? todayIndex() : -1);
         enabled = on;
-        if (on) d("Debug", "---- 调试日志已开启 ----");
+        enabledDay = on ? todayIndex() : -1;
+        if (on) d("Debug", "---- 调试日志已开启（当天有效）----");
         else close();
     }
 
