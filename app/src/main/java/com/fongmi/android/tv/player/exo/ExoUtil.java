@@ -33,7 +33,6 @@ import com.fongmi.android.tv.player.track.LangUtil;
 import com.fongmi.android.tv.setting.DecodeSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
-import com.fongmi.android.tv.utils.DecodeGuard;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -75,9 +74,10 @@ public class ExoUtil {
         if (DecodeSetting.isPreferAAC()) builder.setPreferredAudioMimeType(MimeTypes.AUDIO_AAC);
         builder.setPreferredTextLanguages(LangUtil.getPreferredTextLanguages());
         builder.setTunnelingEnabled(DecodeSetting.isTunnelingEnabled());
-        // 弱机（32 位老盒子）硬解扛不住高码率，别无条件顶最高码率那一路——
-        // 让它按设备能力选更稳妥的轨，配合软解兜底减少卡顿/音画不同步（马先生 2026-11-19）。
-        builder.setForceHighestSupportedBitrate(!DecodeGuard.isWeakDevice());
+        // 最高码率那一路无条件顶住（回到 5.6.167 的行为）：竖屏短剧多为 VFR / 元数据不规范的多码率流，
+        // 让弱机按能力自选容易挑到标称帧率与实际对不上的轨，出现声音正常、画面慢动作的整集音画不同步。
+        // 弱机卡顿与长剧音画不同步仍由 DecodeGuard 软解兜底 + 音频直通关两处负责，那两处保留。
+        builder.setForceHighestSupportedBitrate(true);
         trackSelector.setParameters(builder.build());
         setDecodePreferences(trackSelector, decode);
         return trackSelector;
