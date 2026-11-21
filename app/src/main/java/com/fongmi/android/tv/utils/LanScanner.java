@@ -1,13 +1,8 @@
 package com.fongmi.android.tv.utils;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.LinkAddress;
-import android.net.LinkProperties;
-import android.net.Network;
-
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.Device;
+import com.fongmi.android.tv.cast.CastNet;
 import com.github.catvod.net.OkHttp;
 
 import java.net.Inet4Address;
@@ -27,14 +22,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.Response;
 
 /**
- * 局域网设备扫描：扫当前网段，找出同样装了本 App 并开着内置服务的设备。
+ * 局域网设备扫描：扫本机「所有网卡所在的网段」，找出同样装了本 App 并开着内置服务的设备。
  * 识别方式是请求对方内置服务的 /device 接口，能拿到设备名 / 类型 / 唯一标识。
+ *
+ * 以前只取 Util.getIp() 一个地址 + 活动网络的那一个前缀，挂 VPN / 开热点 / 双 WiFi / 有线无线
+ * 同时连着的时候，取到的网卡往往不是连着家里局域网的那张，网段算偏了就一个设备都搜不到
+ * （马先生 2026-11-21）。现在直接复用 CastNet.targets()：每张网卡的 IPv4 各算一段、合起来去重，
+ * 大网段自动收窄到 /24，169.254 假 IP 跳过，总量封顶 2048 个，不会把路由器打死。
  */
 public class LanScanner {
 
+    private static final String TAG = "LanScan";
     private static final long TIMEOUT = 1200;
-    private static final int[] PORTS_FIRST = {9978, 9979, 9980, 9981, 9982};
-    private static final int[] PORTS_LAST = {9983, 9984, 9985, 9986, 9987, 9988, 9989, 9990, 9991, 9992, 9993, 9994, 9995, 9996, 9997, 9998};
+    private static final int[] PORTS = {9978, 9979, 9980, 9981, 9982, 9983, 9984, 9985, 9986, 9987, 9988, 9989, 9990, 9991, 9992, 9993, 9994, 9995, 9996, 9997, 9998};
 
     private final List<Device> items;
     private final Set<String> hosts;
@@ -87,15 +87,17 @@ public class LanScanner {
 
     public void start() {
         stop = false;
-        executor = Executors.newFixedThreadPool(48);
         List<String> targets = hosts();
+        DebugLog.d(TAG, "开始扫描：本机网段=" + CastNet.subnets() + " 目标地址=" + targets.size() + " 个");
         if (targets.isEmpty()) {
             App.post(() -> callback.onEnd(0));
             return;
         }
+        executor = Executors.newFixedThreadPool(48);
         Task.execute(() -> {
-            scan(targets, PORTS_FIRST);
-            if (!stop) scan(targets, PORTS_LAST);
+            long begin = System.currentTimeMillis();
+            scan(targets);
+            DebugLog.d(TAG, "扫描结束：找到 " + items.size() + " 台设备，耗时 " + (System.currentTimeMillis() - begin) + "ms");
             App.post(() -> callback.onEnd(items.size()));
         });
     }
@@ -105,7 +107,7 @@ public class LanScanner {
         if (executor != null) executor.shutdownNow();
     }
 
-    private void scan(List<String> targets, int[] ports) {
+    private void scan(List<String> targets) {
         List<String> pending = new ArrayList<>();
         for (String host : targets) if (!hosts.contains(host)) pending.add(host);
         if (pending.isEmpty() || stop) return;
@@ -117,17 +119,18 @@ public class LanScanner {
                 executor.execute(() -> {
                     try {
                         if (!stop && !hosts.contains(host)) {
-                            Device device = probe(host, ports);
+                            Device device = probe(host);
                             if (device != null) {
                                 hosts.add(host);
                                 items.add(device);
+                                DebugLog.d(TAG, "发现设备：" + device.getName() + " @ " + device.getIp() + " uuid=" + device.getUuid());
                                 App.post(() -> callback.onFound(device));
                             }
                         }
                     } catch (Throwable ignored) {
                     } finally {
                         int value = done.incrementAndGet();
-                        if (value % 8 == 0 || value == pending.size()) {
+                        if (value % 32 == 0 || value == pending.size()) {
                             int total = pending.size();
                             App.post(() -> callback.onProgress(value, total));
                         }
@@ -139,99 +142,52 @@ public class LanScanner {
             }
         }
         try {
-            latch.await(60, TimeUnit.SECONDS);
+            latch.await(90, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
 
-    private Device probe(String host, int[] ports) {
-        for (int port : ports) {
+    /**
+     * 一个地址把 9978~9998 全试一遍；对方内置服务落在哪个端口都能撞上。
+     * 地址本身没人应答（SocketTimeout）就整个跳过，后面的端口不用再试——大部分 IP 都是空的。
+     */
+    private Device probe(String host) {
+        if (stop) return null;
+        try {
+            return request(host);
+        } catch (HostDownException e) {
+            return null;
+        }
+    }
+
+    private Device request(String host) throws HostDownException {
+        for (int port : PORTS) {
             if (stop) return null;
-            try {
-                Device device = request(host, port);
-                if (device != null) return device;
-            } catch (HostDownException e) {
-                return null;
+            try (Response response = OkHttp.newCall(OkHttp.client(TIMEOUT), "http://" + host + ":" + port + "/device").execute()) {
+                if (!response.isSuccessful() || response.body() == null) continue;
+                Device device = Device.objectFrom(response.body().string());
+                if (device == null) continue;
+                if (device.getUuid().isEmpty()) continue;
+                if (device.getUuid().equals(self)) continue;
+                if (selfIp.contains(host)) continue;
+                device.setIp("http://" + host + ":" + port);
+                return device;
+            } catch (java.net.SocketTimeoutException e) {
+                // 这个地址根本没人应答（大部分 IP 都是空的），后面的端口不用再试
+                throw new HostDownException();
+            } catch (Throwable e) {
+                // 端口没开 / 连接被拒：接着试下一个端口
             }
         }
         return null;
     }
 
-    private Device request(String host, int port) throws HostDownException {
-        try (Response response = OkHttp.newCall(OkHttp.client(TIMEOUT), "http://" + host + ":" + port + "/device").execute()) {
-            if (!response.isSuccessful() || response.body() == null) return null;
-            Device device = Device.objectFrom(response.body().string());
-            if (device == null) return null;
-            if (device.getUuid().isEmpty()) return null;
-            if (device.getUuid().equals(self)) return null;
-            if (selfIp.contains(host)) return null;
-            device.setIp("http://" + host + ":" + port);
-            return device;
-        } catch (java.net.SocketTimeoutException e) {
-            // 这个地址根本没人应答（大部分 IP 都是空的），后面的端口不用再试
-            throw new HostDownException();
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
     private static class HostDownException extends Exception {
     }
 
+    /** 本机所有网卡所在网段的全部候选地址，去掉自己、去重，统一交给扫描 */
     private List<String> hosts() {
-        List<String> result = new ArrayList<>();
-        String ip = com.github.catvod.utils.Util.getIp();
-        if (ip == null || !ip.contains(".")) return result;
-        long self = toLong(ip);
-        if (self <= 0) return result;
-        int prefix = getPrefix();
-        int size = 1 << (32 - prefix);
-        if (size > 512) {
-            prefix = 24;
-            size = 256;
-        }
-        long begin = (self & mask(prefix)) + 1;
-        for (int i = 0; i < size - 2; i++) {
-            long value = begin + i;
-            if (selfIp.contains(toIp(value))) continue;
-            if (value == self) continue;
-            result.add(toIp(value));
-        }
-        return result;
-    }
-
-    private int getPrefix() {
-        try {
-            ConnectivityManager manager = (ConnectivityManager) App.get().getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (manager == null) return 24;
-            Network network = manager.getActiveNetwork();
-            if (network == null) return 24;
-            LinkProperties properties = manager.getLinkProperties(network);
-            if (properties == null) return 24;
-            for (LinkAddress address : properties.getLinkAddresses()) {
-                if (address.getAddress() instanceof Inet4Address) return address.getPrefixLength();
-            }
-        } catch (Throwable ignored) {
-        }
-        return 24;
-    }
-
-    private static long mask(int prefix) {
-        return prefix <= 0 ? 0 : (0xFFFFFFFFL << (32 - prefix)) & 0xFFFFFFFFL;
-    }
-
-    private static long toLong(String ip) {
-        try {
-            String[] p = ip.split("\\.");
-            if (p.length != 4) return 0;
-            return (Long.parseLong(p[0]) << 24) + (Long.parseLong(p[1]) << 16) + (Long.parseLong(p[2]) << 8) + Long.parseLong(p[3]);
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private static String toIp(long value) {
-        return ((value >> 24) & 0xFF) + "." + ((value >> 16) & 0xFF) + "." + ((value >> 8) & 0xFF) + "." + (value & 0xFF);
+        return CastNet.targets();
     }
 }
