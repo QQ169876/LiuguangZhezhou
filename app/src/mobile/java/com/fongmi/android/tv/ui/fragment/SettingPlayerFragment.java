@@ -113,6 +113,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.mpvGpuNext.setVisibility(exo ? View.GONE : View.VISIBLE);
         mBinding.adblock.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.buffer.setVisibility(exo ? View.VISIBLE : View.GONE);
+        mBinding.preload.setVisibility(View.GONE); // 预载已停用（2026-11-21），不再显示入口
     }
 
     private void setEngine(View view) {

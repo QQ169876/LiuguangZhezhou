@@ -5,6 +5,7 @@ import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
 import androidx.media3.exoplayer.ExoPlayer;
 
@@ -35,6 +36,8 @@ final class ExoDiag {
     private long wallMark;
     private long posMark;
     private long startWall;
+    private long frameOffsetMarkUs;
+    private long frameCountMark;
     private boolean running;
     private boolean firstFrameLogged;
 
@@ -52,6 +55,8 @@ final class ExoDiag {
             posMark = 0;
         }
         firstFrameLogged = false;
+        frameOffsetMarkUs = 0;
+        frameCountMark = 0;
         running = true;
         DebugLog.d(TAG, "起播 " + info);
         App.post(tick, BEAT);
@@ -102,6 +107,65 @@ final class ExoDiag {
         DebugLog.d(TAG, "音频欠载 缓冲=" + bufferSizeMs + "ms 距上次写入=" + elapsedSinceLastFeedMs + "ms");
     }
 
+    /** 视频解码器实际用的哪个：OMX./c2. 是硬解，ffmpeg 是软解——名字比设置项可信 */
+    void videoDecoder(String name) {
+        if (!DebugLog.isEnabled()) return;
+        DebugLog.d(TAG, "视频解码器 " + decoderKind(name) + " name=" + name);
+    }
+
+    /** 音频解码器：音频欠载/不同步时对照用 */
+    void audioDecoder(String name) {
+        if (!DebugLog.isEnabled()) return;
+        DebugLog.d(TAG, "音频解码器 " + decoderKind(name) + " name=" + name);
+    }
+
+    private static String decoderKind(String name) {
+        if (name == null) return "未知";
+        String n = name.toLowerCase();
+        if (n.contains("ffmpeg")) return "软解";
+        if (n.contains("omx") || n.contains("c2.") || n.contains("codec2")) return "硬解";
+        return name;
+    }
+
+    /**
+     * media3 每批回调会给出「本批累计处理偏移(us) + 帧数」，回调后归零。
+     * 处理偏移 = 实际渲染时刻 - 目标时刻：持续为负说明画面渲染跟不上音频时钟，
+     * 这正是「声音正常、画面像慢动作」的直接证据。这里只累加，心跳里汇总，别逐帧打日志。
+     */
+    void frameOffset(long processingOffsetUs, int frameCount) {
+        if (!DebugLog.isEnabled()) return;
+        try {
+            frameOffsetMarkUs += processingOffsetUs;
+            frameCountMark += frameCount;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 播放状态切换打点：卡顿时看是停在 BUFFERING 还是 READY 一直不走 */
+    void playbackState(int state) {
+        if (!DebugLog.isEnabled()) return;
+        String at = startWall > 0 ? "@起播后" + (SystemClock.elapsedRealtime() - startWall) + "ms " : "";
+        DebugLog.d(TAG, "状态切换 " + stateName(state) + " " + at + "位置=" + safePosition());
+    }
+
+    private String safePosition() {
+        try {
+            return String.valueOf(player.getCurrentPosition());
+        } catch (Throwable ignored) {
+            return "?";
+        }
+    }
+
+    private static String stateName(int state) {
+        return switch (state) {
+            case Player.STATE_IDLE -> "IDLE";
+            case Player.STATE_BUFFERING -> "BUFFERING";
+            case Player.STATE_READY -> "READY";
+            case Player.STATE_ENDED -> "ENDED";
+            default -> "STATE_" + state;
+        };
+    }
+
     private void beat() {
         if (!running) return;
         if (!DebugLog.isEnabled()) { // 跨天自动关了：停掉，别空转
@@ -120,8 +184,19 @@ final class ExoDiag {
                     "时钟 墙钟+%dms 位置+%dms 推进比=%.2f 位置=%d/%d state=%d buffered=%d 倍速=%.2f",
                     dWall, dPos, ratio, pos, player.getDuration(), player.getPlaybackState(),
                     player.getBufferedPosition(), player.getPlaybackParameters().speed));
+            // 真实渲染帧率与帧处理偏移：标称帧率看着正常，但实际渲染慢/偏移持续为负，
+            // 就是画面被拖成慢动作的直接证据。只在攒够一段帧后汇总一条。
+            if (frameCountMark > 0 && dWall > 0) {
+                double renderFps = (double) frameCountMark * 1000 / dWall;
+                double avgOffsetMs = (double) frameOffsetMarkUs / frameCountMark / 1000;
+                DebugLog.d(TAG, String.format(Locale.US,
+                        "帧渲染 实际帧率=%.2ffps 帧数=%d 平均处理偏移=%.2fms/帧",
+                        renderFps, frameCountMark, avgOffsetMs));
+            }
             wallMark = wall;
             posMark = pos;
+            frameOffsetMarkUs = 0;
+            frameCountMark = 0;
         } catch (Throwable ignored) {
             stop();
             return;

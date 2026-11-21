@@ -14,7 +14,9 @@ public class PreloadSetting {
     public static final int STEP_TIME_SECONDS = 10;
 
     public static boolean isEnabled() {
-        return Prefers.getBoolean("preload");
+        // 预载已停用（马先生 2026-11-21）：整片磁盘缓存抢带宽又占空间，对短剧卡顿没有帮助。
+        // 留着开关方法只为兼容旧调用，恒关；putEnabled 保留但不再有任何效果。
+        return false;
     }
 
     public static void putEnabled(boolean preload) {
@@ -32,7 +34,9 @@ public class PreloadSetting {
      * 「调下一集要等一会儿」。现在解耦：预读只看自己这个开关。
      */
     public static boolean isNextEpisodeEnabled() {
-        return Prefers.getBoolean("preload_next_episode", true);
+        // 下一集预载已停用（马先生 2026-11-21）：预取下一集流数据抢带宽/解码资源。
+        // 自动续播不受影响——预载未命中时播放链路会走正常请求（consumePreload 返回 null → requestSelectedEpisode）。
+        return false;
     }
 
     public static void putNextEpisodeEnabled(boolean enabled) {

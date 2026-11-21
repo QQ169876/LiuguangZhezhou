@@ -77,6 +77,26 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     }
 
     @Override
+    public void onVideoDecoderInitialized(@NonNull EventTime eventTime, @NonNull String decoderName, long initializedTimestampMs, long initializationDurationMs) {
+        diag.videoDecoder(decoderName);
+    }
+
+    @Override
+    public void onAudioDecoderInitialized(@NonNull EventTime eventTime, @NonNull String decoderName, long initializedTimestampMs, long initializationDurationMs) {
+        diag.audioDecoder(decoderName);
+    }
+
+    @Override
+    public void onVideoFrameProcessingOffset(@NonNull EventTime eventTime, long totalProcessingOffsetUs, int frameCount) {
+        diag.frameOffset(totalProcessingOffsetUs, frameCount);
+    }
+
+    @Override
+    public void onPlaybackStateChanged(@NonNull EventTime eventTime, int playbackState) {
+        diag.playbackState(playbackState);
+    }
+
+    @Override
     public Type getType() {
         return Type.EXO;
     }
