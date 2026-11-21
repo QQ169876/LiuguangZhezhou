@@ -43,7 +43,6 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         setPlaybackModeText();
         mBinding.engine.requestFocus();
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
-        mBinding.hvcLevelFixText.setText(Setting.getSwitch(PlayerSetting.isHvcLevelFix()));
         mBinding.bufferText.setText(bufferText(PlayerSetting.getBufferRaw()));
         mBinding.mpvVulkanText.setText(Setting.getSwitch(PlayerSetting.isMpvVulkan()));
         mBinding.mpvGpuNextText.setText(Setting.getSwitch(PlayerSetting.isMpvGpuNext()));
@@ -56,7 +55,6 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         mBinding.engine.setOnClickListener(this::setEngine);
         mBinding.decode.setOnClickListener(this::onDecodeSetting);
         mBinding.adblock.setOnClickListener(this::setAdblock);
-        mBinding.hvcLevelFix.setOnClickListener(this::setHvcLevelFix);
         mBinding.mpvConf.setOnClickListener(this::onMpvConf);
         mBinding.mpvGpuNext.setOnClickListener(this::setMpvGpuNext);
         mBinding.mpvVulkan.setOnClickListener(this::setMpvVulkan);
@@ -77,7 +75,6 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
         mBinding.mpvVulkan.setVisibility(vulkan ? View.VISIBLE : View.GONE);
         mBinding.mpvGpuNext.setVisibility(exo ? View.GONE : View.VISIBLE);
         mBinding.adblock.setVisibility(exo ? View.VISIBLE : View.GONE);
-        mBinding.hvcLevelFix.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.buffer.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.preload.setVisibility(View.GONE); // 预载已停用（2026-11-21），不再显示入口
     }
@@ -144,11 +141,6 @@ public class SettingPlayerActivity extends BaseActivity implements UaListener, B
     private void setAdblock(View view) {
         Setting.putAdblock(!Setting.isAdblock());
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
-    }
-
-    private void setHvcLevelFix(View view) {
-        PlayerSetting.putHvcLevelFix(!PlayerSetting.isHvcLevelFix());
-        mBinding.hvcLevelFixText.setText(Setting.getSwitch(PlayerSetting.isHvcLevelFix()));
     }
 
     private void onPreloadSetting(View view) {
