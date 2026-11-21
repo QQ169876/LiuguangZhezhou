@@ -32,7 +32,6 @@ import com.fongmi.android.tv.player.effect.PlayerEffectManager;
 import com.fongmi.android.tv.player.effect.audio.AudioEffectBands;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
 import com.fongmi.android.tv.player.engine.PlayerEngineFactory;
-import com.fongmi.android.tv.player.exo.ExoMediaSourceFactory;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.player.parse.ParseJob;
 import com.fongmi.android.tv.player.sync.SubtitleAutoSync;
@@ -69,7 +68,6 @@ public class PlayerManager implements ParseCallback {
     private long pendingStartPositionMs;
     private boolean danmakuEnabled;
     private boolean initTrack;
-    private int sourceRetry;
     private int decode;
     private long lastStop; // 上次停播时间：换源/切线后的下一次起播要和它拉开距离
 
@@ -522,7 +520,6 @@ public class PlayerManager implements ParseCallback {
 
     public void reset() {
         App.removeCallbacks(runnable);
-        sourceRetry = 0;
     }
 
     public void clear() {
@@ -548,19 +545,6 @@ public class PlayerManager implements ParseCallback {
     public void toggleDecode() {
         int next = isHard() ? PlayerEngine.SOFT : PlayerEngine.HARD;
         setDecode(next);
-    }
-
-    /** Bad HTTP Status：清缓存后按当前进度重新请求一次；只自动重试一次，避免死循环。 */
-    private void handleRetrySource(PlaybackException e) {
-        if (spec == null || ++sourceRetry > 1) {
-            callback.onError(engine.getErrorMessage(e));
-            return;
-        }
-        DebugLog.d("Player", "Bad HTTP，清缓存重连 " + spec.getUrl());
-        ExoMediaSourceFactory.clearCache();
-        PlaybackSnapshot snapshot = PlaybackSnapshot.capture(player);
-        startCurrent(snapshot.positionMs());
-        snapshot.restore(player);
     }
 
     private void setDecode(int decode) {
@@ -663,7 +647,6 @@ public class PlayerManager implements ParseCallback {
 
     public void start(PlaySpec spec, long timeout, long startPositionMs) {
         this.spec = spec;
-        sourceRetry = 0; // 新起播/换集重新给一次自动重连额度
         com.fongmi.android.tv.setting.BufferBoost.begin(spec == null ? null : spec.getUrl()); // 换了视频才清零；同一视频重建不清
         setMediaItem(timeout, startPositionMs);
     }
@@ -849,7 +832,6 @@ public class PlayerManager implements ParseCallback {
             PlayerEngine.ErrorAction action = engine.handleError(e);
             if (action != PlayerEngine.ErrorAction.RECOVERED) App.removeCallbacks(runnable);
             switch (action) {
-                case RETRY_SOURCE -> handleRetrySource(e);
                 case RECOVERED -> notifyDanmakuSourceChanged();
                 case FATAL -> callback.onError(engine.getErrorMessage(e));
             }
