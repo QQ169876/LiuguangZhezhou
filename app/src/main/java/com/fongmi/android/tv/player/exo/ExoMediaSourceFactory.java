@@ -79,6 +79,18 @@ public class ExoMediaSourceFactory implements MediaSource.Factory {
         return cache = new SimpleCache(dir, new LeastRecentlyUsedCacheEvictor(getMaxCacheSize(dir)), getDatabaseProvider());
     }
 
+    /**
+     * Bad HTTP Status 自动重连前清掉播放缓存：短剧走本地代理，失效直链/半成品响应可能还躺在缓存里，
+     * 不清就一直拿旧数据重试。SimpleCache 会保留正在被读的 span，清完重新起播即可拿到新链。
+     */
+    public static synchronized void clearCache() {
+        if (cache == null) return;
+        try {
+            for (String key : new java.util.HashSet<>(cache.getKeys())) cache.removeResource(key);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static StandaloneDatabaseProvider getDatabaseProvider() {
         if (databaseProvider == null) databaseProvider = new StandaloneDatabaseProvider(App.get());
         return databaseProvider;

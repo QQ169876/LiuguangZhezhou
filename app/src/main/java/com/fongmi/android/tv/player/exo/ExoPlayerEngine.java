@@ -15,7 +15,6 @@ import com.fongmi.android.tv.player.effect.PlayerEffect;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
 import com.fongmi.android.tv.player.media.MediaItemFactory;
 import com.fongmi.android.tv.player.media.PlaySpec;
-import com.fongmi.android.tv.utils.DecodeGuard;
 
 public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
@@ -26,10 +25,8 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     private final ExoPlayer player;
     private final ExoDiag diag;
     private PlaySpec spec;
-    private volatile boolean hardDecode;
 
     public ExoPlayerEngine(int decode, Player.Listener listener) {
-        this.hardDecode = decode == PlayerEngine.HARD;
         this.effect = new ExoPlayerEffect();
         this.preload = new ExoDiskPreload();
         this.provider = new ExoErrorMessageProvider();
@@ -56,13 +53,9 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
         diag.tracks(tracks);
     }
 
-    /**
-     * 硬解持续丢帧 = 解码跟不上码率，弱机上表现为卡顿+音画不同步（马先生 2026-11-19）。
-     * 只把硬解时的丢帧喂给守卫：软解本来就可能丢帧，跟解码能力无关，不算数。
-     */
+    /** 丢帧只做诊断，不再据此自动切软硬解：解码方式只认播放页的手动选择。 */
     @Override
     public void onDroppedVideoFrames(@NonNull EventTime eventTime, int droppedFrames, long elapsedMs) {
-        if (hardDecode) DecodeGuard.noteDroppedFrames(droppedFrames);
         diag.dropped(droppedFrames, elapsedMs);
     }
 
@@ -128,8 +121,6 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
 
     @Override
     public void setDecode(int decode) {
-        hardDecode = decode == PlayerEngine.HARD;
-        DecodeGuard.clearLagWindow(); // 切了解码方式，丢帧窗口从头算
         session.setDecode(decode);
     }
 
@@ -165,8 +156,10 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     public ErrorAction handleError(PlaybackException e) {
         return switch (e.errorCode) {
             case PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> seekToDefaultPosition();
-            case PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED -> ErrorAction.DECODE;
+            // 短剧直链/本地代理返回非 2xx：清缓存后重新请求一次，别直接把错误甩给用户
+            case PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> ErrorAction.RETRY_SOURCE;
             case PlaybackException.ERROR_CODE_IO_UNSPECIFIED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> retryFormat(e.errorCode);
+            // 解码失败不再自动切软硬解：选硬解就硬解、选软解就软解，起不来直接报错
             default -> ErrorAction.FATAL;
         };
     }
@@ -175,7 +168,6 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
         MediaItem item = MediaItemFactory.from(spec);
         MediaSource source = session.usePreloadedMediaSource(item);
         effect.clearAudioEffect();
-        DecodeGuard.clearLagWindow(); // 每次起播/换源重新计丢帧，别跨片累计
         if (source == null) player.setMediaItem(item, position);
         else player.setMediaSource(source, position);
         diag.start("pos=" + position + " url=" + spec.getUrl());

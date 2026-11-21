@@ -74,9 +74,7 @@ public class ExoUtil {
         if (DecodeSetting.isPreferAAC()) builder.setPreferredAudioMimeType(MimeTypes.AUDIO_AAC);
         builder.setPreferredTextLanguages(LangUtil.getPreferredTextLanguages());
         builder.setTunnelingEnabled(DecodeSetting.isTunnelingEnabled());
-        // 最高码率那一路无条件顶住（回到 5.6.167 的行为）：竖屏短剧多为 VFR / 元数据不规范的多码率流，
-        // 让弱机按能力自选容易挑到标称帧率与实际对不上的轨，出现声音正常、画面慢动作的整集音画不同步。
-        // 弱机卡顿与长剧音画不同步仍由 DecodeGuard 软解兜底 + 音频直通关两处负责，那两处保留。
+        // 最高码率那一路无条件顶住：竖屏短剧元数据不规范，让弱机按能力自选容易挑到标称帧率与实际对不上的轨。
         builder.setForceHighestSupportedBitrate(true);
         trackSelector.setParameters(builder.build());
         setDecodePreferences(trackSelector, decode);
@@ -84,31 +82,33 @@ public class ExoUtil {
     }
 
     static void setDecodePreferences(DecodeTrackSelector trackSelector, int decode) {
-        int audioDecode = isAudioSoftwareDecode(decode) ? PlayerEngine.SOFT : PlayerEngine.HARD;
-        int videoDecode = isVideoSoftwareDecode(decode) ? PlayerEngine.SOFT : PlayerEngine.HARD;
-        trackSelector.setRendererDecodePreferences(audioDecode, videoDecode);
-    }
-
-    private static boolean isAudioSoftwareDecode(int decode) {
-        return decode == PlayerEngine.SOFT && DecodeSetting.isAudioPrefer();
-    }
-
-    private static boolean isVideoSoftwareDecode(int decode) {
-        return decode == PlayerEngine.SOFT && DecodeSetting.isVideoPrefer();
+        // 软硬解只认播放页的手动选择，不再看设置里的「软解偏好」，也不自动来回切
+        trackSelector.setRendererDecodePreferences(decode, decode);
     }
 
     static RenderersFactory buildRenderersFactory() {
-        return buildRenderersFactory(null);
+        return buildRenderersFactory(PlayerEngine.HARD, null);
     }
 
-    static RenderersFactory buildRenderersFactory(AudioProcessor audioProcessor) {
+    /**
+     * 软硬解只认播放页的手动选择：
+     * 硬解 = 完全不创建 ffmpeg 扩展 renderer，并关掉 decoder fallback。MediaCodec 起不来就直接报错，
+     *       绝不偷偷退到软解（HEVC Level 虚标的短剧就是栽在这条后门上，日志里全是 ffmpeg-hevc）。
+     * 软解 = ffmpeg 扩展 renderer 优先，同样关掉 fallback，不自动往硬解上切。
+     * RenderersFactory 只在 player 创建时绑定，所以手动切换解码方式时必须重建 engine。
+     */
+    static RenderersFactory buildRenderersFactory(int decode, AudioProcessor audioProcessor) {
         DefaultRenderersFactory factory = new DefaultRenderersFactory(App.get()) {
             @Override
             protected AudioSink buildAudioSink(@NonNull Context context, boolean enableFloatOutput, boolean enableAudioOutputPlaybackParams) {
                 return ExoUtil.buildAudioSink(context, enableFloatOutput, enableAudioOutputPlaybackParams, audioProcessor);
             }
         };
-        return factory.setEnableDecoderFallback(true).setDolbyVisionOutputPolicy(DecodeSetting.getDolbyVisionOutputPolicy()).setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
+        return factory.setEnableDecoderFallback(false)
+                .setDolbyVisionOutputPolicy(DecodeSetting.getDolbyVisionOutputPolicy())
+                .setExtensionRendererMode(decode == PlayerEngine.SOFT
+                        ? DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                        : DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
     }
 
     /**

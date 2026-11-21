@@ -50,8 +50,9 @@ public class SettingDecodeFragment extends BaseFragment {
         boolean exo = PlayerSetting.isExo();
         mBinding.aac.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.tunnel.setVisibility(exo ? View.VISIBLE : View.GONE);
-        mBinding.audioPrefer.setVisibility(exo ? View.VISIBLE : View.GONE);
-        mBinding.videoPrefer.setVisibility(exo ? View.VISIBLE : View.GONE);
+        // 软硬解只认播放页的手动切换，这两个「软解偏好」开关已不参与解码决策，隐藏避免误导
+        mBinding.audioPrefer.setVisibility(View.GONE);
+        mBinding.videoPrefer.setVisibility(View.GONE);
     }
 
     private void refresh() {

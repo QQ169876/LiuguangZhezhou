@@ -113,7 +113,7 @@ public class MpvPlayerEngine implements PlayerEngine, Player.Listener {
     @Override
     public ErrorAction handleError(PlaybackException e) {
         return switch (e.errorCode) {
-            case PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED -> ErrorAction.DECODE;
+            // 解码失败不再自动切软硬解，直接报错；软硬解只认播放页的手动选择
             case PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> retryHls();
             default -> ErrorAction.FATAL;
         };

@@ -32,6 +32,7 @@ import com.fongmi.android.tv.player.effect.PlayerEffectManager;
 import com.fongmi.android.tv.player.effect.audio.AudioEffectBands;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
 import com.fongmi.android.tv.player.engine.PlayerEngineFactory;
+import com.fongmi.android.tv.player.exo.ExoMediaSourceFactory;
 import com.fongmi.android.tv.player.media.PlaySpec;
 import com.fongmi.android.tv.player.parse.ParseJob;
 import com.fongmi.android.tv.player.sync.SubtitleAutoSync;
@@ -42,7 +43,6 @@ import com.fongmi.android.tv.setting.PreloadSetting;
 import com.fongmi.android.tv.setting.SpeedSetting;
 import com.fongmi.android.tv.setting.SubtitleSetting;
 import com.fongmi.android.tv.utils.DebugLog;
-import com.fongmi.android.tv.utils.DecodeGuard;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PlayWatchdog;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -69,13 +69,13 @@ public class PlayerManager implements ParseCallback {
     private long pendingStartPositionMs;
     private boolean danmakuEnabled;
     private boolean initTrack;
-    private int retry;
+    private int sourceRetry;
     private int decode;
     private long lastStop; // 上次停播时间：换源/切线后的下一次起播要和它拉开距离
 
     public PlayerManager(Callback callback) {
         this.callback = callback;
-        this.decode = DecodeGuard.softForced() ? PlayerEngine.SOFT : PlayerEngine.HARD; // 这台机器硬解撞翻过就默认软解，别再反复撞
+        this.decode = PlayerEngine.HARD; // 默认硬解；软硬解只认播放页的手动选择，不再由本机状态自动改
         this.runnable = this::onPlayTimeout;
         this.pendingStartPositionMs = C.TIME_UNSET;
         this.engine = PlayerEngineFactory.create(decode, listener);
@@ -522,7 +522,7 @@ public class PlayerManager implements ParseCallback {
 
     public void reset() {
         App.removeCallbacks(runnable);
-        retry = 0;
+        sourceRetry = 0;
     }
 
     public void clear() {
@@ -547,17 +547,17 @@ public class PlayerManager implements ParseCallback {
 
     public void toggleDecode() {
         int next = isHard() ? PlayerEngine.SOFT : PlayerEngine.HARD;
-        if (next == PlayerEngine.HARD) DecodeGuard.unforce(); // 用户手动选回硬解 = 解除强制
         setDecode(next);
     }
 
-    private void handleDecodeError(PlaybackException e) {
-        if (++retry > 1) callback.onError(engine.getErrorMessage(e));
-        else retryDecode(isHard() ? PlayerEngine.SOFT : PlayerEngine.HARD);
-    }
-
-    private void retryDecode(int decode) {
-        setDecode(decode);
+    /** Bad HTTP Status：清缓存后按当前进度重新请求一次；只自动重试一次，避免死循环。 */
+    private void handleRetrySource(PlaybackException e) {
+        if (spec == null || ++sourceRetry > 1) {
+            callback.onError(engine.getErrorMessage(e));
+            return;
+        }
+        DebugLog.d("Player", "Bad HTTP，清缓存重连 " + spec.getUrl());
+        ExoMediaSourceFactory.clearCache();
         PlaybackSnapshot snapshot = PlaybackSnapshot.capture(player);
         startCurrent(snapshot.positionMs());
         snapshot.restore(player);
@@ -565,8 +565,23 @@ public class PlayerManager implements ParseCallback {
 
     private void setDecode(int decode) {
         this.decode = decode;
-        engine.setDecode(decode);
+        if (engine != null) {
+            // EXO 的 RenderersFactory 在 player 创建时就固定了，软硬解要真正生效必须重建 engine
+            if (engine.getType() == PlayerEngine.Type.EXO && spec != null) rebuildExoForDecode();
+            else engine.setDecode(decode);
+        }
         callback.onDecodeChanged();
+    }
+
+    private void rebuildExoForDecode() {
+        PlaybackSnapshot snapshot = PlaybackSnapshot.capture(player);
+        if (player != null) player.removeListener(listener);
+        PlayerEngine old = engine;
+        engine = PlayerEngineFactory.create(decode, PlayerEngine.Type.EXO, listener); // 明确锁 EXO，别被全局引擎设置带跑
+        setPlayer(engine.getPlayer());
+        old.release();
+        startCurrent(snapshot.positionMs());
+        snapshot.restore(player);
     }
 
     private boolean isHard() {
@@ -648,6 +663,7 @@ public class PlayerManager implements ParseCallback {
 
     public void start(PlaySpec spec, long timeout, long startPositionMs) {
         this.spec = spec;
+        sourceRetry = 0; // 新起播/换集重新给一次自动重连额度
         com.fongmi.android.tv.setting.BufferBoost.begin(spec == null ? null : spec.getUrl()); // 换了视频才清零；同一视频重建不清
         setMediaItem(timeout, startPositionMs);
     }
@@ -794,10 +810,7 @@ public class PlayerManager implements ParseCallback {
         @Override
         public void onPlaybackStateChanged(int state) {
             if (state == Player.STATE_READY || state == Player.STATE_ENDED) App.removeCallbacks(runnable);
-            if (state == Player.STATE_READY) {
-                startPreloadIfReady();
-                DecodeGuard.noteReady(); // 能播起来，说明之前的硬解失败是片源的事，不是机器的事
-            }
+            if (state == Player.STATE_READY) startPreloadIfReady();
         }
 
         @Override
@@ -833,11 +846,10 @@ public class PlayerManager implements ParseCallback {
         public void onPlayerError(@NonNull PlaybackException e) {
             if (spec == null) return;
             DebugLog.d("Player", "播放异常 " + codecDiag(e));
-            if (e.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED || e.errorCode == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED) DecodeGuard.noteInitFail();
             PlayerEngine.ErrorAction action = engine.handleError(e);
             if (action != PlayerEngine.ErrorAction.RECOVERED) App.removeCallbacks(runnable);
             switch (action) {
-                case DECODE -> handleDecodeError(e);
+                case RETRY_SOURCE -> handleRetrySource(e);
                 case RECOVERED -> notifyDanmakuSourceChanged();
                 case FATAL -> callback.onError(engine.getErrorMessage(e));
             }
