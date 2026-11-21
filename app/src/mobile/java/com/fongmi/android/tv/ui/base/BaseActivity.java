@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.DisplayCutout;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -18,6 +19,8 @@ import androidx.viewbinding.ViewBinding;
 
 import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.custom.CustomWallView;
+import com.fongmi.android.tv.utils.FocusLoop;
+import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.color.DynamicColors;
 import com.google.android.material.color.DynamicColorsOptions;
@@ -55,6 +58,27 @@ public abstract class BaseActivity extends AppCompatActivity {
 
     protected boolean customWall() {
         return true;
+    }
+
+    /**
+     * 左右焦点循环开关。播放页的左右键是快进/换台，由页面自己处理，
+     * 那些页面覆写本方法返回 false，避免抢按键。浏览类页面默认开启。
+     */
+    protected boolean focusLoopEnabled() {
+        return true;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        boolean handled = super.dispatchKeyEvent(event);
+        // 先让 View 树自己处理：换源、翻页、搜索键盘、播放快进等消费了左右键就一律不介入。
+        // 返回 false 才说明没人消费、焦点移动交给系统默认导航；此时再判断是不是撞到了边界。
+        if (handled || !focusLoopEnabled()) return handled;
+        if (!KeyUtil.isActionDown(event)) return handled;
+        if (!KeyUtil.isLeftKey(event) && !KeyUtil.isRightKey(event)) return handled;
+        // wrap 内部用 focusSearch 确认这个方向确实没有下一个焦点（真边界）才循环；
+        // 不是边界就返回 false，系统默认导航照常把焦点移到下一项。
+        return FocusLoop.wrap(getCurrentFocus(), KeyUtil.isRightKey(event));
     }
 
     protected void initView(Bundle savedInstanceState) {

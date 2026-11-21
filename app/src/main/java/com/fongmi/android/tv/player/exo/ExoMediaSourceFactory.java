@@ -129,7 +129,11 @@ public class ExoMediaSourceFactory implements MediaSource.Factory {
     }
 
     private ExtractorsFactory getExtractorsFactory() {
-        if (extractorsFactory == null) extractorsFactory = new DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES * 10);
+        if (extractorsFactory == null) {
+            ExtractorsFactory base = new DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES * 10);
+            // 可选：纠正短剧 HEVC level 虚标（默认关，开关在播放设置里）
+            extractorsFactory = HvcLevelFix.wrap(base);
+        }
         return extractorsFactory;
     }
 

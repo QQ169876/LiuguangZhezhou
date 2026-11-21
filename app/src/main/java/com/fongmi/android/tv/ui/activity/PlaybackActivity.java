@@ -79,6 +79,12 @@ public abstract class PlaybackActivity extends BaseActivity implements MediaCont
     private int appliedRotate = -1; // 画面旋转上一次真正套上去的角度（-1 = 还没套过），用来判断要不要动缩放
     private long uiBusyUntil;  // 刚动过播放器视图（进出全屏/卸载）的抖动窗口
 
+    /** 播放页左右键是快进/换台/调进度，不做边界焦点循环（含 Video/Live/Cast/横屏手机播放页） */
+    @Override
+    protected boolean focusLoopEnabled() {
+        return false;
+    }
+
     protected MediaController controller() {
         return mController;
     }

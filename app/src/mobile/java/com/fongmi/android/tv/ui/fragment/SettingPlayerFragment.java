@@ -74,6 +74,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.aiText.setText(Setting.getSwitch(AiSetting.isEnabled()));
         mBinding.aiModelText.setText(aiModelText());
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
+        mBinding.hvcLevelFixText.setText(Setting.getSwitch(PlayerSetting.isHvcLevelFix()));
         mBinding.bufferText.setText(bufferText(PlayerSetting.getBufferRaw()));
         mBinding.mpvVulkanText.setText(Setting.getSwitch(PlayerSetting.isMpvVulkan()));
         mBinding.mpvGpuNextText.setText(Setting.getSwitch(PlayerSetting.isMpvGpuNext()));
@@ -89,6 +90,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.ai.setOnClickListener(this::setAi);
         mBinding.aiModel.setOnClickListener(this::onAiModel);
         mBinding.adblock.setOnClickListener(this::setAdblock);
+        mBinding.hvcLevelFix.setOnClickListener(this::setHvcLevelFix);
         mBinding.mpvConf.setOnClickListener(this::onMpvConf);
         mBinding.mpvGpuNext.setOnClickListener(this::setMpvGpuNext);
         mBinding.mpvVulkan.setOnClickListener(this::setMpvVulkan);
@@ -112,6 +114,7 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
         mBinding.mpvVulkan.setVisibility(vulkan ? View.VISIBLE : View.GONE);
         mBinding.mpvGpuNext.setVisibility(exo ? View.GONE : View.VISIBLE);
         mBinding.adblock.setVisibility(exo ? View.VISIBLE : View.GONE);
+        mBinding.hvcLevelFix.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.buffer.setVisibility(exo ? View.VISIBLE : View.GONE);
         mBinding.preload.setVisibility(View.GONE); // 预载已停用（2026-11-21），不再显示入口
     }
@@ -183,6 +186,11 @@ public class SettingPlayerFragment extends BaseFragment implements UaListener, B
     private void setAdblock(View view) {
         Setting.putAdblock(!Setting.isAdblock());
         mBinding.adblockText.setText(Setting.getSwitch(Setting.isAdblock()));
+    }
+
+    private void setHvcLevelFix(View view) {
+        PlayerSetting.putHvcLevelFix(!PlayerSetting.isHvcLevelFix());
+        mBinding.hvcLevelFixText.setText(Setting.getSwitch(PlayerSetting.isHvcLevelFix()));
     }
 
     private void onPreload(View view) {

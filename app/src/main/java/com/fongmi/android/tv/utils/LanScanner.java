@@ -34,6 +34,8 @@ public class LanScanner {
 
     private static final String TAG = "LanScan";
     private static final long TIMEOUT = 1200;
+    /** 同一地址允许的连续超时次数上限；超过就判定这个地址不在线，别把 21 个端口全等满拖爆扫描 */
+    private static final int MAX_TIMEOUTS = 2;
     private static final int[] PORTS = {9978, 9979, 9980, 9981, 9982, 9983, 9984, 9985, 9986, 9987, 9988, 9989, 9990, 9991, 9992, 9993, 9994, 9995, 9996, 9997, 9998};
 
     private final List<Device> items;
@@ -97,6 +99,12 @@ public class LanScanner {
         Task.execute(() -> {
             long begin = System.currentTimeMillis();
             scan(targets);
+            // 一台都没找到时整体重试一轮：对端服务往往比扫描晚起一两秒，或那一刻网络抖了一下。
+            // scan() 里会自动跳过已命中的地址，只有全军覆没才多花这一轮，正常情况不拖慢。
+            if (!stop && items.isEmpty()) {
+                DebugLog.d(TAG, "首轮 0 台，重试一轮");
+                scan(targets);
+            }
             DebugLog.d(TAG, "扫描结束：找到 " + items.size() + " 台设备，耗时 " + (System.currentTimeMillis() - begin) + "ms");
             App.post(() -> callback.onEnd(items.size()));
         });
@@ -150,18 +158,16 @@ public class LanScanner {
 
     /**
      * 一个地址把 9978~9998 全试一遍；对方内置服务落在哪个端口都能撞上。
-     * 地址本身没人应答（SocketTimeout）就整个跳过，后面的端口不用再试——大部分 IP 都是空的。
+     * 743 曾改成「第一个端口一超时就整台机放弃」，对端服务晚起一两秒或某个端口偶发抖动就永远漏掉。
+     * 现在每个端口独立容错：某端口超时继续试后面的端口，只有连续超时到上限（主机确实不在线）
+     * 才收手，避免 283 个空地址把 21×1.2 秒全等满拖爆扫描。
      */
     private Device probe(String host) {
-        if (stop) return null;
-        try {
-            return request(host);
-        } catch (HostDownException e) {
-            return null;
-        }
+        return stop ? null : request(host);
     }
 
-    private Device request(String host) throws HostDownException {
+    private Device request(String host) {
+        int timeouts = 0;
         for (int port : PORTS) {
             if (stop) return null;
             try (Response response = OkHttp.newCall(OkHttp.client(TIMEOUT), "http://" + host + ":" + port + "/device").execute()) {
@@ -169,21 +175,24 @@ public class LanScanner {
                 Device device = Device.objectFrom(response.body().string());
                 if (device == null) continue;
                 if (device.getUuid().isEmpty()) continue;
-                if (device.getUuid().equals(self)) continue;
-                if (selfIp.contains(host)) continue;
+                if (device.getUuid().equals(self)) {
+                    DebugLog.d(TAG, "跳过自己 " + host + ":" + port);
+                    continue;
+                }
+                if (selfIp.contains(host)) {
+                    DebugLog.d(TAG, "跳过本机 " + host + ":" + port);
+                    continue;
+                }
                 device.setIp("http://" + host + ":" + port);
                 return device;
             } catch (java.net.SocketTimeoutException e) {
-                // 这个地址根本没人应答（大部分 IP 都是空的），后面的端口不用再试
-                throw new HostDownException();
+                // 不再一超时就整台机放弃：继续试后面的端口；连续超时到上限才判定主机不在线
+                if (++timeouts >= MAX_TIMEOUTS) return null;
             } catch (Throwable e) {
                 // 端口没开 / 连接被拒：接着试下一个端口
             }
         }
         return null;
-    }
-
-    private static class HostDownException extends Exception {
     }
 
     /** 本机所有网卡所在网段的全部候选地址，去掉自己、去重，统一交给扫描 */

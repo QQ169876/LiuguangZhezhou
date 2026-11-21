@@ -49,6 +49,15 @@ public class PlayerSetting {
         Prefers.put("player_debug", debug);
     }
 
+    /** 纠正短剧 HEVC level 虚标（hvc1 L6.2 实为 1080p30），默认关：问题已在硬解链路修复，此为可选纠错。 */
+    public static boolean isHvcLevelFix() {
+        return Prefers.getBoolean("hvc_level_fix");
+    }
+
+    public static void putHvcLevelFix(boolean enabled) {
+        Prefers.put("hvc_level_fix", enabled);
+    }
+
     public static boolean isMpvGpuNext() {
         return Prefers.getBoolean("mpv_gpu_next");
     }

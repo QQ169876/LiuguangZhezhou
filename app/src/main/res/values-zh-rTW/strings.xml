@@ -543,6 +543,7 @@
     <string name="player_dolby_vision_output">杜比視界</string>
     <string name="player_aac_track">AAC優先</string>
     <string name="player_adblock">智慧去廣</string>
+    <string name="player_hvc_level_fix">糾正虛標編碼等級</string>
     <string name="player_tunnel">隧道模式</string>
     <string name="player_buffer">緩衝時間</string>
     <string name="player_buffer_auto">自動</string>
