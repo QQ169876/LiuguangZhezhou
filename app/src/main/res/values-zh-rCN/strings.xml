@@ -418,6 +418,7 @@
     <string name="lan_input_connect">连接</string>
     <string name="lan_connecting">正在连接 %1$s…</string>
     <string name="lan_connect_fail">这个地址上没找到设备，请核对 IP，并确认对方已打开本应用</string>
+    <string name="lan_permission_denied">本地网络访问被拒绝：请在系统设置里允许「附近设备 / 本地网络」权限后再扫描推送</string>
     <string name="push_item_vod">点播配置</string>
     <string name="push_item_live">直播配置</string>
     <string name="push_item_setting">系统设置</string>

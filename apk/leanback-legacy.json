@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.192-legacy",
-  "desc": "局域网推送新增手动输入目标IP：推送弹窗加「输入IP」按钮，4段输入框参照Windows指定DNS样式、前三段按本机网段预设、输满自动跳下一段、无需输入点号，适配TV遥控器；输入后直连该IP的/device拿到设备即可推送，作为自动扫描扫不到时的兜底。751去掉出口绑定后小米仍扫不到，故加此手动入口。",
-  "code": 752,
-  "tag": "v5.6.192-legacy"
+  "name": "流光褶皱TV v5.6.194-legacy",
+  "desc": "局域网推送适配Android17本地网络权限：小米24129PN74C(api37)系统更新后扫不到设备、别人也扫不到它、手动输入IP也失败，而同版本同网段的荣耀/索尼正常、浏览器能直连。根因是Android17起targetSdk37+应用默认禁止访问局域网(TCP/UDP在网络栈底层被拦，未授权时表现为超时)，而本App的targetSdk=37却没声明ACCESS_LOCAL_NETWORK。修复：manifest声明ACCESS_LOCAL_NETWORK(属NEARBY_DEVICES组)，打开推送对话框/重新扫描/手动输入前先申请该运行时权限，授权后再扫描直连，拒绝给出提示。WebDAV同步维持原约定未动。",
+  "code": 754,
+  "tag": "v5.6.194-legacy"
 }

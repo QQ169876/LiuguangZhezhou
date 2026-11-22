@@ -418,6 +418,7 @@
     <string name="lan_input_connect">連線</string>
     <string name="lan_connecting">正在連線 %1$s…</string>
     <string name="lan_connect_fail">這個位址上沒找到設備，請核對 IP，並確認對方已打開本應用</string>
+    <string name="lan_permission_denied">本機網路存取被拒絕：請在系統設定裡允許「附近的裝置 / 本機網路」權限後再掃描推送</string>
     <string name="push_item_vod">點播設定</string>
     <string name="push_item_live">直播設定</string>
     <string name="push_item_setting">系統設定</string>

@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.ui.adapter.LanAdapter;
 import com.fongmi.android.tv.utils.LanScanner;
+import com.fongmi.android.tv.utils.LocalNetwork;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.Push;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -34,6 +35,8 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
     private LanAdapter adapter;
     private LanScanner scanner;
     private Device target;
+    /** 等待本地网络权限授权后要执行的动作（扫描或弹手动输入框） */
+    private Runnable pendingAction;
 
     public static PushDialog create() {
         return new PushDialog();
@@ -65,16 +68,42 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
     protected void initEvent() {
         binding.rescan.setOnClickListener(this::onRescan);
         binding.manual.setOnClickListener(this::onManual);
-        scan();
+        // Android 17+ 局域网访问需本地网络权限：先申请，授权后再扫描，否则全是超时
+        withPermission(this::scan);
+    }
+
+    /** 有本地网络权限就直接执行；没有就把动作存起来、弹系统权限框，授权后接着做 */
+    private void withPermission(Runnable action) {
+        if (LocalNetwork.granted()) action.run();
+        else {
+            pendingAction = action;
+            LocalNetwork.request(this);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == LocalNetwork.REQUEST_CODE) {
+            if (gone()) return;
+            Runnable action = pendingAction;
+            pendingAction = null;
+            if (LocalNetwork.isGranted(requestCode, grantResults)) {
+                if (action != null) action.run();
+            } else {
+                binding.info.setText(R.string.lan_permission_denied);
+            }
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
     }
 
     private void onRescan(View view) {
-        scan();
+        withPermission(this::scan);
     }
 
     /** 手动指定目标 IP：遥控器输入不便，扫不到时可只改 IP 最后一段直接连 */
     private void onManual(View view) {
-        IpInputDialog.show(requireActivity(), this::connectIp);
+        withPermission(() -> IpInputDialog.show(requireActivity(), this::connectIp));
     }
 
     private void connectIp(String ip) {

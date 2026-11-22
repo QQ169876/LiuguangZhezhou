@@ -419,6 +419,7 @@
     <string name="lan_input_connect">Connect</string>
     <string name="lan_connecting">Connecting to %1$s…</string>
     <string name="lan_connect_fail">No device found at that address. Check the IP and make sure the other device has this app open.</string>
+    <string name="lan_permission_denied">Local network access is denied. Grant the Nearby devices / Local network permission in system settings to scan and push.</string>
     <string name="push_item_vod">VOD config</string>
     <string name="push_item_live">Live config</string>
     <string name="push_item_setting">System settings</string>

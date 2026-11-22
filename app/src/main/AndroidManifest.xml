@@ -8,6 +8,8 @@
     <uses-sdk tools:overrideLibrary="com.fongmi.hook,com.ghost.thunder,com.tvbus.engine" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17(API 37) 本地网络权限：targetSdk 37+ 访问局域网必须声明并运行时申请，未授权时 TCP 全部超时 -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
