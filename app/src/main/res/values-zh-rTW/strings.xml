@@ -413,6 +413,11 @@
     <string name="lan_scanning">正在掃描 %1$d / %2$d</string>
     <string name="lan_found">已發現 %1$d 台設備</string>
     <string name="lan_empty">沒找到其它設備：請確認對方已打開本應用，並且和本機連的是同一個網路</string>
+    <string name="lan_input_ip">輸入 IP</string>
+    <string name="lan_input_ip_hint">前三段已按本機網段預填，一般只改最後一段即可，不用輸入「.」</string>
+    <string name="lan_input_connect">連線</string>
+    <string name="lan_connecting">正在連線 %1$s…</string>
+    <string name="lan_connect_fail">這個位址上沒找到設備，請核對 IP，並確認對方已打開本應用</string>
     <string name="push_item_vod">點播設定</string>
     <string name="push_item_live">直播設定</string>
     <string name="push_item_setting">系統設定</string>
@@ -543,7 +548,6 @@
     <string name="player_dolby_vision_output">杜比視界</string>
     <string name="player_aac_track">AAC優先</string>
     <string name="player_adblock">智慧去廣</string>
-    <string name="player_hvc_level_fix">糾正虛標編碼等級</string>
     <string name="player_tunnel">隧道模式</string>
     <string name="player_buffer">緩衝時間</string>
     <string name="player_buffer_auto">自動</string>

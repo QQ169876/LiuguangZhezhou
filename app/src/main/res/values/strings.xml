@@ -414,6 +414,11 @@
     <string name="lan_scanning">Scanning %1$d / %2$d</string>
     <string name="lan_found">%1$d device(s) found</string>
     <string name="lan_empty">No other device found. Open this app on the other device and keep both on the same network.</string>
+    <string name="lan_input_ip">Enter IP</string>
+    <string name="lan_input_ip_hint">First three octets are preset to the network of this device; just edit the last one. No need to type dots.</string>
+    <string name="lan_input_connect">Connect</string>
+    <string name="lan_connecting">Connecting to %1$s…</string>
+    <string name="lan_connect_fail">No device found at that address. Check the IP and make sure the other device has this app open.</string>
     <string name="push_item_vod">VOD config</string>
     <string name="push_item_live">Live config</string>
     <string name="push_item_setting">System settings</string>
@@ -544,7 +549,6 @@
     <string name="player_dolby_vision_output">Dolby Vision</string>
     <string name="player_aac_track">Prefer aac track</string>
     <string name="player_adblock">Remove ads</string>
-    <string name="player_hvc_level_fix">Fix HEVC level</string>
     <string name="player_tunnel">Tunnel mode</string>
     <string name="player_buffer">Buffer time</string>
     <string name="player_buffer_auto">Auto</string>

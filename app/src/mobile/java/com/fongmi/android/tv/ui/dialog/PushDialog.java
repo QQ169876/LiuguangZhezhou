@@ -63,11 +63,37 @@ public class PushDialog extends BaseBottomSheetDialog implements LanScanner.Call
     @Override
     protected void initEvent() {
         binding.rescan.setOnClickListener(this::onRescan);
+        binding.manual.setOnClickListener(this::onManual);
         scan();
     }
 
     private void onRescan(View view) {
         scan();
+    }
+
+    /** 手动指定目标 IP：扫不到时的兜底，直接对单个 IP 探测 /device */
+    private void onManual(View view) {
+        IpInputDialog.show(requireActivity(), this::connectIp);
+    }
+
+    private void connectIp(String ip) {
+        Server.get().start();
+        binding.info.setText(ResUtil.getString(R.string.lan_connecting, ip));
+        Task.execute(() -> {
+            LanScanner probe = new LanScanner(this);
+            Device device = probe.probeOnce(ip);
+            App.post(() -> {
+                if (gone()) return;
+                if (device == null) {
+                    Notify.show(R.string.lan_connect_fail);
+                    binding.info.setText(R.string.lan_hint);
+                    return;
+                }
+                if (!adapter.getItems().contains(device)) adapter.add(device);
+                binding.empty.setVisibility(View.GONE);
+                onItemClick(device);
+            });
+        });
     }
 
     private void scan() {

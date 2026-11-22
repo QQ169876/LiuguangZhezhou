@@ -64,11 +64,37 @@ public class PushDialog extends BaseAlertDialog implements LanScanner.Callback, 
     @Override
     protected void initEvent() {
         binding.rescan.setOnClickListener(this::onRescan);
+        binding.manual.setOnClickListener(this::onManual);
         scan();
     }
 
     private void onRescan(View view) {
         scan();
+    }
+
+    /** 手动指定目标 IP：遥控器输入不便，扫不到时可只改 IP 最后一段直接连 */
+    private void onManual(View view) {
+        IpInputDialog.show(requireActivity(), this::connectIp);
+    }
+
+    private void connectIp(String ip) {
+        Server.get().start();
+        binding.info.setText(ResUtil.getString(R.string.lan_connecting, ip));
+        Task.execute(() -> {
+            LanScanner probe = new LanScanner(this);
+            Device device = probe.probeOnce(ip);
+            App.post(() -> {
+                if (gone()) return;
+                if (device == null) {
+                    Notify.show(R.string.lan_connect_fail);
+                    binding.info.setText(R.string.lan_hint);
+                    return;
+                }
+                if (!adapter.getItems().contains(device)) adapter.add(device);
+                binding.empty.setVisibility(View.GONE);
+                onItemClick(device);
+            });
+        });
     }
 
     private void scan() {
