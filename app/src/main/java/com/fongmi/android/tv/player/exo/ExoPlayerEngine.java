@@ -156,6 +156,8 @@ public class ExoPlayerEngine implements PlayerEngine, AnalyticsListener {
     public ErrorAction handleError(PlaybackException e) {
         return switch (e.errorCode) {
             case PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> seekToDefaultPosition();
+            // 短剧直链/本地代理返回非 2xx：清缓存后重新请求一次，别直接把错误甩给用户
+            case PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> ErrorAction.RETRY_SOURCE;
             case PlaybackException.ERROR_CODE_IO_UNSPECIFIED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> retryFormat(e.errorCode);
             // 解码失败不再自动切软硬解：选硬解就硬解、选软解就软解，起不来直接报错
             default -> ErrorAction.FATAL;

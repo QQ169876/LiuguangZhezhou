@@ -50,6 +50,7 @@ public interface PlayerEngine {
 
     enum ErrorAction {
         RECOVERED,
+        RETRY_SOURCE,
         FATAL
     }
 
