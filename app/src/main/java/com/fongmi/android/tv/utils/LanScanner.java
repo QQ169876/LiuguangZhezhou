@@ -1,22 +1,13 @@
 package com.fongmi.android.tv.utils;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.LinkAddress;
-import android.net.LinkProperties;
-import android.net.Network;
-
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.bean.Device;
 import com.fongmi.android.tv.cast.CastNet;
 import com.github.catvod.net.OkHttp;
 
-import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
-import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -28,8 +19,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.net.SocketFactory;
-
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
 
@@ -37,10 +26,10 @@ import okhttp3.Response;
  * 局域网设备扫描：扫本机「所有网卡所在的网段」，找出同样装了本 App 并开着内置服务的设备。
  * 识别方式是请求对方内置服务的 /device 接口，能拿到设备名 / 类型 / 唯一标识。
  *
- * 每张网卡各扫各自的 /24 网段，并且请求绑定这张网卡的出口：
- * 同时连着 Wi-Fi(192.168.x) 和移动 5G(10.x)、或开了 VPN 时，如果所有目标共用一个默认出口，
- * 去往 192.168.x 的包可能被系统从 10.x 那张网卡丢出去，导致同一个局域网里的设备一个都扫不到
- * （马先生 2026-11-22 小米手机扫不到盒子、荣耀能扫到）。现在去往哪张网卡网段的请求，就绑定哪张网卡发。
+ * 每张网卡各扫各自的 /24 网段（CastNet.groups() 生成目标），请求走系统默认路由，不强制绑定网卡出口。
+ * 750 曾用 Network.bindSocket 把请求绑到指定网卡，结果小米手机即使禁用 5G、只剩 Wi-Fi 一个网段，
+ * 去往同网段盒子的请求仍全部超时，而浏览器直连同一地址却正常——绑定出口这一步本身是坏的，已删除。
+ * （马先生 2026-11-22 小米手机扫不到盒子、荣耀能扫到）
  */
 public class LanScanner {
 
@@ -99,7 +88,7 @@ public class LanScanner {
         return items;
     }
 
-    /** 一条待探的地址 + 发它时要走的网卡出口 client */
+    /** 一条待探的地址 + 发它时用的 client */
     private static class Probe {
         final String host;
         final OkHttpClient client;
@@ -223,98 +212,13 @@ public class LanScanner {
         return null;
     }
 
-    /** 建一个绑定到指定网卡出口的 client：去往这张网卡网段的请求只从这张网卡发出去 */
-    private static OkHttpClient clientFor(String local) {
-        OkHttpClient base = OkHttp.client(TIMEOUT);
-        // 独立连接池：别和全局 client 或其它网卡复用连接，确保每个 socket 都经自己的出口 factory 建立
-        return base.newBuilder()
-                .connectionPool(new okhttp3.ConnectionPool())
-                .socketFactory(new BoundSocketFactory(local, networkFor(local)))
-                .build();
-    }
-
-    /** 找到持有这个本机 IP 的那张网卡对应的 Android Network，用它强制 socket 出口 */
-    private static Network networkFor(String localIp) {
-        try {
-            ConnectivityManager manager = (ConnectivityManager) App.get().getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (manager == null) return null;
-            Network[] networks = manager.getAllNetworks();
-            for (Network network : networks) {
-                LinkProperties props = manager.getLinkProperties(network);
-                if (props == null) continue;
-                for (LinkAddress address : props.getLinkAddresses()) {
-                    InetAddress inet = address.getAddress();
-                    if (inet instanceof Inet4Address && inet.getHostAddress().equals(localIp)) return network;
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
-    }
-
     /**
-     * 让 OkHttp 的 socket 强制走指定出口：优先 Android Network.bindSocket（多网卡/Wi-Fi+5G+VPN 下最可靠），
-     * 找不到对应 Network 时退回按本机 IP 绑源地址。这样 10.x 的请求走 5G、192.168.x 的请求走 Wi-Fi。
+     * 扫描用普通 client，走系统默认路由。
+     * 「各扫各的网段」由 CastNet.groups() 生成目标地址实现；包从哪张网卡发出交给系统默认路由
+     * （只有 Wi-Fi 时天然走 Wi-Fi，禁用 5G 后去往 192.168.1.x 的包就能正常到达盒子）。
      */
-    private static class BoundSocketFactory extends SocketFactory {
-        private final SocketFactory delegate = SocketFactory.getDefault();
-        private final String local;
-        private final Network network;
-
-        BoundSocketFactory(String local, Network network) {
-            this.local = local;
-            this.network = network;
-        }
-
-        private Socket bind(Socket socket) throws IOException {
-            if (network != null) network.bindSocket(socket); // 有对应 Network：强制走这张网卡，最可靠
-            return socket;
-        }
-
-        private void bindLocal(Socket socket) {
-            if (network == null && local != null && !local.isEmpty()) { // 没拿到 Network：退回按本机 IP 绑源地址
-                try {
-                    socket.bind(new InetSocketAddress(local, 0));
-                } catch (Throwable ignored) {
-                }
-            }
-        }
-
-        @Override
-        public Socket createSocket() throws IOException {
-            Socket socket = bind(delegate.createSocket());
-            bindLocal(socket);
-            return socket;
-        }
-
-        @Override
-        public Socket createSocket(String host, int port) throws IOException {
-            Socket socket = bind(delegate.createSocket());
-            socket.connect(new InetSocketAddress(host, port));
-            return socket;
-        }
-
-        @Override
-        public Socket createSocket(String host, int port, InetAddress localHost, int localPort) throws IOException {
-            Socket socket = bind(delegate.createSocket());
-            socket.bind(new InetSocketAddress(localHost, localPort));
-            socket.connect(new InetSocketAddress(host, port));
-            return socket;
-        }
-
-        @Override
-        public Socket createSocket(InetAddress host, int port) throws IOException {
-            Socket socket = bind(delegate.createSocket());
-            socket.connect(new InetSocketAddress(host, port));
-            return socket;
-        }
-
-        @Override
-        public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
-            Socket socket = bind(delegate.createSocket());
-            socket.bind(new InetSocketAddress(localAddress, localPort));
-            socket.connect(new InetSocketAddress(address, port));
-            return socket;
-        }
+    private static OkHttpClient clientFor(String local) {
+        return OkHttp.client(TIMEOUT);
     }
+
 }
