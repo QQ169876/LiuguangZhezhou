@@ -95,6 +95,58 @@ public final class CastNet {
     }
 
     /**
+     * 一张网卡的扫描组：local 是这张网卡自己的 IP（请求要绑定它当出口），targets 是这个 /24 网段里的候选地址。
+     *
+     * 为什么要按网卡分组而不是混成一张大表：一台机器同时有 Wi-Fi(192.168.x)、移动 5G(10.x)、VPN 时，
+     * 若所有目标都用一个默认出口发请求，去往 192.168.x 的包可能被系统从 10.x 那张网卡丢出去，
+     * 结果连同一个局域网里的设备都扫不到（小米手机插着移动数据扫不到盒子）。
+     * 每张网卡各扫各自的 /24，并且请求绑定本网卡的 local，才能做到「10 扫 10、192 扫 192」（马先生 2026-11-22）。
+     */
+    public static class Subnet {
+        public final String local;
+        public final List<String> targets;
+
+        Subnet(String local, List<String> targets) {
+            this.local = local;
+            this.targets = targets;
+        }
+
+        @Override
+        public String toString() {
+            return local + "/24(" + targets.size() + ")";
+        }
+    }
+
+    /** 每张 IPv4 网卡一个扫描组：一律按 255.255.255.0(/24) 算自己那一段，互不混用。 */
+    public static List<Subnet> groups() {
+        Set<String> self = selfIps();
+        List<Subnet> result = new ArrayList<>();
+        for (NetworkInterface nif : interfaces()) {
+            for (InterfaceAddress item : nif.getInterfaceAddresses()) {
+                InetAddress address = item.getAddress();
+                if (!(address instanceof Inet4Address) || address.isLoopbackAddress()) continue;
+                String host = address.getHostAddress();
+                if (host.startsWith("169.254.")) continue; // 没网时的假 IP
+                long ip = toLong(address);
+                if (ip <= 0) continue;
+                long mask = mask(24);
+                long begin = (ip & mask) + 1;
+                long end = (ip & mask) + MAX_PER_SUBNET - 1;
+                List<String> targets = new ArrayList<>();
+                for (long value = begin; value <= end && targets.size() < MAX_PER_SUBNET; value++) {
+                    String target = toIp(value);
+                    if (self.contains(target)) continue; // 别扫自己
+                    if (target.endsWith(".0") || target.endsWith(".255")) continue;
+                    targets.add(target);
+                    if (targets.size() >= MAX_TOTAL) break;
+                }
+                if (!targets.isEmpty()) result.add(new Subnet(host, targets));
+            }
+        }
+        return result;
+    }
+
+    /**
      * 挑一个**跟对方同一个网段**的本机 IP。
      *
      * 多网卡的情况下这一步不能省：UDP 单播时我们要把自己的接收地址报给对方，
