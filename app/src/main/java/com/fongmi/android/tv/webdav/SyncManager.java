@@ -698,7 +698,11 @@ public class SyncManager {
         merged.getData().setSite(mergeList(backup(base).getSite(), backup(local).getSite(), backup(remote).getSite(), SyncManager::key, (a, b) -> a));
         merged.getData().setLive(mergeList(backup(base).getLive(), backup(local).getLive(), backup(remote).getLive(), SyncManager::key, (a, b) -> a));
         merged.setPrefers(mergeMap(backup(base).getPrefers(), backup(local).getPrefers(), backup(remote).getPrefers()));
-        merged.getData().setCookies(mergeCookies(backup(base).getCookies(), backup(local).getCookies(), backup(remote).getCookies()));
+        // 网盘/影视站扫码登录态（cookie + jar 自存的 spider）都参与双向同步：
+        // 633 起 spider 就随 Backup 上传，但 merge 一直漏合、insertAll 又被 723 删掉落盘，等于 WebDAV 这条路从没真正同步过登录态。
+        // 这里按「谁变过听谁的，两边都变以本机为准」合并 spider（与 cookie 同一套规则），restore/局域网推送两路本来就带，补齐这最后一路。
+        merged.getData().setCookies(mergeCredential(backup(base).getCookies(), backup(local).getCookies(), backup(remote).getCookies()));
+        merged.getData().setSpider(mergeCredential(backup(base).getSpider(), backup(local).getSpider(), backup(remote).getSpider()));
         Map<String, String> remoteCache = remote == null ? null : remote.getCache();
         Map<String, String> localCache = local == null ? null : local.getCache();
         if (remoteCache != null && !remoteCache.isEmpty()) merged.setCache(remoteCache);
@@ -773,10 +777,10 @@ public class SyncManager {
     }
 
     /**
-     * 扫码登录的 Cookie：谁变过就听谁的，两边都变过以本机为准。
-     * 本机没扫过码（压根没有这个域名）而云端有，就直接拿来用。
+     * 扫码登录态（Cookie 与 jar 自存的 spider 共用）：谁变过就听谁的，两边都变过以本机为准。
+     * 本机没扫过码（压根没有这个键/域名）而云端有，就直接拿来用。
      */
-    private static Map<String, String> mergeCookies(Map<String, String> base, Map<String, String> local, Map<String, String> remote) {
+    private static Map<String, String> mergeCredential(Map<String, String> base, Map<String, String> local, Map<String, String> remote) {
         Set<String> keys = new HashSet<>(local.keySet());
         keys.addAll(remote.keySet());
         keys.addAll(base.keySet());
@@ -1143,9 +1147,11 @@ public class SyncManager {
             Prefers.put(entry.getKey(), entry.getValue());
         }
         CookieStore.apply(backup.getCookies());
-        // 点播源 jar 的登录态（SpiderVault）不从云端落盘：它跟本机当前点播源绑定，属于「三项不参与同步」，
-        // 整份替换时也保持本机原样，不推来不收回（马先生 2026-11-08）
-        // ConfigCache 同理：源缓存跟本机当前源绑定，别台的缓存对本机无用
+        // 网盘/影视站 jar 自存的登录态（SpiderVault）跟着云端一起落盘：与 Cookie 一样，扫一次码几台设备都能用。
+        // 723 曾因「跟本机点播源绑定」把它从这条整份替换路径删掉，但 restore（本地备份恢复）和局域网推送两路一直带，
+        // 只有 WebDAV 这条路缺，导致换设备后 jar 登录态要重扫。按马先生要求恢复。
+        SpiderVault.apply(backup.getSpider());
+        // ConfigCache 仍不落盘：源缓存跟本机当前源绑定，别台的缓存对本机无用
     }
 
     private static <T> Set<String> keys(List<T> items, Function<T, String> key) {

@@ -1,6 +1,6 @@
 {
-  "name": "流光褶皱TV v5.6.194-legacy",
-  "desc": "局域网推送适配Android17本地网络权限：小米24129PN74C(api37)系统更新后扫不到设备、别人也扫不到它、手动输入IP也失败，而同版本同网段的荣耀/索尼正常、浏览器能直连。根因是Android17起targetSdk37+应用默认禁止访问局域网(TCP/UDP在网络栈底层被拦，未授权时表现为超时)，而本App的targetSdk=37却没声明ACCESS_LOCAL_NETWORK。修复：manifest声明ACCESS_LOCAL_NETWORK(属NEARBY_DEVICES组)，打开推送对话框/重新扫描/手动输入前先申请该运行时权限，授权后再扫描直连，拒绝给出提示。WebDAV同步维持原约定未动。",
-  "code": 754,
-  "tag": "v5.6.194-legacy"
+  "name": "流光褶皱TV v5.6.195-legacy",
+  "desc": "WebDAV同步网盘登录状态：局域网推送本就带网盘(jar)登录态的收发，本次把同一套做法套用到WebDAV——上传沿用SpiderVault.collect()，合并时新增spider三方合并(与cookie同规则、谁变过听谁的)，落库在doSync/doPull两条路都恢复SpiderVault.apply()(doPull那行是723版三项不参与同步时删掉的)。数据存进由同步地址+用户名唯一确定的webdav文件，以账号和webdav同步标识为基准，同账号设备共享同一份登录态。cookie那套本就在同步、维持原样；clearLocal不动spider(增量并入、不误清本机)。WebDAV同步其它部分维持原约定未动。",
+  "code": 755,
+  "tag": "v5.6.195-legacy"
 }
