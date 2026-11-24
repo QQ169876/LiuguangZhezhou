@@ -87,30 +87,25 @@ public class AiJudge {
      * profile 会落进本机缓存，之后换季、按口味、单部作品那些问法把它当「已核实档案」带上，
      * 不再让模型重新猜一遍（也省一轮 token）。没配大模型时这一整套都不跑，纯本地剧名关键词。
      */
-    private static final String SYSTEM_NEXT = "你是影视推荐助手。用户刚看完一部剧/电影，要一部接一部往下刷。"
-            + "**第一步：先认剧**——把这部作品是什么写进 profile：形态（AI漫剧、动态漫、沙雕漫、真人短剧、网剧、电视剧、电影、动画，只选一个）、"
-            + "题材（古装、穿越、权谋、宫斗、宅斗、玄幻、重生、系统、逆袭、都市、甜宠、复仇、悬疑…挑 2~4 个最贴切的）、"
-            + "主题（一句话，20 字以内）、主演（真人作品给 1~4 个人名；AI漫剧/动态漫这类没有真人演员给空数组）、地区（按内容产地，别按剧名语言）。"
-            + "题面里若给了【已核实的本剧档案】，一律以它为准、profile 照抄，不许自己另猜。这一步先想清楚，后面所有推荐都必须严格照它来："
-            + "档案写 AI漫剧就只找 AI漫剧，写真人网剧就只找真人网剧，写古装穿越权谋就只找这一类，"
-            + "不许跨形态也不许跨题材去推不相干的作品（这是硬要求）。"
-            + "**第二步：回答两问**——"
-            + "① 这部有没有新一季/第二季/第二部/续作/后续？有就把续作在影视站里可能出现的名称写法列出来"
-            + "（中文季号「剧名 第二季」、阿拉伯季号「剧名 第2季」、连写「剧名2」、续作另起的名字各给一种），"
-            + "放在 picks 最前面，has_next 给 true；确定没有给 false，拿不准给 null。"
-            + "② 有没有和它同形态、同题材、同主题气质的作品？要真实存在、站里能搜到的剧名（不是题材词），"
-            + "按推荐顺序排在续作后面，**picks 的顺序就是推荐顺序，用户会照着排第一的一路往下看**；"
-            + "含续作一共最多 6 项，判不准的宁可少给，绝不编造不存在的剧。"
-            + "不要给与它形态不符的作品、综艺、解说、混剪、盘点、番外，不要给当前这部、它的前作，也不要给「已看过」名单里的。"
-            + "另外给 2~3 个这类剧的题材词（每个 2~8 字，同一形态，用来在站里搜同类）。"
-            + "题面若给了用户常看的题材、几乎不碰的题材、关注过的演员：只用来在同类里排先后、避开不碰的方向，"
-            + "**不许因此改掉同形态同题材这条硬要求**，也不许把「已看过」名单里的推出来。"
-            + "reason 写一句判断依据（照档案：什么形态题材、有没有续作、据此该接哪几部），40字以内。"
-            + "picks 逐项给剧名，每项 title 填剧名、note 填一句「为什么接这部」（20字以内），片名和理由放在同一个对象里，别串位。"
-            + "titles/notes 是老版本兼容字段，填了 picks 就留空数组。"
-            + "只输出 JSON，不要任何解释：{\"profile\":{\"form\":\"\",\"genres\":[],\"theme\":\"\",\"actors\":[],\"region\":\"\"},"
-            + "\"reason\":\"判断依据\",\"picks\":[{\"title\":\"剧名\",\"note\":\"为什么接这部\"}],"
-            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":null}";
+    // 2026-11-24 马先生纠正上一版：续播有严格优先级，先后不能颠倒——
+    // 第一步（第一优先级）先判断有没有下一部/续集/下一季，有就 has_next=true、把续作各种写法列全放 picks 最前；
+    // 第二步只有确定没有续集（has_next=false）才推同类，且电影只推电影、剧集只推同形态同题材的剧、都不行再换相近题材。
+    // 上一版把「判续集」砍成「直接推同类」是错的，已改回。保留对话式问法与三条实测教训：
+    // ① 认片别被别名带偏（极速追杀=疾速追杀）；② 认系列演员只当参考、以品牌/故事线为准（《变形金刚》换主演）；③ 续作写法列全。
+    private static final String SYSTEM_NEXT = "你是陪用户看电视的影视顾问，熟悉电影、电视剧、短剧和 AI 漫剧。用户刚看完一部作品想接着往下看，会用很口语的话把片名告诉你。"
+            + "按影视常识一步步想清楚，严格按下面的先后作答——这两步的先后是硬要求："
+            + "第一步（最重要，先做）：判断它有没有紧接着的下一部/续集/下一季。"
+            + "先认清是哪部：片名来自资源站，常是别名、错字或另一种译法（比如「极速追杀」其实是「疾速追杀」），按常识认出是哪部，别被字面写法带偏。"
+            + "认续作、认系列时，主演只能当参考、不是硬条件——很多系列换过主演（《变形金刚》《007》《碟中谍》）仍是同一系列，以系列名、故事线、上映顺序为准。"
+            + "有下一部就 has_next 给 true，把它下一部在视频站里可能出现的各种写法都列全——标准译名、别名、「第X部」「第X季」、连写数字、罗马数字、英文名、另起的副标题各给一种，"
+            + "放在 picks 最前面，排第一的就是最该接着看的。拿不准 has_next 给 null，别把话说死——资源站常收录现实中没官宣的续集，本地会拿这些写法再搜。"
+            + "第二步（只有确定没有下一部时才做）：has_next 给 false，再推荐同类型的真实作品——用户看的是电影就只推电影，是剧集/漫剧就只推同形态同题材的剧；"
+            + "按最该接着看的顺序排在 picks 里，尽量给满 8~10 部；这一类实在凑不出，再放宽到题材相近的。"
+            + "全程只给真实、视频站里搜得到的作品，不要当前这部、它的前作，也别把综艺、解说、混剪、盘点、番外混进来，不编造不存在的作品。"
+            + "AI漫剧/动态漫/沙雕漫都算「漫剧」，动漫/动画算「动画」，真人出演算「真人剧」——同类必须同一种形态。picks 逐项给作品名：title 填片名/剧名（续作把各种写法都列上），"
+            + "note 填一句 20 字以内理由、说清为什么接这部；片名和理由放同一个对象里，别串位。"
+            + "titles 和 notes 是老版本兼容字段，填了 picks 就都留空数组。tags 给 2~3 个题材词（含形态词），reason 一句话概括共同特征、40 字以内。"
+            + "只输出 JSON，不要任何解释：{\"reason\":\"共同特征\",\"picks\":[{\"title\":\"片名\",\"note\":\"为什么接这部\"}],\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":true}";
 
     /**
      * 系列剧「下一季」：站源写法五花八门（第3季 / 第三季 / 剧名3 / S3 / 之某某），
@@ -539,9 +534,10 @@ public class AiJudge {
      */
     private static String nextKey(String name, String kindWord, String region, int mode) {
         String head = mode == MODE_MOVIE ? "movie·" : mode == MODE_SERIAL ? "serial·" : mode == MODE_TASTE ? "taste·" : "";
-        // 版本必须和 loadNext() 认的前缀一致：2026-11-24 电影问法改成对话式（认片/判系列/给各种写法），
-        // 旧电影答案不复用，单独升到 v5；刷剧/系列那几路提示词没动，续用 v4，别无谓烧钱重问。
-        String ver = mode == MODE_MOVIE ? "v5·" : "v4·";
+        // 版本必须和 loadNext() 认的前缀一致：2026-11-24 续播问法改成「先判续集、没有才同类」的对话式，
+        // 单部（电影）和刷剧（剧集/漫剧）两路都改了，旧答案（v6 直接同类 / v5·movie / v4·开头刷剧）一律不复用，升到 v7；
+        // 系列下一季、口味兜底这两路提示词没动，续用 v4，别无谓烧钱重问。
+        String ver = mode == MODE_MOVIE || mode == MODE_GENERIC ? "v7·" : "v4·";
         return ver + head + name + "·" + (TextUtils.isEmpty(kindWord) ? "" : kindWord) + "·" + (TextUtils.isEmpty(region) ? "" : region);
     }
 
@@ -675,27 +671,9 @@ public class AiJudge {
      * 没有就把 has_next 给 false 并推荐几部同类型的——这是它的最后一步，别再返回一堆不相关的剧。
      * 跟上面两个分开：给短剧的那一版明写着「不要给电影」，给系列的那一版只问季号，口径都不一样。
      */
-    // 2026-11-24 马先生定：电影这一问改成「对话式」——像观众刚看完随口说的那段话，让模型按常识一步步推理，
-    // 而不是罗列字段再机械地问「有没有续作」。痛点：《极速追杀》（疾速追杀的别名）没接上《极速追杀2》。
-    // 核心两条：① 认片别被别名/错字带偏；② 认系列以品牌/故事线/上映顺序为准，演员只当参考——
-    // 《变形金刚》《007》《碟中谍》都换过主演仍是同系列，反过来同主演也可能是两部不相干的作品。
-    private static final String SYSTEM_NEXT_MOVIE = "你是一位陪用户看电视的影视顾问。用户刚看完一部电影想接着往下看，会用很口语的方式把片名告诉你。"
-            + "你熟悉中外影视作品。请在心里按顺序过一遍再作答："
-            + "第一，认清是哪部：用户报的片名来自资源站，常不规范，可能是别名、错字或另一种译法（例如「极速追杀」其实是「疾速追杀」）。"
-            + "按你掌握的影视常识认出它究竟是哪一部，别被字面写法带偏。"
-            + "第二，判断是不是系列、属于哪个系列：看它有没有官方系列或品牌、故事是否承接、是不是按部按季往下出。"
-            + "认续作时主演只能当参考，不能当硬条件——很多系列中途换过主演（《变形金刚》《007》《碟中谍》），换了人仍是同一系列；反过来主演相同也可能是两部不相干的作品。"
-            + "以系列名、故事线、上映顺序为准。"
-            + "第三，给出紧接着的下一部：认准是哪一部后（别把最新的一部、前传、外传或衍生片当成「下一部」），"
-            + "把它在视频站里可能出现的各种中文写法都列出来——标准译名、别名、「第X部」、连写数字、罗马数字、英文名、另起的副标题，各给一种，因为站里存哪种写法用户说不准。"
-            + "第四，若这个系列到这部就完了、确实没有下一部，就直说 has_next 给 false，"
-            + "再推荐 2~3 部题材和产地相近、视频站里搜得到的真实作品；不要解说、混剪、盘点、番外、综艺。"
-            + "拿不准 has_next 给 null，别把话说死，用户本地还会再搜；绝不编造不存在的作品。"
-            + "只输出 JSON，不要任何解释："
-            + "{\"identified\":\"认出的标准片名\",\"series\":\"所属系列名，不是系列就填空字符串\",\"series_basis\":\"凭什么判断是不是系列、认作哪部，一句话\","
-            + "\"reason\":\"一句判断依据，40字以内\",\"picks\":[{\"title\":\"名称\",\"note\":\"为什么是它\"}],"
-            + "\"titles\":[],\"notes\":[],\"tags\":[\"题材词\"],\"has_next\":true}。"
-            + "picks 的 title 填续作写法或同类作品全称、note 说明为什么是它，别串位；titles 和 notes 是老版本兼容字段，填了 picks 就都留空数组。";
+    // 2026-11-24 马先生定：电影和剧集同一套优先级——先判续集、没有才推同类，区别只在同类时电影推电影、剧推剧，
+    // 这条已由 SYSTEM_NEXT 写清（提问里告知形态），电影这一路沿用同一份提示词。
+    private static final String SYSTEM_NEXT_MOVIE = SYSTEM_NEXT;
 
     /** 问「下一部」的四种口径：同类剧 / 系列下一季 / 单部作品（续作优先，没有再给同类）/ 没下一季了按口味推荐 */
     private static final int MODE_GENERIC = 0;
@@ -822,10 +800,10 @@ public class AiJudge {
         boolean taste = mode == MODE_TASTE;
         String watched = watched(name); // 播放历史只查一次，电影和刷剧两路都要用
 
-        // 2026-11-24 电影这一问改成自然对话：像观众刚看完随口说的那段话，模型按 system 的四步去答。
-        // 不再罗列「作品名：/形态：」那些字段、也不再机械地问「有没有续作」——那套问法对
-        // 「极速追杀=疾速追杀」这类别名犯含糊，才没接上《极速追杀2》。
-        if (movie) {
+        // 2026-11-24 马先生纠正上一版：先判有没有下一部/续集（第一优先级），有就给写法；确定没有才推同类。
+        // 电影和刷剧（漫剧/剧集）主路都用这套对话式两问，形态由 form 告知——电影只推电影、剧推同形态同题材的剧。
+        if (!serial && !taste) {
+            String form = movie ? "电影" : (TextUtils.isEmpty(kindWord) ? "剧集" : kindWord);
             StringBuilder q = new StringBuilder("我刚看完《").append(name).append("》");
             if (!TextUtils.isEmpty(typeName) || !TextUtils.isEmpty(region)) {
                 q.append("，一部");
@@ -833,15 +811,30 @@ public class AiJudge {
                 if (!TextUtils.isEmpty(typeName)) q.append("的").append(typeName);
                 q.append("片");
             }
-            q.append("，挺喜欢，想接着往下看。");
+            q.append("，挺喜欢，想接着一部部往下看。");
+            if (!movie && !TextUtils.isEmpty(kindWord)) q.append("它是").append(kindWord).append("。");
             if (!TextUtils.isEmpty(actor)) q.append("我记得主演有").append(actor).append("。");
-            if (seriesIndex > 0 && !TextUtils.isEmpty(seriesMain))
-                q.append("它好像是《").append(seriesMain).append("》系列的第").append(seriesIndex).append("部。");
             if (!watched.isEmpty()) q.append("这些我都看过了，别再推荐：").append(watched).append("。");
-            // 不再带旧档案：认片/判系列交给模型按常识独立判断，免得别的模式缓存下来的旧档案把片认歪
-            q.append("\n帮我看看：这到底是什么片子、属于哪个系列、凭什么这么认？紧接着该看下一部是哪部，"
-                    + "它在视频站里可能写成哪几种名字？要是这个系列到这就完了，就直说没有，再给我推荐几部同类型的真片子。");
-            String content = AiChat.chat(SYSTEM_NEXT_MOVIE, q.toString());
+            // 观影口味只当同类排序参考：同类里优先这方向、避开不碰的，仍不许跨形态跨题材；每项过脱敏闸
+            if (liked != null && !liked.isEmpty()) {
+                List<String> clean = new ArrayList<>();
+                for (String tag : liked) if (tag != null && !tag.isEmpty() && !AiGuard.blocked(tag)) clean.add(tag);
+                if (!clean.isEmpty()) q.append("我平时爱看").append(TextUtils.join("、", clean)).append("的。");
+            }
+            if (avoided != null && !avoided.isEmpty()) {
+                List<String> clean = new ArrayList<>();
+                for (String tag : avoided) if (tag != null && !tag.isEmpty() && !AiGuard.blocked(tag)) clean.add(tag);
+                if (!clean.isEmpty()) q.append("不太爱看").append(TextUtils.join("、", clean)).append("的。");
+            }
+            if (stars != null && !stars.isEmpty()) {
+                List<String> clean = new ArrayList<>();
+                for (String star : stars) if (star != null && !star.isEmpty() && !AiGuard.blocked(star)) clean.add(star);
+                if (!clean.isEmpty()) q.append("我喜欢的演员有").append(TextUtils.join("、", clean)).append("。");
+            }
+            q.append("\n帮我先看看：它有没有下一部/续集/下一季？有的话把下一部的名字和几种写法列出来、放最前面；")
+                    .append("要是确实没有了，再按最该接着看的顺序，推荐几部同类型的").append(form)
+                    .append("（我看过的别再推荐）。");
+            String content = AiChat.chat(SYSTEM_NEXT, q.toString());
             return parseNext(content, name, kindWord, region);
         }
 
@@ -941,14 +934,9 @@ public class AiJudge {
             // 「有没有下一季」是后面要不要接着搜的判断依据，模型没写就当没说（null），不当「没有」
             Boolean hasNext = json.has("has_next") && !json.isNull("has_next") ? json.optBoolean("has_next") : null;
             String reason = cleanText(json.optString("reason", ""), 60);
-            // 2026-11-24 电影对话式问法新加的核验字段：认错片还是系列判断错，日志里一眼看出来（其它模式没这几项，取到空串不影响）
-            String identified = cleanText(json.optString("identified", ""), 30);
-            String series = cleanText(json.optString("series", ""), 30);
-            String seriesBasis = cleanText(json.optString("series_basis", ""), 60);
             // 配了大模型的客户端把模型给出的题材词攒进共享文档，没配大模型的客户端启动时拉走就能用
             BingeWords.learn("题材词", tags);
-            DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags + " 还有下一季=" + hasNext
-                    + " 认作=" + identified + " 系列=" + series + " 凭=" + seriesBasis + " 依据=" + reason);
+            DebugLog.d("AiJudge", "下一部推荐 " + titles + " 题材词 " + tags + " 还有下一部=" + hasNext + " 依据=" + reason);
             return new Next(titles, tags, hasNext, notes, reason);
         } catch (Exception e) {
             return null; // 模型说了听不懂的话，就当没问
@@ -1014,9 +1002,13 @@ public class AiJudge {
                         JSONObject json = new JSONObject(new String(data, 0, Math.max(read, 0), StandardCharsets.UTF_8));
                         for (java.util.Iterator<String> it = json.keys(); it.hasNext(); ) {
                             String key = it.next();
-                            // v5· 只用于电影；v4·movie· 是旧问法的电影答案，读进来也命中不了，直接丢掉让它从缓存里清掉
-                            if (key.startsWith("v4·movie·")) continue;
-                            if (!key.startsWith("v4·") && !key.startsWith("v5·")) continue; // 版本须与 nextKey 一致
+                            // v7· 是当前「先判续集、没有才同类」问法（单部+刷剧）；v4·serial·/v4·taste· 是没改的两路，保留；
+                            // 其余旧答案（v6 直接同类 / v5·movie· / v4· 开头的旧刷剧）读进来也命中不了，丢掉让它清出缓存
+                            if (key.startsWith("v7·")) {
+                                // 当前问法，收下
+                            } else if (key.startsWith("v4·serial·") || key.startsWith("v4·taste·")) {
+                                // 没改的两路，收下
+                            } else continue;
                             JSONObject item = json.optJSONObject(key);
                             if (item == null) continue;
                             List<String> titles = new ArrayList<>();

@@ -264,10 +264,17 @@ public class Star implements Diffable<Star> {
     }
 
     /**
-     * 空格分隔的中文人名串：「张三 李四 王五」—— 夸克网盘这类源爱这么给，2026-10-20 马先生在
-     * 《嫁金钗》（夸克源）看到「所有演员挤在一块」就是它。之前不敢按空格拆（「Tom Hanks」会毁），
-     * 现在收紧条件：**每个空格隔开的段都得长得像中文人名**（纯汉字 2~4 字，或带「·」的译名）才拆，
-     * 有一个不像（英文名、数字、超长串）就整段当一个名字，宁可漏拆不可拆错。
+     * 空格分隔的演员串：「张三 李四 王五」—— 夸克网盘、广长这类源爱这么给，2026-10-20 马先生在
+     * 《嫁金钗》（夸克源）看到「所有演员挤在一块」就是它。
+     *
+     * 老逻辑要求「每段都长得像中文人名」才拆，串里夹一个英文名就整段放弃：2026-11-24 马先生在
+     * 《疾速追杀》详情页看到十来个演员挤在一张牌里，就是混进了「Ryan Castle」——looksName("Ryan")
+     * 为 false，整串没拆开，关注和搜作品全废。
+     *
+     * 新逻辑按「一个人」分组：中文 token 各一张牌；连续的英文 token 合成一张牌
+     * （Ryan Castle、Tom Hanks、J. R. R. Tolkien 都算一个人，绝不在英文名中间劈开）。
+     * 只有遇到既不像中文人名、也不像英文词的 token（数字、乱码、超长串）才整段保留——
+     * 拆错（把一个人劈两半）比漏拆（少一张牌）糟得多，这条底线不能破。
      */
     private static List<String> splitSpace(String part) {
         List<String> out = new ArrayList<>();
@@ -278,13 +285,28 @@ public class Star implements Diffable<Star> {
             return out;
         }
         String[] tokens = text.split("\\s+");
+        // 预检：只要有一段既不像中文名也不像英文词，就整段保留（数字/乱码/超长串不碰）
         for (String token : tokens) {
-            if (!looksName(token)) { // 有一段不像人名：整段保留，别把一个人劈成两半
+            if (!looksName(token) && !looksLatin(token)) {
                 out.add(part);
                 return out;
             }
         }
-        for (String token : tokens) out.add(token);
+        // 分组：中文名各一张牌；连续英文词攒成一张牌
+        StringBuilder english = new StringBuilder();
+        for (String token : tokens) {
+            if (looksName(token)) {
+                if (english.length() > 0) {
+                    out.add(english.toString());
+                    english.setLength(0);
+                }
+                out.add(token);
+            } else {
+                if (english.length() > 0) english.append(' ');
+                english.append(token);
+            }
+        }
+        if (english.length() > 0) out.add(english.toString());
         return out;
     }
 
@@ -293,6 +315,20 @@ public class Star implements Diffable<Star> {
         if (token == null || token.isEmpty()) return false;
         if (token.matches("[\\u4e00-\\u9fa5]{2,4}")) return true;
         return token.matches("[\\u4e00-\\u9fa5]{1,6}(·[\\u4e00-\\u9fa5]{1,8})+");
+    }
+
+    /** 长得像英文人名的一段：字母打头，只含字母、点、连字符、撇号（Ryan / Tolkien / J. / O'Neill） */
+    private static boolean looksLatin(String token) {
+        if (token == null || token.isEmpty()) return false;
+        char first = token.charAt(0);
+        if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) return false;
+        for (int i = 1; i < token.length(); i++) {
+            char c = token.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || c == '.' || c == '-' || c == '\'' || c == '·') continue;
+            return false;
+        }
+        return true;
     }
 
     /**
