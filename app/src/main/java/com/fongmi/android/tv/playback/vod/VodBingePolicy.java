@@ -199,6 +199,7 @@ class VodBingePolicy {
         Vod item = pending;
         if (item != null) { // 剩最后几集时已经备好的，直接接上，不用再搜
             pending = null;
+            sealBeforeSwitch(); // 切源即作废在途的验货/搜索回调，别让它们回来又切一部（马先生 2026-11-25 闪跳）
             DebugLog.d("Binge", "接备好的下一部 " + item.getName() + " 来自 " + item.getSiteName());
             host.showBingeNext(item);
             tried.add(item.getName());
@@ -1501,16 +1502,28 @@ class VodBingePolicy {
             return;
         }
         DebugLog.d("Binge", "接下一部 " + item.getName() + " 来自 " + item.getSiteName());
+        sealBeforeSwitch(); // 切源即封缄：在途的另一条切源/验货回调一律作废，杜绝 1 秒内连跳两部（马先生 2026-11-25）
         host.showBingeNext(item);
         serial++;
         waitingDetail = true;
         active = false;
-        App.removeCallbacks(timeoutTask);
         Result detail = probedDetails.remove(keyOf(item));
         if (detail != null && !detail.getList().isEmpty()) {
             DebugLog.d("Binge", "接下一部（复用验货详情，免二次问站）：" + item.getName());
             controller.selectSource(item, detail);
         } else controller.selectSource(item);
+    }
+
+    /**
+     * 真正切源前的封缄：推进 epoch，让所有在途的验货/搜索/定时回调（它们开头都有 myEpoch != epoch 检查）自行作废，
+     * 同时停掉验货和定时器。两条切源路径——onNoNext 接备好的、switchTo 直接切——都必须先过这一道，
+     * 否则后到的那条会把刚接上的第一部顶掉，用户看到的就是刚播半秒就闪到另一部（马先生 2026-11-25《老祖归来》第七季）。
+     * ⚠️ 只在真正 selectSource 前调用；prepare 存 pending 那条不算切源，别调，否则把同批其它验货结果也废了。
+     */
+    private void sealBeforeSwitch() {
+        epoch++;
+        endProbe();
+        clearTimers();
     }
 
     private static String keyOf(Vod item) {
